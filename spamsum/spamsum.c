@@ -257,11 +257,14 @@ static int has_common_substring(const char *s1, const char *s2)
 	   a direct string comparison */
 	for (i=0;s2[i];i++) {
 		u32 h = roll_hash((uchar)s2[i]);
-		for (j=0;j<num_hashes;j++) {
+		if (i < ROLLING_WINDOW-1) continue;
+		for (j=ROLLING_WINDOW-1;j<num_hashes;j++) {
 			if (hashes[j] != 0 && hashes[j] == h) {
 				/* we have a potential match - confirm it */
-				if (strlen(s2+i) >= ROLLING_WINDOW && 
-				    strncmp(s2+i, s1+j, ROLLING_WINDOW) == 0) {
+				if (strlen(s2+i-(ROLLING_WINDOW-1)) >= ROLLING_WINDOW && 
+				    strncmp(s2+i-(ROLLING_WINDOW-1), 
+					    s1+j-(ROLLING_WINDOW-1), 
+					    ROLLING_WINDOW) == 0) {
 					return 1;
 				}
 			}
@@ -442,7 +445,7 @@ u32 spamsum_match(const char *str1, const char *str2)
 /*
   return the maximum match for a file containing a list of spamsums
 */
-u32 spamsum_match_db(const char *fname, const char *sum)
+u32 spamsum_match_db(const char *fname, const char *sum, u32 threshold)
 {
 	FILE *f;
 	char line[100];
@@ -461,7 +464,10 @@ u32 spamsum_match_db(const char *fname, const char *sum)
 
 		score = spamsum_match(sum, line);
 
-		if (score > best) best = score;
+		if (score > best) {
+			best = score;
+			if (best >= threshold) break;
+		}
 	}
 
 	fclose(f);
@@ -573,6 +579,7 @@ Options:
    -W              ignore whitespace
    -H              skip past mail headers
    -B <bsize>      force a block size of bsize
+   -T <threshold>  set the threshold above which spamsum will stop looking (default 90)
 ");
 }
 
@@ -587,8 +594,9 @@ int main(int argc, char *argv[])
 	int i;
 	u32 flags = 0;
 	u32 block_size = 0;
+	u32 threshold = 90;
 
-	while ((c = getopt(argc, argv, "B:WHd:c:C:h")) != -1) {
+	while ((c = getopt(argc, argv, "B:WHd:c:C:hT:")) != -1) {
 		switch (c) {
 		case 'W':
 			flags |= FLAG_IGNORE_WHITESPACE;
@@ -606,12 +614,17 @@ int main(int argc, char *argv[])
 			block_size = atoi(optarg);
 			break;
 
+		case 'T':
+			threshold = atoi(optarg);
+			break;
+
 		case 'c':
 			if (!dbname) {
 				show_help();
 				exit(1);
 			}
-			score = spamsum_match_db(dbname, optarg);
+			score = spamsum_match_db(dbname, optarg, 
+						 threshold);
 			printf("%u\n", score);
 			exit(0);
 
@@ -622,7 +635,8 @@ int main(int argc, char *argv[])
 			}
 			score = spamsum_match_db(dbname, 
 						 spamsum_file(optarg, flags, 
-							      block_size));
+							      block_size), 
+						 threshold);
 			printf("%u\n", score);
 			exit(0);
 
