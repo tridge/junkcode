@@ -117,6 +117,8 @@ sub parse_element($$$)
 }
 
 
+my($first_struct) = 1;
+
 ####################################################
 # parse the elements of one structure
 sub parse_elements($$)
@@ -124,7 +126,12 @@ sub parse_elements($$)
 	my($name) = shift;
 	my($elements) = shift;
 
-	print "Parsing struct $name\n";
+	if ($first_struct) {
+		$first_struct = 0;
+		print "Parsing structs: $name";
+	} else {
+		print ", $name";
+	}
 
 	print CFILE "int gen_dump_struct_$name(struct parse_string *, const char *, unsigned);\n";
 	print CFILE "int gen_parse_struct_$name(char *, const char *);\n";
@@ -151,14 +158,21 @@ int gen_parse_struct_$name(char *ptr, const char *str) {
 ";
 }
 
+my($first_enum) = 1;
+
 ####################################################
 # parse out the enum declarations
 sub parse_enum_elements($$)
 {
 	my($name) = shift;
 	my($elements) = shift;
-	
-	print "Parsing enum $name\n";
+
+	if ($first_enum) {
+		$first_enum = 0;
+		print "Parsing enums: $name";
+	} else {
+		print ", $name";
+	}
 
 	print CFILE "static const struct enum_struct einfo_" . $name . "[] = {\n";
 
@@ -201,6 +215,34 @@ sub parse_enums($)
 			parse_enum_elements($name, $elements);
 		}
 	}
+
+	if (! $first_enum) {
+		print "\n";
+	}
+}
+
+####################################################
+# parse all the structures
+sub parse_structs($)
+{
+	my($data) = shift;
+
+	# parse into structures 
+	while ($data =~ /\nGENSTRUCT struct (\w*?) {\n(.*?)};(.*)/s) {
+		my($name) = $1;
+		my($elements) = $2;
+		$data = $3;
+		if (!defined($struct_done{$name})) {
+			$struct_done{$name} = 1;
+			parse_elements($name, $elements);
+		}
+	}
+
+	if (! $first_struct) {
+		print "\n";
+	} else {
+		print "No GENSTRUCT structures found?\n";
+	}
 }
 
 
@@ -217,17 +259,7 @@ sub parse_data($)
 	$data =~ s/\s*\n\s+/\n/sg;
 
 	parse_enums($data);
-
-	# parse into structures 
-	while ($data =~ /\nGENSTRUCT struct (\w*?) {\n(.*?)};(.*)/s) {
-		my($name) = $1;
-		my($elements) = $2;
-		$data = $3;
-		if (!defined($struct_done{$name})) {
-			$struct_done{$name} = 1;
-			parse_elements($name, $elements);
-		}
-	}
+	parse_structs($data);
 }
 
 
