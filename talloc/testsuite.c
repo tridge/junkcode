@@ -20,7 +20,9 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#ifdef _STANDALONE_
+#ifdef _SAMBA_BUILD_
+#include "includes.h"
+#else
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,28 +30,26 @@
 #include <sys/time.h>
 #include <time.h>
 #include "talloc.h"
-#else
-#include "includes.h"
 #endif
 
 /* the test suite can be built standalone, or as part of Samba */
-#ifdef _STANDALONE_
+#ifndef _SAMBA_BUILD_
 typedef enum {False=0,True=1} BOOL;
 
-static struct timeval tp1,tp2;
-
-static void start_timer(void)
+static struct timeval timeval_current(void)
 {
-	gettimeofday(&tp1,NULL);
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv;
 }
 
-static double end_timer(void)
+static double timeval_elapsed(struct timeval *tv)
 {
-	gettimeofday(&tp2,NULL);
-	return((tp2.tv_sec - tp1.tv_sec) + 
-	       (tp2.tv_usec - tp1.tv_usec)*1.0e-6);
+	struct timeval tv2 = timeval_current();
+	return (tv2.tv_sec - tv->tv_sec) + 
+	       (tv2.tv_usec - tv->tv_usec)*1.0e-6;
 }
-#endif /* _STANDALONE_ */
+#endif /* _SAMBA_BUILD_ */
 
 
 #define CHECK_SIZE(ptr, tsize) do { \
@@ -116,6 +116,11 @@ static BOOL test_ref1(void)
 	printf("Freeing r1\n");
 	talloc_free(r1);
 	talloc_report_full(NULL, stdout);
+
+	printf("Testing NULL\n");
+	if (talloc_reference(root, NULL)) {
+		return False;
+	}
 
 	CHECK_BLOCKS(root, 1);
 
@@ -328,9 +333,9 @@ static BOOL test_misc(void)
 
 	printf("TESTING MISCELLANEOUS\n");
 
-	root = talloc(NULL, 0);
+	root = talloc_new(NULL);
 
-	p1 = talloc(root, 0x7fffffff);
+	p1 = talloc_size(root, 0x7fffffff);
 	if (p1) {
 		printf("failed: large talloc allowed\n");
 		return False;
@@ -393,7 +398,7 @@ static BOOL test_misc(void)
 	talloc_report(root, stdout);
 
 
-	p2 = talloc_zero(p1, 20);
+	p2 = talloc_zero_size(p1, 20);
 	if (p2[19] != 0) {
 		printf("Failed to give zero memory\n");
 		return False;
@@ -427,13 +432,13 @@ static BOOL test_misc(void)
 	CHECK_BLOCKS(p1, 3);
 	talloc_free(p2);
 
-	d = talloc_array_p(p1, double, 0x20000000);
+	d = talloc_array(p1, double, 0x20000000);
 	if (d) {
 		printf("failed: integer overflow not detected\n");
 		return False;
 	}
 
-	d = talloc_realloc_p(p1, d, double, 0x20000000);
+	d = talloc_realloc(p1, d, double, 0x20000000);
 	if (d) {
 		printf("failed: integer overflow not detected\n");
 		return False;
@@ -478,7 +483,12 @@ static BOOL test_misc(void)
 	talloc_unlink(NULL, p2);
 	talloc_unlink(root, p1);
 
-	
+	/* Test that talloc_unlink is a no-op */
+
+	if (talloc_unlink(root, NULL) != -1) {
+		printf("failed: talloc_unlink(root, NULL) == -1\n");
+		return False;
+	}
 
 	talloc_report(root, stdout);
 	talloc_report(NULL, stdout);
@@ -505,49 +515,136 @@ static BOOL test_realloc(void)
 
 	printf("TESTING REALLOC\n");
 
-	root = talloc(NULL, 0);
+	root = talloc_new(NULL);
 
-	p1 = talloc(root, 10);
+	p1 = talloc_size(root, 10);
 	CHECK_SIZE(p1, 10);
 
-	p1 = talloc_realloc(NULL, p1, 20);
+	p1 = talloc_realloc_size(NULL, p1, 20);
 	CHECK_SIZE(p1, 20);
 
-	talloc(p1, 0);
+	talloc_new(p1);
 
-	p2 = talloc_realloc(p1, NULL, 30);
+	p2 = talloc_realloc_size(p1, NULL, 30);
 
-	talloc(p1, 0);
+	talloc_new(p1);
 
-	p2 = talloc_realloc(p1, p2, 40);
+	p2 = talloc_realloc_size(p1, p2, 40);
 
 	CHECK_SIZE(p2, 40);
 	CHECK_SIZE(root, 60);
 	CHECK_BLOCKS(p1, 4);
 
-	p1 = talloc_realloc(NULL, p1, 20);
+	p1 = talloc_realloc_size(NULL, p1, 20);
 	CHECK_SIZE(p1, 60);
 
 	talloc_increase_ref_count(p2);
-	if (talloc_realloc(NULL, p2, 5) != NULL) {
+	if (talloc_realloc_size(NULL, p2, 5) != NULL) {
 		printf("failed: talloc_realloc() on a referenced pointer should fail\n");
 		return False;
 	}
 	CHECK_BLOCKS(p1, 4);
 
-	talloc_realloc(NULL, p2, 0);
-	talloc_realloc(NULL, p2, 0);
+	talloc_realloc_size(NULL, p2, 0);
+	talloc_realloc_size(NULL, p2, 0);
 	CHECK_BLOCKS(p1, 3);
 
-	if (talloc_realloc(NULL, p1, 0x7fffffff) != NULL) {
+	if (talloc_realloc_size(NULL, p1, 0x7fffffff) != NULL) {
 		printf("failed: oversize talloc should fail\n");
 		return False;
 	}
 
-	talloc_realloc(NULL, p1, 0);
+	talloc_realloc_size(NULL, p1, 0);
 
 	CHECK_BLOCKS(root, 1);
 	CHECK_SIZE(root, 0);
+
+	talloc_free(root);
+
+	return True;
+}
+
+
+/*
+  test realloc with a child
+*/
+static BOOL test_realloc_child(void)
+{
+	void *root;
+	struct el1 {
+		int count;
+		struct el2 {
+			const char *name;
+		} **list, **list2, **list3;
+	} *el1;
+	struct el2 *el2;
+
+	printf("TESTING REALLOC WITH CHILD\n");
+
+	root = talloc_new(NULL);
+
+	el1 = talloc(root, struct el1);
+	el1->list = talloc(el1, struct el2 *);
+	el1->list[0] = talloc(el1->list, struct el2);
+	el1->list[0]->name = talloc_strdup(el1->list[0], "testing");
+
+	el1->list2 = talloc(el1, struct el2 *);
+	el1->list2[0] = talloc(el1->list2, struct el2);
+	el1->list2[0]->name = talloc_strdup(el1->list2[0], "testing2");
+
+	el1->list3 = talloc(el1, struct el2 *);
+	el1->list3[0] = talloc(el1->list3, struct el2);
+	el1->list3[0]->name = talloc_strdup(el1->list3[0], "testing2");
+	
+	el2 = talloc(el1->list, struct el2);
+	el2 = talloc(el1->list2, struct el2);
+	el2 = talloc(el1->list3, struct el2);
+
+	el1->list = talloc_realloc(el1, el1->list, struct el2 *, 100);
+	el1->list2 = talloc_realloc(el1, el1->list2, struct el2 *, 200);
+	el1->list3 = talloc_realloc(el1, el1->list3, struct el2 *, 300);
+
+	talloc_free(root);
+
+	return True;
+}
+
+
+/*
+  test type checking
+*/
+static BOOL test_type(void)
+{
+	void *root;
+	struct el1 {
+		int count;
+	};
+	struct el2 {
+		int count;
+	};
+	struct el1 *el1;
+
+	printf("TESTING talloc type checking\n");
+
+	root = talloc_new(NULL);
+
+	el1 = talloc(root, struct el1);
+
+	el1->count = 1;
+
+	if (talloc_get_type(el1, struct el1) != el1) {
+		printf("type check failed on el1\n");
+		return False;
+	}
+	if (talloc_get_type(el1, struct el2) != NULL) {
+		printf("type check failed on el1 with el2\n");
+		return False;
+	}
+	talloc_set_type(el1, struct el2);
+	if (talloc_get_type(el1, struct el2) != el1) {
+		printf("type set failed on el1 with el2\n");
+		return False;
+	}
 
 	talloc_free(root);
 
@@ -563,12 +660,12 @@ static BOOL test_steal(void)
 
 	printf("TESTING STEAL\n");
 
-	root = talloc(NULL, 0);
+	root = talloc_new(NULL);
 
-	p1 = talloc_array_p(root, char, 10);
+	p1 = talloc_array(root, char, 10);
 	CHECK_SIZE(p1, 10);
 
-	p2 = talloc_realloc_p(root, NULL, char, 20);
+	p2 = talloc_realloc(root, NULL, char, 20);
 	CHECK_SIZE(p1, 10);
 	CHECK_SIZE(root, 30);
 
@@ -601,23 +698,23 @@ static BOOL test_steal(void)
 
 	talloc_free(root);
 
-	p1 = talloc(NULL, 3);
-	CHECK_SIZE(p1, 3);
+	p1 = talloc_size(NULL, 3);
+	CHECK_SIZE(NULL, 3);
 	talloc_free(p1);
 
 	return True;
 }
 
 /*
-  test ldb alloc fn
+  test talloc_realloc_fn
 */
-static BOOL test_ldb(void)
+static BOOL test_realloc_fn(void)
 {
 	void *root, *p1;
 
-	printf("TESTING LDB\n");
+	printf("TESTING talloc_realloc_fn\n");
 
-	root = talloc(NULL, 0);
+	root = talloc_new(NULL);
 
 	p1 = talloc_realloc_fn(root, NULL, 10);
 	CHECK_BLOCKS(root, 2);
@@ -665,27 +762,28 @@ static BOOL test_unref_reparent(void)
 */
 static BOOL test_speed(void)
 {
-	void *ctx = talloc(NULL, 0);
+	void *ctx = talloc_new(NULL);
 	unsigned count;
+	struct timeval tv;
 
 	printf("MEASURING TALLOC VS MALLOC SPEED\n");
 
-	start_timer();
+	tv = timeval_current();
 	count = 0;
 	do {
 		void *p1, *p2, *p3;
-		p1 = talloc(ctx, count);
+		p1 = talloc_size(ctx, count);
 		p2 = talloc_strdup(p1, "foo bar");
-		p3 = talloc(p1, 300);
+		p3 = talloc_size(p1, 300);
 		talloc_free(p1);
 		count += 3;
-	} while (end_timer() < 5.0);
+	} while (timeval_elapsed(&tv) < 5.0);
 
-	printf("talloc: %.0f ops/sec\n", count/end_timer());
+	printf("talloc: %.0f ops/sec\n", count/timeval_elapsed(&tv));
 
 	talloc_free(ctx);
 
-	start_timer();
+	tv = timeval_current();
 	count = 0;
 	do {
 		void *p1, *p2, *p3;
@@ -696,15 +794,15 @@ static BOOL test_speed(void)
 		free(p2);
 		free(p3);
 		count += 3;
-	} while (end_timer() < 5.0);
+	} while (timeval_elapsed(&tv) < 5.0);
 
-	printf("malloc: %.0f ops/sec\n", count/end_timer());
+	printf("malloc: %.0f ops/sec\n", count/timeval_elapsed(&tv));
 
 	return True;	
 }
 
 
-BOOL torture_local_talloc(int dummy) 
+BOOL torture_local_talloc(void) 
 {
 	BOOL ret = True;
 
@@ -713,11 +811,13 @@ BOOL torture_local_talloc(int dummy)
 	ret &= test_ref3();
 	ret &= test_ref4();
 	ret &= test_unlink1();
+	ret &= test_misc();
 	ret &= test_realloc();
+	ret &= test_realloc_child();
 	ret &= test_steal();
 	ret &= test_unref_reparent();
-	ret &= test_ldb();
-	ret &= test_misc();
+	ret &= test_realloc_fn();
+	ret &= test_type();
 	if (ret) {
 		ret &= test_speed();
 	}
@@ -727,14 +827,13 @@ BOOL torture_local_talloc(int dummy)
 
 
 
-#ifdef _STANDALONE_
-int main(void)
+#ifndef _SAMBA_BUILD_
+ int main(void)
 {
-	if (!torture_local_talloc(0)) {
+	if (!torture_local_talloc()) {
 		printf("ERROR: TESTSUIE FAILED\n");
 		return -1;
 	}
 	return 0;
 }
 #endif
-

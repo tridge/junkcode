@@ -27,18 +27,21 @@
 */
 
 
-/*
-  if you need to build this outside of the Samba source tree then please define _STANDALONE_
-*/
-#ifdef _STANDALONE_
+#ifdef _SAMBA_BUILD_
+#include "includes.h"
+#else
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include "talloc.h"
-#else
-#include "includes.h"
 #endif
+
+/* use this to force every realloc to change the pointer, to stress test
+   code that might not cope */
+#define ALWAYS_REALLOC 0
+
 
 #define MAX_TALLOC_SIZE 0x10000000
 #define TALLOC_MAGIC 0xe814ec4f
@@ -52,7 +55,11 @@
 #endif
 
 #ifndef discard_const_p
-#define discard_const_p(type, ptr) ((type *)(ptr))
+#if defined(__intptr_t_defined) || defined(HAVE_INTPTR_T)
+# define discard_const_p(type, ptr) ((type *)((intptr_t)(ptr)))
+#else
+# define discard_const_p(type, ptr) ((type *)(ptr))
+#endif
 #endif
 
 /* this null_context is only used if talloc_enable_leak_report() or
@@ -60,6 +67,7 @@
    NULL
 */
 static const void *null_context;
+static void *cleanup_context;
 
 
 struct talloc_reference_handle {
@@ -130,6 +138,12 @@ static struct talloc_chunk *talloc_parent_chunk(const void *ptr)
 	struct talloc_chunk *tc = talloc_chunk_from_ptr(ptr);
 	while (tc->prev) tc=tc->prev;
 	return tc->parent;
+}
+
+void *talloc_parent(const void *ptr)
+{
+	struct talloc_chunk *tc = talloc_parent_chunk(ptr);
+	return (void *)(tc+1);
 }
 
 /* 
@@ -222,9 +236,13 @@ static int talloc_reference_destructor(void *ptr)
 */
 void *talloc_reference(const void *context, const void *ptr)
 {
-	struct talloc_chunk *tc = talloc_chunk_from_ptr(ptr);
+	struct talloc_chunk *tc;
 	struct talloc_reference_handle *handle;
+	if (ptr == NULL) return NULL;
+
+	tc = talloc_chunk_from_ptr(ptr);
 	handle = talloc_named_const(context, sizeof(*handle), TALLOC_MAGIC_REFERENCE);
+
 	if (handle == NULL) return NULL;
 
 	/* note that we hang the destructor off the handle, not the
@@ -272,6 +290,10 @@ int talloc_unlink(const void *context, void *ptr)
 {
 	struct talloc_chunk *tc_p, *new_p;
 	void *new_parent;
+
+	if (ptr == NULL) {
+		return -1;
+	}
 
 	if (context == NULL) {
 		context = null_context;
@@ -402,6 +424,23 @@ const char *talloc_get_name(const void *ptr)
 	return "UNNAMED";
 }
 
+
+/*
+  check if a pointer has the given name. If it does, return the pointer,
+  otherwise return NULL
+*/
+void *talloc_check_name(const void *ptr, const char *name)
+{
+	const char *pname;
+	if (ptr == NULL) return NULL;
+	pname = talloc_get_name(ptr);
+	if (pname == name || strcmp(pname, name) == 0) {
+		return discard_const_p(void, ptr);
+	}
+	return NULL;
+}
+
+
 /*
   this is for compatibility with older versions of talloc
 */
@@ -530,7 +569,15 @@ void *_talloc_realloc(const void *context, void *ptr, size_t size, const char *n
 	/* by resetting magic we catch users of the old memory */
 	tc->magic = TALLOC_MAGIC_FREE;
 
+#if ALWAYS_REALLOC
+	new_ptr = malloc(size + sizeof(*tc));
+	if (new_ptr) {
+		memcpy(new_ptr, tc, tc->size + sizeof(*tc));
+		free(tc);
+	}
+#else
 	new_ptr = realloc(tc, size + sizeof(*tc));
+#endif
 	if (!new_ptr) {	
 		tc->magic = TALLOC_MAGIC; 
 		return NULL; 
@@ -540,6 +587,9 @@ void *_talloc_realloc(const void *context, void *ptr, size_t size, const char *n
 	tc->magic = TALLOC_MAGIC;
 	if (tc->parent) {
 		tc->parent->child = new_ptr;
+	}
+	if (tc->child) {
+		tc->child->parent = new_ptr;
 	}
 
 	if (tc->prev) {
@@ -668,7 +718,7 @@ static int talloc_reference_count(const void *ptr)
 /*
   report on memory usage by all children of a pointer, giving a full tree view
 */
-static void talloc_report_depth(const void *ptr, FILE *f, int depth)
+void talloc_report_depth(const void *ptr, FILE *f, int depth)
 {
 	struct talloc_chunk *c, *tc = talloc_chunk_from_ptr(ptr);
 
@@ -830,15 +880,18 @@ char *talloc_strndup(const void *t, const char *p, size_t n)
 
 	for (len=0; p[len] && len<n; len++) ;
 
-	ret = talloc(t, len + 1);
+	ret = _talloc(t, len + 1);
 	if (!ret) { return NULL; }
 	memcpy(ret, p, len);
 	ret[len] = 0;
+	talloc_set_name_const(ret, ret);
 	return ret;
 }
 
 #ifndef VA_COPY
 #ifdef HAVE_VA_COPY
+#define VA_COPY(dest, src) va_copy(dest, src)
+#elif defined(HAVE___VA_COPY)
 #define VA_COPY(dest, src) __va_copy(dest, src)
 #else
 #define VA_COPY(dest, src) (dest) = (src)
@@ -855,7 +908,7 @@ char *talloc_vasprintf(const void *t, const char *fmt, va_list ap)
 
 	len = vsnprintf(NULL, 0, fmt, ap2);
 
-	ret = talloc(t, len+1);
+	ret = _talloc(t, len+1);
 	if (ret) {
 		VA_COPY(ap2, ap);
 		vsnprintf(ret, len+1, fmt, ap2);
@@ -904,7 +957,7 @@ static char *talloc_vasprintf_append(char *s, const char *fmt, va_list ap)
 	}
 	len = vsnprintf(NULL, 0, fmt, ap2);
 
-	s = talloc_realloc(NULL, s, s_len + len+1);
+	s = talloc_realloc(NULL, s, char, s_len + len+1);
 	if (!s) return NULL;
 
 	VA_COPY(ap2, ap);
@@ -933,7 +986,7 @@ char *talloc_asprintf_append(char *s, const char *fmt, ...)
 /*
   alloc an array, checking for integer overflow in the array size
 */
-void *talloc_array(const void *ctx, size_t el_size, unsigned count, const char *name)
+void *_talloc_array(const void *ctx, size_t el_size, unsigned count, const char *name)
 {
 	if (count >= MAX_TALLOC_SIZE/el_size) {
 		return NULL;
@@ -944,7 +997,7 @@ void *talloc_array(const void *ctx, size_t el_size, unsigned count, const char *
 /*
   alloc an zero array, checking for integer overflow in the array size
 */
-void *talloc_zero_array(const void *ctx, size_t el_size, unsigned count, const char *name)
+void *_talloc_zero_array(const void *ctx, size_t el_size, unsigned count, const char *name)
 {
 	if (count >= MAX_TALLOC_SIZE/el_size) {
 		return NULL;
@@ -956,16 +1009,12 @@ void *talloc_zero_array(const void *ctx, size_t el_size, unsigned count, const c
 /*
   realloc an array, checking for integer overflow in the array size
 */
-void *talloc_realloc_array(const void *ctx, void *ptr, size_t el_size, unsigned count, const char *name)
+void *_talloc_realloc_array(const void *ctx, void *ptr, size_t el_size, unsigned count, const char *name)
 {
 	if (count >= MAX_TALLOC_SIZE/el_size) {
 		return NULL;
 	}
-	ptr = talloc_realloc(ctx, ptr, el_size * count);
-	if (ptr) {
-		talloc_set_name_const(ptr, name);
-	}
-	return ptr;
+	return _talloc_realloc(ctx, ptr, el_size * count, name);
 }
 
 /*
@@ -977,3 +1026,25 @@ void *talloc_realloc_fn(const void *context, void *ptr, size_t size)
 {
 	return _talloc_realloc(context, ptr, size, NULL);
 }
+
+
+static void talloc_autofree(void)
+{
+	talloc_free(cleanup_context);
+	cleanup_context = NULL;
+}
+
+/*
+  return a context which will be auto-freed on exit
+  this is useful for reducing the noise in leak reports
+*/
+void *talloc_autofree_context(void)
+{
+	if (cleanup_context == NULL) {
+		cleanup_context = talloc_named_const(NULL, 0, "autofree_context");
+		atexit(talloc_autofree);
+	}
+	return cleanup_context;
+}
+
+
