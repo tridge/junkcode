@@ -30,6 +30,10 @@
 
 #define ROLLING_WINDOW 7
 
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
+
 typedef unsigned u32;
 typedef unsigned char uchar;
 
@@ -64,6 +68,15 @@ static inline u32 roll_hash(uchar c)
 	roll_state.h3 ^= c;
 
 	return roll_state.h1 + roll_state.h2 + roll_state.h3;
+}
+
+/*
+  reset the state of the rolling hash and return the initial rolling hash value
+*/
+static u32 roll_reset(void)
+{	
+	memset(&roll_state, 0, sizeof(roll_state));
+	return 0;
 }
 
 /* a simple non-rolling hash, based on the FNV hash */
@@ -111,8 +124,7 @@ again:
 
 	j = 0;
 	h2 = HASH_INIT;
-	h = 0;
-	memset(&roll_state, 0, sizeof(roll_state));
+	h = roll_reset();
 
 	for (i=0; i<length; i++) {
 		if (ignore_char(in[i])) continue;
@@ -127,13 +139,16 @@ again:
 
 		if (h % block_size == (block_size-1)) {
 			p[j] = b64[h2 % 64];
-			memset(&roll_state, 0, sizeof(roll_state));
-			h = 0;
+			h = roll_reset();
 			if (j < SPAMSUM_LENGTH-1) {
 				h2 = HASH_INIT;
 				j++;
 			}
 		}
+	}
+
+	if (h != 0) {
+		p[j] = b64[h2 % 64];
 	}
 
 	/* our blocksize guess may have been way off - repeat if necessary */
@@ -146,46 +161,164 @@ again:
 }
 
 
+/* 
+   we only accept a match if we have at least one common substring in
+   the signature of length ROLLING_WINDOW. This dramatically drops the
+   false positive rate for low score thresholds while having
+   negligable affect on the rate of spam detection.
+
+   return 1 if the two strings do have a common substring, 0 otherwise
+*/
+static int has_common_substring(const char *s1, const char *s2)
+{
+	int i, j;
+	int num_hashes;
+	u32 hashes[SPAMSUM_LENGTH];
+
+	/* there are many possible algorithms for common substring
+	   detection. In this case I am re-using the rolling hash code
+	   to act as a filter for possible substring matches */
+
+	roll_reset();
+	memset(hashes, 0, sizeof(hashes));
+
+	/* first compute the windowed rolling hash at each offset in
+	   the first string */
+	for (i=0;s1[i];i++) {
+		hashes[i] = roll_hash((uchar)s1[i]);
+	}
+	num_hashes = i;
+
+	roll_reset();
+
+	/* now for each offset in the second string compute the
+	   rolling hash and compare it to all of the rolling hashes
+	   for the first string. If one matches then we have a
+	   candidate substring match. We then confirm that match with
+	   a direct string comparison */
+	for (i=0;s2[i];i++) {
+		u32 h = roll_hash((uchar)s2[i]);
+		for (j=0;j<num_hashes;j++) {
+			if (hashes[j] != 0 && hashes[j] == h) {
+				/* we have a potential match - confirm it */
+				if (strlen(s2+i) >= ROLLING_WINDOW && 
+				    strncmp(s2+i, s1+j, ROLLING_WINDOW) == 0) {
+					return 1;
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+/*
+  eliminate sequences of longer than 3 identical characters. These
+  sequences contain very little information so they tend to just bias
+  the result unfairly
+*/
+static char *eliminate_sequences(const char *str)
+{
+	char *ret;
+	int i, j, len;
+
+	ret = strdup(str);
+	if (!ret) return NULL;
+
+	len = strlen(str);
+
+	for (i=j=3;i<len;i++) {
+		if (str[i] != str[i-1] ||
+		    str[i] != str[i-2] ||
+		    str[i] != str[i-3]) {
+			ret[j++] = str[i];
+		}
+	}
+
+	ret[j] = 0;
+
+	return ret;
+}
+
 /*
   given two spamsum strings return a value indicating the degree to which they match.
 */
-u32 spamsum_match(const char *s1, const char *s2)
+u32 spamsum_match(const char *str1, const char *str2)
 {
 	u32 block_size1, block_size2;
 	u32 len1, len2;
-	u32 score = 0;
+	u32 score0, score = 0;
+	char *s1, *s2;
 	int edit_distn(const char *from, int from_len, const char *to, int to_len);
 
-	if (sscanf(s1, "%u:", &block_size1) != 1 ||
-	    sscanf(s2, "%u:", &block_size2) != 1 ||
+	if (sscanf(str1, "%u:", &block_size1) != 1 ||
+	    sscanf(str2, "%u:", &block_size2) != 1 ||
 	    block_size1 != block_size2) {
 		/* if the blocksizes don't match then we are comparing
 		   apples to oranges ... */
 		return 0;
 	}
 
-	s1 = strchr(s1, ':') + 1;
-	s2 = strchr(s2, ':') + 1;
+	str1 = strchr(str1, ':') + 1;
+	str2 = strchr(str2, ':') + 1;
+
+	/* there is very little information content is sequences of
+	   the same character like 'LLLLL'. Eliminate any sequences
+	   longer than 3. This is especially important when combined
+	   with the has_common_substring() test below. */
+	s1 = eliminate_sequences(str1);
+	s2 = eliminate_sequences(str2);
+
+	if (!s1 || !s2) return 0;
 
 	len1 = strlen(s1);
 	len2 = strlen(s2);
 
+	if (len1 > SPAMSUM_LENGTH || len2 > SPAMSUM_LENGTH) {
+		/* not a real spamsum signature? */
+		free(s1); free(s2);
+		return 0;
+	}
+
+	/* the two strings must have a common substring of length
+	   ROLLING_WINDOW to be candidates */
+	if (has_common_substring(s1, s2) == 0) {
+		free(s1); free(s2);
+		return 0;
+	}
+
 	/* compute the edit distance between the two strings. The edit distance gives
 	   us a pretty good idea of how closely related the two strings are */
-	score = edit_distn(s1, len1, s2, len2);
+	score0 = score = edit_distn(s1, len1, s2, len2);
+
+	/* we don't need these any more */
+	free(s1); free(s2);
+
+	/* scale the edit distance by the lengths of the two
+	   strings. This changes the score to be a measure of the
+	   proportion of the message that has changed rather than an
+	   absolute quantity. It also copes with the variability of
+	   the string lengths. */
+	score = (score * SPAMSUM_LENGTH) / (len1 + len2);
+
+	/* at this stage the score occurs roughly on a 0-64 scale,
+	 * with 0 being a good match and 64 being a complete
+	 * mismatch */
+
+	/* rescale to a 0-100 scale (friendlier to humans) */
+	score = (100 * score) / 64;
+
+	/* it is possible to get a score above 100 here, but it is a really terrible match */
 	if (score >= 100) return 0;
 
-	/* now re-scale on a 0-100 scale, using a square to weight
-	   towards high degrees of matches */
+	/* now re-scale on a 0-100 scale with 0 being a poor match and
+	   100 being a excellent match. */
 	score = 100 - score;
-	score = score * score / 100;
 
 	/* when the blocksize is small we don't want to exaggerate the match size */
-	if (score > block_size1/MIN_BLOCKSIZE * len1) {
-		score = block_size1/MIN_BLOCKSIZE * len1;
-	}
-	if (score > block_size1/MIN_BLOCKSIZE * len2) {
-		score = block_size1/MIN_BLOCKSIZE * len2;
+	if (score > block_size1/MIN_BLOCKSIZE * MIN(len1, len2)) {
+		score = block_size1/MIN_BLOCKSIZE * MIN(len1, len2);
 	}
 
 	return score;
@@ -203,6 +336,8 @@ u32 spamsum_match_db(const char *fname, const char *sum)
 	f = fopen(fname, "r");
 	if (!f) return 0;
 
+	/* on each line of the database we compute the spamsum match
+	   score. We then pick the best score */
 	while (fgets(line, sizeof(line)-1, f)) {
 		u32 score;
 		int len;
