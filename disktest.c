@@ -1,11 +1,13 @@
+#define _FILE_OFFSET_BITS 64
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <time.h>
 #include <sys/ioctl.h>
 #include <asm/unistd.h>
+#include <asm/fcntl.h>
 #include <sys/mount.h>
 #include <sys/time.h>
 
@@ -20,6 +22,19 @@ typedef unsigned long long uint64;
 
 static int blocks;
 static int block_size = 1024;
+static unsigned read_prob = 50;
+static unsigned num_reads, num_writes, num_fails;
+static unsigned rep_time = 10;
+
+void bit_set(unsigned char *bm, uint64 i)
+{
+	bm[i/8] |= (1<<(i%8));
+}
+
+unsigned bit_query(unsigned char *bm, uint64 i)
+{
+	return  (bm[i/8] & (1<<(i%8))) ? 1 : 0;
+}
 
 static void do_seek(int fd, uint64 ofs)
 {
@@ -38,37 +53,42 @@ static void do_seek(int fd, uint64 ofs)
 	}
 }
 
-static void init_buf(unsigned *buf, int seed)
+static void init_buf(unsigned *buf, unsigned bnum)
 {
-	int i;
-	srandom(seed);
-	for (i=0;i<block_size/4;i++) buf[i] = random();
+	unsigned i;
+	srandom(bnum);
+	buf[0] = bnum;
+	for (i=1;i<block_size/4;i++) buf[i] = random();
 }
 
-static void write_block(int fd, unsigned *buf, int i)
+static void write_block(int fd, unsigned *buf, uint64 i)
 {
 	do_seek(fd, i*(uint64)block_size);
 	if (write(fd, buf, block_size) != block_size) {
-		fprintf(stderr,"write failed on block %d\n", i);
+		fprintf(stderr,"write failed on block %u\n", (unsigned)i);
 		exit(1);
 	}
 }
 
-static void check_block(int fd, unsigned *buf, int i)
+static void check_block(int fd, unsigned *buf, uint64 i)
 {
 	unsigned buf2[block_size/4];
 
 	do_seek(fd, i*(uint64)block_size);
 	if (read(fd, buf2, block_size) != block_size) {
-		fprintf(stderr,"read failed on block %d\n", i);
+		fprintf(stderr,"read failed on block %u\n", (unsigned)i);
 		exit(1);
 	}
 	if (memcmp(buf, buf2, block_size) != 0) {
-		int j, count=0;
+		int j, count=0, first = -1;
 		for (j=0; j<block_size/4; j++) {
-			if (buf[j] != buf2[j]) count++;
+			if (buf[j] != buf2[j]) {
+				count++;
+				if (first == -1) first = j;
+			}
 		}
-		printf("compare failed on block %d (%d words differ)\n", i, count);
+		printf("compare failed on block %u (%d words differ) 1st error at word %u\n", 
+		       (unsigned)i, count, first);
 		fd = open("buf1.dat", O_WRONLY|O_CREAT|O_TRUNC, 0644);
 		write(fd, buf, block_size);
 		close(fd);
@@ -77,20 +97,41 @@ static void check_block(int fd, unsigned *buf, int i)
 		close(fd);
 		printf("Wrote good data to buf1.dat\n");
 		printf("Wrote bad data to buf2.dat\n");
-		exit(1);
+		num_fails++;
 	}
 }
+
+
+static void try_block(int fd, uint64 i, unsigned char *bitmap)
+{
+	unsigned *buf;
+	buf = (unsigned *)memalign(block_size, block_size);
+
+	if (!bit_query(bitmap, i) || (random()%100 > read_prob)) {
+		bit_set(bitmap, i);
+		init_buf(buf, i);
+		write_block(fd, buf, i);
+		num_writes++;
+	} else {
+		init_buf(buf, i);
+		check_block(fd, buf, i);
+		num_reads++;
+	}
+
+	free(buf);
+}
+
 
 static void disk_test(char *dev)
 {
 	int fd;
-	int i, count=0;
-	int num_reads = 0;
-	int num_writes = 0;
-	unsigned *seeds;
-	unsigned *buf;
+	int count=0, count2;
+	unsigned char *bitmap;
+	uint64 i, j;
+	time_t t1, t2;
+	unsigned blk;
 
-	fd = open(dev, O_RDWR|O_LARGEFILE);
+	fd = open(dev, O_RDWR|O_SYNC|O_LARGEFILE);
 	if (fd == -1) {
 		perror(dev);
 		return;
@@ -105,37 +146,43 @@ static void disk_test(char *dev)
 		blocks /= (block_size/512);
 	}
 
-	printf("%s is %d blocks long\n", dev, blocks);
-
-	seeds = calloc(blocks, sizeof(unsigned));
-	if (!seeds) {
-		fprintf(stderr,"malloc of seeds failed\n");
+	bitmap = calloc((blocks+7)/8, 1);
+	if (!bitmap) {
+		fprintf(stderr,"malloc of bitmap failed\n");
 		exit(1);
 	}
 
-	buf = (unsigned *)memalign(block_size, block_size);
-
 	srandom(time(NULL));
+
+	printf("starting disktest on %s with %u blocks of size %u\n", 
+	       dev, blocks, block_size);
+	printf("using read probability of %u%%\n", read_prob);
+
+	t1 = time(NULL);
+	count2 = 0;
+	blk = 0;
 
 	while (1) {
 		i = ((unsigned)random()) % blocks;
 
-		if (seeds[i] == 0 || (random() & 2)) {
-			seeds[i] = random();
-			init_buf(buf, seeds[i]);
-			write_block(fd, buf, i);
-			num_writes++;
-		} else {
-			init_buf(buf, seeds[i]);
-			check_block(fd, buf, i);
-			num_reads++;
-		}
-		count++;
-		if (count % 500 == 0) {
-			printf("%d blocks (%d reads, %d writes)\n", 
-			       count, num_reads, num_writes);
+		try_block(fd, blk % blocks, bitmap);
+		try_block(fd, i, bitmap);
+
+		blk++;
+		count += 2;
+		count2 += 2;
+
+		t2 = time(NULL);
+
+		if (t2 - t1 >= rep_time) {
+			printf("%s %d blocks (%d reads, %d writes, %d fails, %.2fMB/sec)\n",
+			       dev, count, num_reads, num_writes, num_fails, 
+			       1.0e-6*(count2*block_size)/(t2-t1));
 			srandom(random() | time(NULL));
+			t1 = t2;
+			count2=0;
 		}
+		fflush(stdout);
 	}
 
 	close(fd);
@@ -151,6 +198,8 @@ usage: disktest [options] <device>
 options: 
          -B <blocks>           set block count
          -s <blk_size>         set block size
+         -R <value>            set read probability (1-100)
+         -t <value>            set report time in seconds
 ");
 	exit(1);
 }
@@ -162,13 +211,19 @@ int main(int argc, char *argv[])
 	int opt;
 	extern char *optarg;
 
-	while ((opt = getopt(argc, argv, "B:s:h")) != EOF) {
+	while ((opt = getopt(argc, argv, "B:s:R:t:h")) != EOF) {
 		switch (opt) {
 		case 'B':
 			blocks = atoi(optarg);
 			break;
 		case 's':
 			block_size = atoi(optarg);
+			break;
+		case 'R':
+			read_prob = atoi(optarg);
+			break;
+		case 't':
+			rep_time = atoi(optarg);
 			break;
 		default:
 			usage();
@@ -182,6 +237,8 @@ int main(int argc, char *argv[])
 	if (argc < 1) usage();
 
 	dev = argv[0];
+
+	setlinebuf(stdout);
 
 	disk_test(dev);
 
