@@ -189,14 +189,17 @@ void line_handler(char *line)
 static void setup_terminal(int fd)
 {
 	struct termios term;
-	tcgetattr(fd, &term);
-	
-	term.c_lflag &= ~(ICANON|ISIG|ECHO|ECHOCTL| 
-			  ECHOE|ECHOK|ECHOKE|ECHONL| 
-			  ECHOPRT);
-	term.c_iflag |= IGNBRK;
+
+	/* fetch the old settings */
+	if (tcgetattr(fd, &term) != 0) return;
+
 	term.c_cc[VMIN] = 1;
 	term.c_cc[VTIME] = 0;
+	/* we don't want things like echo or other processing */
+	term.c_iflag |= IGNBRK;
+	term.c_lflag &= ~(ICANON|ISIG|ECHO|ECHONL|ECHOCTL| 
+			  ECHOE|ECHOK|ECHOKE| 
+			  ECHOPRT);
 	tcsetattr(fd, TCSANOW, &term);
 }
 
@@ -216,6 +219,8 @@ int main(int argc, char *argv[])
 	/* load the completions list */
 	load_completions(argv[1]);
 
+	/* by using forkpty we give a true pty to the child, which means it should 
+	   behave the same as if run from a terminal */
 	pid = forkpty(&child_fd, NULL, NULL, NULL);
 
 	if (pid == (pid_t)-1) {
@@ -223,6 +228,7 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+	/* the child just sets up its pty then executes the command */
 	if (pid == 0) {
 		setup_terminal(0);
 		execvp(argv[1], argv+1);
@@ -278,6 +284,7 @@ int main(int argc, char *argv[])
 				p++;
 			}
 
+			/* tell readline about the new prompt */
 			free(prompt);
 			prompt = strdup(p);
 
