@@ -1,7 +1,7 @@
 K5INST=/usr/kerberos
 
 CFLAGS=-Wall -g -I$(LDAP)/include -I$(K5INST)/include 
-LIBS = -L$(K5INST)/lib -lkrb5 -lk5crypto -lresolv -lcom_err -lldap 
+LIBS = -L$(K5INST)/lib -lkrb5 -lk5crypto -lresolv -lcom_err -lldap -llber
 
 all: netjoin dumphost
 

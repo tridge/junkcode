@@ -10,6 +10,6 @@ int uname(struct utsname *buf)
 		uname_orig = dlsym(-1, "uname");
 	}
 	uname_orig(buf);
-	strcpy(buf->release, "2.2.16");
+	strcpy(buf->nodename, "jeremy");
 	return 0;
 }

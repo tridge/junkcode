@@ -5,7 +5,7 @@ typedef unsigned short smb_ucs2_t;
 
 #define CVAL(buf,pos) (((unsigned char *)(buf))[pos])
 
-static int ucs2_utf8_encode(unsigned char c[3], smb_ucs2_t uc)
+static int utf8_encode(unsigned char c[3], smb_ucs2_t uc)
 {
 	unsigned char uc1, uc2;
 	uc1 = CVAL(&uc, 0);
@@ -35,7 +35,7 @@ static int ucs2_utf8_encode(unsigned char c[3], smb_ucs2_t uc)
 	return 1;
 }
 
-static int ucs2_utf8_decode(unsigned char c[3], smb_ucs2_t *uc)
+static int utf8_decode(unsigned char c[3], smb_ucs2_t *uc)
 {
 	*uc = 0;
 
@@ -81,14 +81,9 @@ int main(int argc, char *argv[])
 		outlen = 10;
 		iconv(cd, &p, &inlen, &q, &outlen);
 		len = strlen(utf8);
+		len2 = utf8_encode(foo, i);
 
-		len2 = ucs2_encode(foo, i);
-
-		if (ucs2_decode(utf8) != i) {
-			printf("%04x %04x\n", i, ucs2_decode(utf8));
-		}
-
-		if (len != len2 || strncmp(foo, utf8, len) != 0) {
+		if (1 || len != len2 || strncmp(foo, utf8, len) != 0) {
 			printf("%02x: ", i);
 			for (j=0;j<len;j++) {
 				printf("%02x ", utf8[j]);

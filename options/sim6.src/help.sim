@@ -1,0 +1,147 @@
+
+COMMAND:TRADE
+TRADE allows the user to perform Option & Stock
+transactions. The user can buy or sell CALLS,
+PUTS and SHARES at the currently listed prices.
+                      -
+All initial transactions are placed in the
+PENDING column and the user can see the effect
+of these trades on his current position by
+entering the GRAPH command.
+                      -
+PENDING transactions can be accepted into the
+current portfolio by entering the NEXT cammand
+of the main menu. All associated costs are
+automatically updated.
+END-OF-HELP
+
+COMMAND:NEXT
+The NEXT command provides the means of advancing
+time. The user can choose one of three rates of
+time.
+           HALF-HOUR, DAY, WEEK
+To advance foreward in time by 2-Hours simply
+select HALF-HOUR consecutively four times.
+                      -
+After any selection, all PENDING contracts are
+accepted and new market prices are displayed.
+END-OF-HELP
+
+COMMAND:GRAPH
+GRAPH performs graphical output of the past 200
+days of Stock price HISTORY and also the follow-
+ing position paramters:
+        VALUE,DELTA,GAMMA,DECAY & EXPRY
+                      -
+Positions can be plotted as functions of Stock-
+Price or Volatility.
+The user can request a Zoom parameter for more
+detailed views.
+END-OF-HELP
+
+COMMAND:UTILITIES
+The UTILITIES command allows the user to:
+
+     1.  Change the screen color formats, and
+
+     2.  Execute another program and then
+         return to OPTION-MARKET at the point
+         of exit.
+END-OF-HELP
+
+COMMAND:STATUS
+The STATUS command allows the user to select
+different methods of volatility calculation, and
+also specify accounting procedures.
+END-OF-HELP
+
+COMMAND:COMPANY
+The COMPANY command allows the user to SAVE the
+current game, RECALL a previously saved game or
+INITIALISE a new game.
+END-OF-HELP
+
+COMMAND:QUIT
+The QUIT command exits the current menu.If the
+current menu is a sub-menu control is passed to
+the MAIN MENU.
+                     -
+If you QUIT from the MAIN MENU you will be
+requested to SAVE the current game. After your
+answer control is passed to DOS. All SAVED games
+will still be intact on your return to OPTION-
+MARKET.
+END-OF-HELP
+
+COMMAND:CALL
+Select the CALL command to trade any of the
+listed CALL options.
+                     -
+On selection CALL requests:
+1. Code:    ... Enter:  the Code No. on the left
+                         side of the CAll-Sheet.
+2. No. Lots:... Enter:   2 to BUY  2000 Calls;
+                        -3 to SELL 3000 Calls.
+END-OF-HELP
+
+COMMAND:PUT
+Select the PUT command to trade any of the
+listed PUT options.
+                     -
+On selection PUT requests:
+1. Code:    ... Enter:  the Code No. on the left
+                        side of the PUT-Sheet.
+2. No. Lots:... Enter:   2 to BUY  2000 Puts;
+                         -3 to SELL 3000 Puts.
+END-OF-HELP
+
+COMMAND:STOCK
+Select the STOCK command to Buy or Sell shares
+in the underlying option security.
+                     -
+On selection STOCK requests:
+No. of Shares:... Enter: 500 to Buy  500 Shares;
+                        -750 to Sell 750 Shares;
+END-OF-HELP
+
+COMMAND:RECALL
+This command displays all saved games by
+specifying the Company name.
+                     -
+The user can then RECALL any of these saved
+games. The point of recall is precisely the
+position at which the game was saved.
+END-OF-HELP
+
+COMMAND:INITIALISE
+This command allows the user to start a new game
+by entering the following information:
+   1: Company Name ... Max of 12 characters;
+   2: Start Price  ... Between 50c - $10,000.
+The computer will then generate random data for
+this company.
+END-OF-HELP
+
+COMMAND:HISTORY
+The HISTORY graph displays the past 200 days of
+stock-prices or volatility. The user can toggle
+between the two graphs by simply pressing the
+'X' key.
+END-OF-HELP
+
+COMMAND:VALUE
+The VALUE graph displays the current total
+position value of the users game as well as the
+position if all PENDING contracts were added on.
+                     -
+The VALUE graph can be displayed as a function
+of either stock-price or volatility by toggling
+with the 'X' key.
+                     -
+In addition the user can set a Zoom parameter by
+simply pressing a number from 1-9.
+END-OF-HELP
+
+COMMAND:ELSE
+              No Information.
+END-OF-HELP

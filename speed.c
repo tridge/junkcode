@@ -74,8 +74,8 @@ static void memcpy_test(int size)
 {
   int i;
   int loops = 5.0e8 / size;
-  char *p1 = (char *)malloc(size);
-  char *p2 = (char *)malloc(size);
+  char *p1 = (char *)malloc(size+100);
+  char *p2 = (char *)malloc(size+100);
   double t;
 
   memset(p2,42,size);
@@ -83,8 +83,8 @@ static void memcpy_test(int size)
 
   for (i=0;i<loops;i++)
     {
-      memcpy(p1,p2,size);
-      memcpy(p2,p1,size);
+      memcpy(p1+16,p2,size);
+      memcpy(p2+16,p1,size);
     }
 
   t = end_timer();
