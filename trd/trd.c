@@ -17,6 +17,7 @@
 #include <linux/module.h>
 #include <linux/bootmem.h>
 #include <asm/setup.h>
+#include <asm/uaccess.h>
 
 #define TRD_BLOCK_SIZE 1024
 #define TRD_SIZE (trd_size<<10)
@@ -82,10 +83,26 @@ static int trd_release(struct inode *inode, struct file *filp)
 	return 0;     
 }
 
+static int trd_ioctl(struct inode *inode, struct file *file,
+		     unsigned int cmd, unsigned long arg)
+{
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+	if (!inode)
+		return -EINVAL;
+
+	switch (cmd) {
+	case BLKGETSIZE:
+		return put_user(TRD_SIZE >> 9, (long *) arg);
+	}
+	return -EINVAL;
+}
+
 static struct block_device_operations trd_fops =
 {
 	open:		trd_open,
 	release:	trd_release,
+	ioctl:		trd_ioctl,
 };
 
 static int trd_init(void)
