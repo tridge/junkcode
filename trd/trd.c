@@ -20,7 +20,7 @@
 #include <asm/uaccess.h>
 
 #define TRD_BLOCK_SIZE 1024
-#define TRD_CHUNK_SIZE (32*TRD_BLOCK_SIZE)
+#define TRD_CHUNK_SIZE (1024*TRD_BLOCK_SIZE)
 #define TRD_SIZE (trd_size<<10)
 
 static int trd_blocksizes[1] = {TRD_BLOCK_SIZE};
