@@ -17,7 +17,31 @@
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
+#include <signal.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <pthread.h>
+
+static void start_timer(void);
+
+/* this shared memory area is used to synchronise the startup times of
+   the tasks */
+static volatile int *startup_ptr;
+static int wait_fd;
+
+/* wait for the startup pointer */
+static void startup_wait(int id)
+{
+	fd_set s;
+	startup_ptr[id] = 1;
+
+	/* we wait till the wait_fd is readable - this gives
+	   a nice in-kernel barrier wait */
+	do {
+		FD_ZERO(&s);
+		FD_SET(wait_fd, &s);
+	} while (select(wait_fd+1, &s, NULL, NULL, NULL) != 1);
+}
 
 /*
   create a thread with initial function fn(private)
@@ -32,6 +56,11 @@ static pthread_t thread_start(void *(*fn)(int), int id)
 	pthread_attr_setdetachstate(&thread_attr, 0);
 	rc = pthread_create(&thread_id, &thread_attr, (thread_fn_t)fn, (void *)id);
 	pthread_attr_destroy(&thread_attr);
+
+	if (rc != 0) {
+		fprintf(stderr,"Thread create failed for id %d\n", id);
+		exit(1);
+	}
 
 	return thread_id;
 }
@@ -51,6 +80,10 @@ static pid_t proc_start(void *(*fn)(int), int id)
 	pid_t pid;
 
 	pid = fork();
+	if (pid == (pid_t)-1) {
+		fprintf(stderr,"Fork failed for id %d\n", id);
+		return pid;
+	}
 	if (pid == 0) {
 		fn(id);
 		exit(0);
@@ -73,10 +106,30 @@ static void run_threads(int nthreads, void *(*fn)(int ))
 {
 	int i;
 	pthread_t *ids = malloc(sizeof(*ids) * nthreads);
+	int fd[2];
+	char c = 0;
+
+	if (pipe(fd) != 0) {
+		fprintf(stderr,"Pipe failed\n");
+		exit(1);
+	}
+	wait_fd = fd[0];
+
+	for (i=0;i<nthreads;i++) {
+		startup_ptr[i] = 0;
+	}
 
 	for (i=0;i<nthreads;i++) {
 		ids[i] = thread_start(fn, i);
 	}
+
+	for (i=0;i<nthreads;i++) {
+		while (startup_ptr[i] != 1) usleep(1);
+	}
+
+	start_timer();
+
+	write(fd[1], &c, 1);
 
 	for (i=0;i<nthreads;i++) {
 		int rc;
@@ -93,10 +146,36 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 {
 	int i;
 	pid_t *ids = malloc(sizeof(*ids) * nprocs);
+	int fd[2];
+	char c = 0;
+
+	if (pipe(fd) != 0) {
+		fprintf(stderr,"Pipe failed\n");
+		exit(1);
+	}
+	wait_fd = fd[0];
+
+	for (i=0;i<nprocs;i++) {
+		startup_ptr[i] = 0;
+	}
 
 	for (i=0;i<nprocs;i++) {
 		ids[i] = proc_start(fn, i);
+		if (ids[i] == (pid_t)-1) {
+			for (i--;i>=0;i--) {
+				kill(ids[i], SIGTERM);
+			}
+			exit(1);
+		}
 	}
+
+	for (i=0;i<nprocs;i++) {
+		while (startup_ptr[i] != 1) usleep(1);
+	}
+
+	start_timer();
+
+	write(fd[1], &c, 1);
 
 	for (i=0;i<nprocs;i++) {
 		int rc;
@@ -118,6 +197,9 @@ static void *test_malloc(int id)
 #define NMALLOCS 300
 	int i, j;
 	void *ptrs[NMALLOCS];
+
+	startup_wait(id);
+
 	for (j=0;j<500;j++) {
 		for (i=1;i<NMALLOCS;i++) {
 			ptrs[i] = malloc(i);
@@ -143,6 +225,9 @@ static void *test_readwrite(int id)
 	int fd_in, fd_out;
 	/* we use less than 1 page to prevent page table games */
 	char buf[4095];
+
+	startup_wait(id);
+
 	fd_in = open("/dev/zero", O_RDONLY);
 	fd_out = open("/dev/null", O_WRONLY);
 	if (fd_in == -1 || fd_out == -1) {
@@ -174,6 +259,8 @@ static void *test_stat(int id)
 	char fname[60];
         char dname[30];
 
+	startup_wait(id);
+
         sprintf(dname, "testd_%d", id);
         rmdir(dname);
 
@@ -204,6 +291,8 @@ static void *test_dir(int id)
         int i;
         char dname[30];
 
+	startup_wait(id);
+
         sprintf(dname, "testd_%d", id);
         rmdir(dname);
 
@@ -232,6 +321,8 @@ static void *test_dirsingle(int id)
 {
         int i;
 
+	startup_wait(id);
+
         for (i=0;i<2000;i++) {
                 DIR *d = opendir(".");
                 if (!d) goto failed;
@@ -254,6 +345,8 @@ static void *test_create(int id)
 	int i;
 	char fname[60];
         char dname[30];
+
+	startup_wait(id);
 
         sprintf(dname, "testd_%d", id);
         rmdir(dname);
@@ -289,6 +382,9 @@ static void *test_lock(int id)
 	int i;
 	char fname[30];
 	int fd;
+
+	startup_wait(id);
+
 	sprintf(fname, "test%d.dat", id);
 
 	fd = open(fname, O_CREAT|O_RDWR, 0666);
@@ -319,6 +415,15 @@ failed:
 	exit(1);
 }
 
+/***********************************************************************
+do nothing!
+************************************************************************/
+static void *test_noop(int id)
+{
+	startup_wait(id);
+	return NULL;
+}
+
 
 /*
   show the average and range of a set of results
@@ -339,18 +444,39 @@ static void show_result(const char *name, double *t, int nrepeats)
 
 static struct timeval tp1,tp2;
 
-static void start_timer()
+static void start_timer(void)
 {
 	gettimeofday(&tp1,NULL);
 }
 
-static double end_timer()
+static double end_timer(void)
 {
 	gettimeofday(&tp2,NULL);
 	return (tp2.tv_sec + (tp2.tv_usec*1.0e-6)) - 
 		(tp1.tv_sec + (tp1.tv_usec*1.0e-6));
 }
 
+/* 
+   this is used to create the synchronised startup area 
+*/
+void *shm_setup(int size)
+{
+	int shmid;
+	void *ret;
+
+	shmid = shmget(IPC_PRIVATE, size, SHM_R | SHM_W);
+	if (shmid == -1) {
+		fprintf(stderr, "can't get shared memory\n");
+		return NULL;
+	}
+	ret = (void *)shmat(shmid, 0, 0);
+	if (!ret || ret == (void *)-1) {
+		fprintf(stderr, "can't attach to shared memory\n");
+		return NULL;
+	}
+	shmctl(shmid, IPC_RMID, 0);
+	return ret;
+}
 
 
 /* lock a byte range in a open file */
@@ -363,6 +489,7 @@ int main(int argc, char *argv[])
 		const char *name;
 		void *(*fn)(int );
 	} tests[] = {
+		{"noop", test_noop},
 		{"malloc", test_malloc},
 		{"readwrite", test_readwrite},
 		{"stat", test_stat},
@@ -382,6 +509,11 @@ int main(int argc, char *argv[])
 
 	if (argc > 2) {
 		tname = argv[2];
+	}
+
+	startup_ptr = shm_setup(sizeof(*startup_ptr) * nprocs);
+	if (!startup_ptr) {
+		exit(1);
 	}
 
 	for (i=0;tests[i].name;i++) {
