@@ -76,6 +76,24 @@ static int null_match(const char *p)
 	return 0;
 }
 
+static int min_p_chars(const char *p)
+{
+	int ret;
+	for (ret=0;*p;p++) {
+		switch (*p) {
+		case '*':
+		case '<':
+		case '>':
+		case '"':
+			break;
+		case '?':
+		default:
+			ret++;
+		}
+	} 	
+	return ret;
+}
+
 /*
   the original, recursive function. Needs replacing, but with exactly
   the same output
@@ -83,6 +101,8 @@ static int null_match(const char *p)
 static int fnmatch_test2(const char *p, const char *n)
 {
 	char c;
+
+	if (min_p_chars(p) > strlen(n)) return -1;
 
 	while ((c = *p++)) {
 		switch (c) {
@@ -196,7 +216,8 @@ static const char *n_used;
 
 static void sig_alrm(int sig)
 {
-	printf("Too slow!!  p='%s'  s='%s'\n", p_used, n_used);
+	printf("Too slow!!\np='%s'\ns='%s'\n", p_used, n_used);
+	printf("compresed: '%s'\n", compress_pattern(p_used));
 	exit(0);
 }
 
@@ -208,27 +229,26 @@ int main(void)
 	signal(SIGALRM, sig_alrm);
 
 	alarm(2);
-	fnmatch_test("********************************************.dat", "foobar.txt");
-	fnmatch_test("*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<*<.dat", "foobar.txt");
+	fnmatch_test("*?*?*", "foobar.txt");
 	alarm(0);
 
 	for (i=0;i<100000;i++) {
-		int len1 = random() % 30;
-		int len2 = random() % 30;
+		int len1 = random() % 100;
+		int len2 = random() % 100;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
 
-		randstring(p, len1, "*?<>\".abc");
-		randstring(n, len2, "abc.");
+		randstring(p, len1, "*?a");
+		randstring(n, len2, "a.");
 
 		p_used = p;
 		n_used = n;
 
 		alarm(0);
-		ret1 = fnmatch_orig(p, n);
+//		ret1 = fnmatch_orig(p, n);
 		alarm(2);
-		ret2 = fnmatch_test(p, n);
+		ret1 = ret2 = fnmatch_test(p, n);
 		alarm(0);
 
 		if (ret1 != ret2) {
