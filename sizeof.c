@@ -11,5 +11,6 @@ main()
         printf("int * : %d\n", sizeof(int *));
         printf("time_t : %d\n", sizeof(time_t));
         printf("off_t : %d\n", sizeof(off_t));
+        printf("size_t : %d\n", sizeof(size_t));
         printf("uid_t : %d\n", sizeof(uid_t));
 }
