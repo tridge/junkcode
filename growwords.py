@@ -21,8 +21,8 @@
 
 # Algorithm: We hold a list of known 'reachable' words.  Initialize
 # the list of good words with the seed word.  Read the dictionary and
-# squash case and discard non-letter symbols.  Sort the dictionary by
-# size, and iterate through the dictionary.
+# squash case and discard non-letter symbols.  Iterate through the
+# dictionary, considering the words in order of size.
 
 # For each word in the dictionary, it is reachable if it can be made
 # by adding a letter to any shorter reachable word, and then
@@ -48,7 +48,12 @@
 # the very least read in each word and therefore cannot be quicker
 # than O(n).
 
-
+# In the first version I read all the words into a single list and
+# then sorted it by length.  Doing the sort by length is quite slow in
+# Python and in addition this is at best O(n log n).  Doing a complete
+# sort is a lot of work when we require just a very rough sort by
+# size.  So instead we read the words into buckets by length, then
+# join them up.
 
 # Solution:
 
@@ -72,24 +77,42 @@ letters_re = re.compile('[a-z]*')
 
 def read_words():
     """Read from stdin onto all_words"""
-    all_words = []
-    for l in xreadlines(sys.stdin):
-        if l[-1] == '\n':
-            l = l[:-1]                  # chomp
+    # indexed by length; contents is a list of words of that length
+    by_len = {}
+    
+    for w in xreadlines(sys.stdin):
+        if w[-1] == '\n':
+            w = w[:-1]                  # chomp
 
         # check chars are reasonable
-        if not letters_re.match(l):
+        if not letters_re.match(w):
             raise ValueError()
 
-        l = l.lower()
+        w = w.lower()
+        l = len(w)
 
-        all_words.append(l)
+        # Put it into the right bucket for its length.  Make a new
+        # one if needed.
+        wl = by_len.get(l)
+        if wl is None:
+            wl = []
+            by_len[l] = wl
+        wl.append(w)
+
+    # Now join up all the buckets so that we have one big list, sorted by
+    # word length
+    all_words = []
+    lens = by_len.keys()
+    lens.sort()
+    for l in lens:
+        all_words.extend(by_len[l])
+
     return all_words
 
 
 def make_pop(w):
     # Make a 26-tuple giving the count of each letter in a word
-    pop = []
+    pop = [0]
     for l in string.ascii_lowercase:
         pop.append(w.count(l))
     return tuple(pop)
@@ -114,8 +137,8 @@ def main():
     seed = sys.argv[1]
     all_words = read_words()
     
-    all_words.sort(lambda x, y: cmp(len(x), len(y)))
-    ##   pprint(all_words)
+    ## all_words.sort(lambda x, y: cmp(len(x), len(y)))
+    ## pprint(all_words)
 
     # reachable is a map from population tuples to a valid word with
     # that population
