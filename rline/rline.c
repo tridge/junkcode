@@ -22,6 +22,9 @@ rline will load a completions file from $HOME/.rline/COMMAND
 
 If you specify a RLINE_DATA environment variable then rline will look
 in that directory instead.
+
+A completion file consists of one completion per line, with multi-part completions
+separated by spaces. You can use the special word '*' to mean filename completion.
 ");
 }
 
@@ -36,6 +39,11 @@ static void load_completions(const char *command)
 	FILE *f;
 	char line[200];
 	char *p;
+
+	/* take only the last part of the command */
+	if ((p = strrchr(command, '/'))) {
+		command = p+1;
+	}
 
 	if ((p=getenv("RLINE_DATA"))) {
 		asprintf(&fname, "%s/%s", p, command);
@@ -68,7 +76,6 @@ static void load_completions(const char *command)
 static char *command_generator(const char *line, int state)
 {
 	static int idx, len;
-	char *p;
 
 	if (!cmd_list) return NULL;
 
@@ -81,18 +88,19 @@ static char *command_generator(const char *line, int state)
 	/* find the next command that matches both the line so far and
 	   the next part of the command */
 	for (;idx<num_commands;idx++) {
-		if (strncmp(rl_line_buffer, cmd_list[idx], cmd_offset) == 0 &&
-		    strncmp(line, cmd_list[idx] + cmd_offset, len) == 0) {
-			p = cmd_list[idx++] + cmd_offset;
-			p = strndup(p, strcspn(p, " "));
-			if (strcmp(p, "*") == 0) {
+		if (strncmp(rl_line_buffer, cmd_list[idx], cmd_offset) == 0) {
+			if (strncmp(cmd_list[idx] + cmd_offset, "*", 1) == 0) {
 				/* we want filename completion for this one. This must
 				   be the last completion */
-				free(p);
+				rl_filename_completion_desired = 1;
+				rl_filename_quoting_desired = 1;
 				idx = num_commands;
 				return NULL;
 			}
-			return p;
+			if (strncmp(line, cmd_list[idx] + cmd_offset, len) == 0) {
+				char *p = cmd_list[idx++] + cmd_offset;
+				return strndup(p, strcspn(p, " "));
+			}
 		}
 	}
 
