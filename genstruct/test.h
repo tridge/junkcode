@@ -1,7 +1,9 @@
 GENSTRUCT enum fruit {APPLE, ORANGE=2, PEAR,
 		      RASBERRY, PEACH};
 
-GENSTRUCT struct test2 {
+GENSTRUCT
+struct test2 
+{
 	int x1;
 	char *foo;
 	char fstring[20]; _NULLTERM

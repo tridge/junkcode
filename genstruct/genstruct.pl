@@ -205,7 +205,7 @@ sub parse_enums($)
 {
 	my($data) = shift;
 
-	while ($data =~ /\nGENSTRUCT enum (\w*?) {(.*?)};(.*)/s) {
+	while ($data =~ /\nGENSTRUCT\senum (\w*?) {(.*?)};(.*)/s) {
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
@@ -228,7 +228,7 @@ sub parse_structs($)
 	my($data) = shift;
 
 	# parse into structures 
-	while ($data =~ /\nGENSTRUCT struct (\w*?) {\n(.*?)};(.*)/s) {
+	while ($data =~ /\nGENSTRUCT\sstruct (\w*?)\s*{\s*(.*?)\s*}\s*;(.*)/s) {
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
