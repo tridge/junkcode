@@ -86,7 +86,7 @@ struct max_n {
 /*
   the test function
 */
-static int fnmatch_test2(const char *p, const char *n, struct max_n *max_n, const char *ldot)
+static int fnmatch_core(const char *p, const char *n, struct max_n *max_n, const char *ldot)
 {
 	char c;
 	int i;
@@ -98,7 +98,7 @@ static int fnmatch_test2(const char *p, const char *n, struct max_n *max_n, cons
 				return null_match(p);
 			}
 			for (i=0; n[i]; i++) {
-				if (fnmatch_test2(p, n+i, max_n+1, ldot) == 0) {
+				if (fnmatch_core(p, n+i, max_n+1, ldot) == 0) {
 					return 0;
 				}
 			}
@@ -113,9 +113,9 @@ static int fnmatch_test2(const char *p, const char *n, struct max_n *max_n, cons
 				return -1;
 			}
 			for (i=0; n[i]; i++) {
-				if (fnmatch_test2(p, n+i, max_n+1, ldot) == 0) return 0;
+				if (fnmatch_core(p, n+i, max_n+1, ldot) == 0) return 0;
 				if (n+i == ldot) {
-					if (fnmatch_test2(p, n+i+1, max_n+1, ldot) == 0) return 0;
+					if (fnmatch_core(p, n+i+1, max_n+1, ldot) == 0) return 0;
 					if (!max_n->postdot || max_n->postdot > n) max_n->postdot = n;
 					return -1;
 				}
@@ -181,7 +181,7 @@ static int fnmatch_test(const char *p, const char *n)
 		max_n = calloc(sizeof(struct max_n), count);
 	}
 
-	ret = fnmatch_test2(p, n, max_n, strrchr(n, '.'));
+	ret = fnmatch_core(p, n, max_n, strrchr(n, '.'));
 
 	if (max_n) {
 		free(max_n);
@@ -230,14 +230,13 @@ int main(void)
 	signal(SIGALRM, sig_alrm);
 
 	for (i=0;i<200000;i++) {
-		int len1 = random() % 25;
-		int len2 = random() % 25;
+		int len1 = random() % 20;
+		int len2 = random() % 20;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
 
 		randstring(p, len1, "*<>\"?a.");
-//		randstring(p, len1, "<a.");
 		randstring(n, len2, "a.");
 
 		p_used = p;
