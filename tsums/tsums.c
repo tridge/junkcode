@@ -271,7 +271,9 @@ static void tsums_file(const char *fname)
 	}
 
 update:
-	if (do_quick) file_checksum(fname, &sum.sum[0]);
+	if (do_quick && S_ISREG(st.st_mode)) {
+		file_checksum(fname, &sum.sum[0]);
+	}
 	data.dptr = (void *)&sum;
 	data.dsize = sizeof(sum);
 	tdb_store(tdb, key, data, TDB_REPLACE);
