@@ -95,7 +95,7 @@ static int trd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	return 0;
 
 io_error:
-	bh->b_end_io(bh,0);
+	buffer_IO_error(bh);
 	return 0;
 }
 
@@ -132,8 +132,8 @@ nomem:
 		trd_base[minor] = NULL;
 	}	
 
-	printk(KERN_ERR DEVICE_NAME ": Unable to allocate trd of size %d\n",
-	       TRD_SIZE);
+	printk(KERN_ERR DEVICE_NAME ": Unable to allocate trd of size %dk\n",
+	       TRD_SIZE>>10);
 	return -ENOMEM;
 }
 

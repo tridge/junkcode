@@ -6,6 +6,7 @@
 */
 
 #define MAJOR_NR   241
+#define MAX_DEVS 32
 
 #define DEVICE_NAME "ddisk"
 #define DEVICE_NR(device) (MINOR(device))

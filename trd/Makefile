@@ -11,7 +11,7 @@ CFLAGS=-D__KERNEL__ -I$(LINUX_SRC)/include -Wall -Wstrict-prototypes \
 	-march=i686 -DMODULE $(MODVERSIONS) \
 	-include $(LINUX_SRC)/include/linux/modversions.h
 
-all: trd.o
+all: trd.o dummy_disk.o
 
 install:
 	cp trd.o /lib/modules/`uname -r`/kernel/drivers/block
