@@ -2,7 +2,9 @@
   this is a checksum routine that is specifically designed for spam. 
   Copyright Andrew Tridgell <tridge@samba.org> 2002
 
-  This code is released under the GNU General Public License version 2 or later.
+  This code is released under the GNU General Public License version 2
+  or later.  Alteratively, you may also use this code under the terms
+  of the Perl Artistic license.
 
   If you wish to distribute this code under the terms of a different
   free software license then please ask me. If there is a good reason
