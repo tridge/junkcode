@@ -92,6 +92,11 @@ use it you should do something like this:
 The only parameter is the size in megabytes of the save file. This
 needs to be at least as big as your main memory + video memory, but you
 can make it larger if you want to.
+
+You should also be able to use this to create a hibernation partition
+by directing the output to the right device (eg. /dev/hdaX) and
+setting the partition type to A0.  I haven't tried this as my thinkpad
+doesn't seem to support hibernation partitions.
 ");
 		exit(1);
 	}
