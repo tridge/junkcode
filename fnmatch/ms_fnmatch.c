@@ -81,44 +81,37 @@ static int null_match(const char *p)
   the original, recursive function. Needs replacing, but with exactly
   the same output
 */
-static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *max_p)
+static int fnmatch_test2(const char *p, size_t ofs, const char *n, char **max_n)
 {
 	char c;
-	int len;
+	int i;
 
 	while ((c = p[ofs++])) {
 		switch (c) {
 		case '*':
-			len = strlen(n);
-			if (max_p[ofs] && max_p[ofs] >= len) {
+			if (max_n[ofs] && max_n[ofs] <= n) {
 				return null_match(p+ofs);
 			}
-			for (; *n; n++) {
-				if (fnmatch_test2(p, ofs, n, max_p) == 0) {
+			for (i=0; n[i]; i++) {
+				if (fnmatch_test2(p, ofs, n+i, max_n) == 0) {
 					return 0;
 				}
 			}
-			if (max_p[ofs] < len) max_p[ofs] = len;
+			if (!max_n[ofs] || max_n[ofs] > n) max_n[ofs] = n;
 			return null_match(p+ofs);
 
 		case '<':
-			len = strlen(n);
-			if (max_p[ofs] && max_p[ofs] >= len) {
-				n = strrchr(n, '.');
-				if (n) {
-					return fnmatch_test2(p, ofs, n+1, max_p);
-				}
+			if (max_n[ofs] && max_n[ofs] <= n) {
 				return null_match(p+ofs);
 			}
-			for (; *n; n++) {
-				if (fnmatch_test2(p, ofs, n, max_p) == 0) return 0;
-				if (*n == '.' && !strchr(n+1,'.')) {
-					return fnmatch_test2(p, ofs, n+1, max_p);
+			for (i=0; n[i]; i++) {
+				if (fnmatch_test2(p, ofs, n+i, max_n) == 0) return 0;
+				if (n[i] == '.' && !strchr(n+i+1,'.')) {
+					return fnmatch_test2(p, ofs, n+i+1, max_n);
 				}
 			}
-			if (max_p[ofs] < len) max_p[ofs] = len;
-			break;
-
+			if (!max_n[ofs] || max_n[ofs] > n) max_n[ofs] = n;
+			return null_match(p+ofs);
 
 		case '?':
 			if (! *n) {
@@ -171,13 +164,13 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *max
 static int fnmatch_test(const char *p, const char *n)
 {
 	int ret;
-	unsigned *max_p;
+	char **max_n;
 
-	max_p = calloc(sizeof(unsigned), strlen(p)+1);
+	max_n = calloc(sizeof(char *), strlen(p)+1);
 
-	ret = fnmatch_test2(p, 0, n, max_p);
+	ret = fnmatch_test2(p, 0, n, max_n);
 
-	free(max_p);
+	free(max_n);
 
 	return ret;
 }
@@ -228,21 +221,22 @@ int main(void)
 		char *n = malloc(len2+1);
 		int ret1, ret2;
 
-		randstring(p, len1, "*><\"?a.");
+		randstring(p, len1, "*<>\"?a.");
 		randstring(n, len2, "a.");
 
 		p_used = p;
 		n_used = n;
 
+		alarm(2);
+		start_timer();
+		ret1 = ret2 = fnmatch_test(p, n);
+		t2 = end_timer();
+		alarm(0);
+
 		alarm(0);
 		start_timer();
 		ret1 = fnmatch_orig(p, n);
 		t1 = end_timer();
-		alarm(2);
-		start_timer();
-		ret2 = fnmatch_test(p, n);
-		t2 = end_timer();
-		alarm(0);
 
 		if (t1 > w1) w1 = t1;
 		if (t2 > w2) w2 = t2;
