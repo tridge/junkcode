@@ -19,19 +19,50 @@
 /* a simple program that allows template to be used as a scripting system */
 #include "includes.h"
 
+static void usage(void)
+{
+	puts("
+template [options] <files>
+
+Options:
+  -c     run as a cgi script
+  -h show help
+");
+}
+
 int main(int argc, char *argv[])
 {
-	struct template_state *tmpl;
+	struct cgi_state *cgi;
+	extern char *optarg;
+	int opt;
+	int use_cgi = 0;
 
-	tmpl = template_init();
+	while ((opt = getopt(argc, argv, "ch")) != -1) {
+		switch (opt) {
+		case 'c':
+			use_cgi = 1;
+			break;
+		case 'h':
+			usage();
+			exit(1);
+		}
+	}
+
+	cgi = cgi_init();
+
+	if (use_cgi) {
+		cgi->setup(cgi);
+		cgi->load_variables(cgi);
+	}
 	
 	if (argc > 1) {
 		int i;
 		for (i=1; i<argc; i++) {
-			tmpl->process(tmpl, argv[i]);
+			cgi->tmpl->process(cgi->tmpl, argv[i]);
 		}
 	} else {
-		tmpl->process(tmpl, "/proc/self/fd/0");
+		/* this allows us to work as a shell script */
+		cgi->tmpl->process(cgi->tmpl, "/proc/self/fd/0");
 	}
 
 	return 0;

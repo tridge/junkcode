@@ -16,7 +16,7 @@ tserver: $(OBJS)
 	@$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 	@strip $@
 
-template: template.o template_main.o util.o
+template: template.o template_main.o util.o cgi.o
 	@echo Linking $@
 	@$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 

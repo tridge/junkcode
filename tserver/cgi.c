@@ -392,16 +392,43 @@ static void download(struct cgi_state *cgi, const char *path)
 	}
 }
 
-/*
-  read and parse the http request
- */
-static int setup(struct cgi_state *cgi)
+
+/* we're running under a web server as cgi */
+static int setup_cgi(struct cgi_state *cgi)
+{
+	char *p;
+
+	if ((p = getenv("CONTENT_LENGTH"))) {
+		cgi->content_length = atoi(p);
+	}
+	if ((p = getenv("REQUEST_METHOD"))) {
+		cgi->got_request = 1;
+		if (strcasecmp(p, "POST") == 0) {
+			cgi->request_post = 1;
+		}
+	}
+	if ((p = getenv("QUERY_STRING"))) {
+		cgi->query_string = strdup(p);
+	}
+	if ((p = getenv("SCRIPT_NAME"))) {
+		cgi->url = strdup(p);
+		cgi->pathinfo = cgi->url;
+	}
+	if ((p = getenv("CONTENT_TYPE"))) {
+		cgi->content_type = strdup(p);
+	}
+	return 0;
+}
+
+
+
+/* we are a mini-web server. We need to read the request from stdin */
+static int setup_standalone(struct cgi_state *cgi)
 {
 	char line[1024];
 	char *url=NULL;
 	char *p;
 
-	/* we are a mini-web server. We need to read the request from stdin */
 	while (fgets(line, sizeof(line)-1, stdin)) {
 		trim_tail(line, CRLF);
 		if (line[0] == 0) break;
@@ -442,12 +469,26 @@ static int setup(struct cgi_state *cgi)
 	}
 
 	cgi->url = url;
-
 	cgi->pathinfo = url;
-
-	while (*cgi->pathinfo == '/') cgi->pathinfo++;
-
 	return 0;
+}
+
+/*
+  read and parse the http request
+ */
+static int setup(struct cgi_state *cgi)
+{
+	int ret;
+
+	if (getenv("GATEWAY_INTERFACE")) {
+		ret = setup_cgi(cgi);
+	} else {
+		ret = setup_standalone(cgi);
+	}
+
+	while (cgi->pathinfo && *cgi->pathinfo == '/') cgi->pathinfo++;
+
+	return ret;
 }
 
 /*
