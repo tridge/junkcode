@@ -26,6 +26,8 @@
 #include <time.h>
 #include <string.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include "genparser.h"
@@ -115,6 +117,27 @@ static void fill_test1(struct test1 *t)
 	}
 }
 
+/*
+  save a lump of data into a file. 
+  return 0 on success
+*/
+int file_save(const char *fname, void *data, size_t length)
+{
+	int fd;
+	unlink(fname);
+	fd = open(fname, O_WRONLY|O_CREAT|O_EXCL, 0644);
+	if (fd == -1) {
+		return -1;
+	}
+	if (write(fd, data, length) != length) {
+		close(fd);
+		unlink(fname);
+		return -1;
+	}
+	close(fd);
+	return 0;
+}
+
 int main(void)
 {
 	char *s, *s2;
@@ -135,14 +158,16 @@ int main(void)
 	}
 
 	s2 = gen_dump(pinfo_test1, (char *)&t2, 0);
-	printf("%s\n", s);
+	printf("%s\n", s2);
 
 	if (strcmp(s, s2) != 0) {
 		printf("MISMATCH!\n");
+		file_save("s1", s, strlen(s));
+		file_save("s2", s2, strlen(s2));
 		exit(1);
 	} else {
 		printf("Compares OK!\n");
 	}
-	
+
 	return 0;
 }

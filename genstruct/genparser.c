@@ -52,16 +52,21 @@ static int all_zero(const char *ptr, unsigned size)
 
 static char *encode_bytes(const char *ptr, unsigned len)
 {
+	const char *hexdig = "0123456789abcdef";
 	char *ret, *p;
 	unsigned i;
-	ret = calloc(1, len*3 + 1); /* worst case size */
+	ret = malloc(len*3 + 1); /* worst case size */
 	if (!ret) return NULL;
 	for (p=ret,i=0;i<len;i++) {
-		if (isprint(ptr[i]) && !strchr("\\{}", ptr[i])) {
+		if (isalnum(ptr[i]) || isspace(ptr[i]) ||
+		    (ispunct(ptr[i]) && !strchr("\\{}", ptr[i]))) {
 			*p++ = ptr[i];
 		} else {
-			if (all_zero(ptr+i, len-i)) break;
-			snprintf(p, 4, "\\%02x", *(unsigned char *)(ptr+i));
+			unsigned char c = *(unsigned char *)(ptr+i);
+			if (c == 0 && all_zero(ptr+i, len-i)) break;
+			p[0] = '\\';
+			p[1] = hexdig[c>>4];
+			p[2] = hexdig[c&0xF];
 			p += 3;
 		}
 	}
@@ -128,9 +133,13 @@ static int addstr(struct parse_string *p, const char *fmt, ...)
 static const char *tabstr(unsigned level)
 {
 	static char str[8];
+	static unsigned last;
+
+	if (last == level) return str;
 	if (level > 7) level = 7;
 	memset(str, '\t', level);
 	str[level] = 0;
+	last = level;
 	return str;
 }
 
@@ -354,10 +363,13 @@ static char *match_braces(char *s, char c)
 {
 	int depth = 0;
 	while (*s) {
-		if (*s == '}') {
+		switch (*s) {
+		case '}':
 			depth--;
-		} else if (*s == '{') {
+			break;
+		case '{':
 			depth++;
+			break;
 		}
 		if (depth == 0 && *s == c) {
 			return s;
