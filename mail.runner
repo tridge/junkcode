@@ -1,0 +1,145 @@
+#!/bin/bash
+###################
+# a simple mail delivery and transmissions system
+# Copyright Andrew Tridgell <tridge@samba.org> 1997-2002
+
+#echo mail is on kul
+#exit 1
+
+export MAILHOST="samba.org"
+export MAIL_SSH="ssh"
+#export SENDMAIL_OPTS="-oi -f $USER -oem -t"
+export SENDMAIL_OPTS=""
+
+export PATH=$PATH:$HOME/bin:/usr/local/bin:/usr/bin:/bin
+
+
+###################################################################################
+# send all pending mail, invoking mail.deliver at the other end
+mail_send() {
+    list=`echo ./mail.out.*`
+    echo
+    if [ "$list" = "" ]; then
+	echo "No messages to send";
+	return 0;
+    fi
+    echo "Sending `echo $list | wc -w` messages"
+
+    if rsync --rsync-path='bin/mail.runner remote_deliver' --timeout=200 -ze $MAIL_SSH $list $MAILHOST:Mail/; then
+         rm -f $list
+    fi
+    return 0;
+}
+
+###################################################################################
+# fetch mail from the remote host and deliver it via procmail
+mail_fetch() {
+    if ! rsync --timeout=300 -Pavze $MAIL_SSH --rsync-path='bin/mail.runner remote_send' $MAILHOST:Mail/EMPTY_FILE ~/Mail/; then
+	echo transfer failed;
+	return 1;
+    fi
+
+    if [ "`echo mail.in.*`" = "" ]; then 
+	echo
+	echo "No mail to retrieve"
+	return 1
+    fi
+
+    for f in mail.in.*; do
+	if cat $f | formail -s procmail; then
+	    # it is useful seeing what mail is being processed
+	    frm $f
+	    rm -f $f
+	fi
+    done
+
+    # this is useful for seeing where procmail has put things ...
+    echo ; echo ; tail ~/Mail/procmail.log
+
+    return 0;
+}
+
+
+#################################################################################
+# a sendmail-like call
+mail_sendmail() {
+    cd ~/Mail
+    FILE=mail.out.`date +%d:%m:%y:%T`.$$
+    cat > $FILE
+    exit 0
+}
+
+
+#################################################################################
+# a rsync wrapper function that delivers mail on the remote host
+mail_remote_deliver() {
+    rsync $*
+    status=$?
+
+    if [ $status != 0 ]; then
+	return $status;
+    fi
+
+    cd ~/Mail
+    for f in mail.out.*; do
+	    if /usr/lib/sendmail $SENDMAIL_OPTS < $f; then
+		rm -f $f
+	    else
+		echo Mail of $f failed $status
+	    fi
+    done
+    return 0
+}
+
+##################################################################################
+# a rsync wrapper function for fetching mail from the remote host
+mail_remote_send() {
+    # atomically move mail from InBox to a temporary file
+    if test -s InBox ; then
+	movemail InBox Mail/mail.in.$$ > /dev/null
+    fi
+
+    if [ ! -f Mail/EMPTY_FILE ]; then
+	touch Mail/EMPTY_FILE
+    fi
+
+    rsync $* Mail/mail.in.*
+    status=$?
+    if [ $status != 0 ]; then
+	return $status;
+    fi
+
+    cd ~/Mail
+    rm -f mail.in.[0-9]*
+    return 0
+}
+
+
+###################################################################################
+# START OF MAIN SCRIPT
+###################################################################################
+
+# we rely on expansion to a null list
+shopt -s nullglob
+
+# try to make sure two copies of this script don't run at once
+if pidof -x -o $$ `basename $0` > /dev/null; then
+    echo `basename $0` is already running
+    exit 1
+fi  
+
+# when an argument is passed then call the corresponding mail_* function 
+# with the remaining arguments
+if [ $# != 0 ]; then
+    cmd=$1
+    shift
+    mail_$cmd $*
+    exit $?
+fi
+
+# we will do everything from the ~/Mail directory
+cd ~/Mail || exit 1
+
+mail_fetch
+mail_send
+
