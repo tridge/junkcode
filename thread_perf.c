@@ -23,7 +23,10 @@
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
+
+#ifndef NO_THREADS
 #include <pthread.h>
+#endif
 
 /* this contains per-task data */
 static struct {
@@ -101,6 +104,7 @@ static double barrier_parent(struct barrier *b, int nprocs)
 	return t;
 }
 
+#ifndef NO_THREADS
 /*
   create a thread with initial function fn(private)
 */
@@ -128,6 +132,7 @@ static int thread_join(pthread_t id)
 {
 	return pthread_join(id, NULL);
 }
+#endif
 
 
 /*
@@ -158,7 +163,7 @@ static int proc_join(pid_t id)
 	return 0;
 }
 
-
+#ifndef NO_THREADS
 /* run a function under a set of threads */
 static double run_threads(int nthreads, void *(*fn)(int ))
 {
@@ -192,6 +197,7 @@ static double run_threads(int nthreads, void *(*fn)(int ))
 
 	return t;
 }
+#endif
 
 /* run a function under a set of processes */
 static double run_processes(int nprocs, void *(*fn)(int ))
@@ -533,10 +539,14 @@ int main(int argc, char *argv[])
 		printf("Running test '%s' with %d tasks\n", tests[i].name, nprocs);
 
 		for (j=0;j<NREPEATS;j++) {
+#ifndef NO_THREADS
 			t_threads[j]   = run_threads(nprocs, tests[i].fn);
+#endif
 			t_processes[j] = run_processes(nprocs, tests[i].fn);
 		}
+#ifndef NO_THREADS
 		show_result("Threads  ", t_threads, NREPEATS);
+#endif
 		show_result("Processes", t_processes, NREPEATS);
 
 		printf("\n");
