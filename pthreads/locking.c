@@ -28,7 +28,7 @@ static int thread_start(void *(*fn)(void *private), void *private)
 */
 static void *thread_main(void *private)
 {
-	int tid = *(int *)private;
+	int tid = (int)private;
 	int fd;
 	struct flock lock;
 	int ret;
@@ -38,6 +38,10 @@ static void *thread_main(void *private)
 	} else {
 		fd = open("lock.tst", O_RDWR);
 	}
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
 
 	lock.l_type = F_WRLCK;
 	lock.l_whence = SEEK_SET;
@@ -46,6 +50,8 @@ static void *thread_main(void *private)
 	lock.l_pid = 0;
 
 	ret = fcntl(fd, F_SETLK, &lock);
+
+	printf("tid=%d fd=%d\n", tid, fd);
 
 	if (tid == 1) {
 		if (ret != 0) {
@@ -68,9 +74,9 @@ int main(int argc, char *argv[])
 {
 	int tid=1;
 
-	thread_start(thread_main, &tid); tid++;
+	thread_start(thread_main, tid); tid++;
 	sleep(1);
-	thread_start(thread_main, &tid); tid++;
+	thread_start(thread_main, tid); tid++;
 
 	return 0;
 }
