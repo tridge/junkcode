@@ -6,7 +6,7 @@ exec 1>&2
 PID=$1
 TMPFILE=/tmp/gdb.$$
 cat << EOF  > $TMPFILE
-set height 1000
+set height 0
 bt full
 quit
 EOF
