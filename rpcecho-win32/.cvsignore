@@ -3,3 +3,4 @@ rpcecho.h
 *.ncb
 *_c.c
 *_s.c
+*.obj
