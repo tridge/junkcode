@@ -20,24 +20,34 @@
 static int loop_count = 100;
 static int num_files = 1;
 static int file_size = 1024*1024;
+static int block_size = 1024;
 static char *base_dir = ".";
 static int use_mmap = 0;
 
 typedef unsigned char uchar;
 
-#define BUF_SIZE 1024
-
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
+
+static void *x_malloc(int size)
+{
+	void *ret = malloc(size);
+	if (!ret) {
+		fprintf(stderr,"Out of memory for size %d!\n", size);
+		exit(1);
+	}
+	return ret;
+}
+
 
 /* generate a buffer for a particular child, fnum etc. Just use a simple buffer
    to make debugging easy 
 */
 static void gen_buffer(uchar *buf, int loop, int child, int fnum, int ofs)
 {
-	uchar v = (loop+child+fnum+(ofs/BUF_SIZE)) % 256;
-	memset(buf, v, BUF_SIZE);
+	uchar v = (loop+child+fnum+(ofs/block_size)) % 256;
+	memset(buf, v, block_size);
 }
 
 /* 
@@ -45,28 +55,33 @@ static void gen_buffer(uchar *buf, int loop, int child, int fnum, int ofs)
 */
 static void check_buffer(uchar *buf, int loop, int child, int fnum, int ofs)
 {
-	uchar buf2[BUF_SIZE];
+	uchar *buf2;
+
+	buf2 = x_malloc(block_size);
+
 	gen_buffer(buf2, loop, child, fnum, ofs);
 	
-	if (memcmp(buf, buf2, BUF_SIZE) != 0) {
+	if (memcmp(buf, buf2, block_size) != 0) {
 		int i, j;
-		for (i=0;buf[i] == buf2[i] && i<BUF_SIZE;i++) ;
+		for (i=0;buf[i] == buf2[i] && i<block_size;i++) ;
 		fprintf(stderr,"Corruption in child %d fnum %d at offset %d\n",
 			child, fnum, ofs+i);
 
 		printf("Correct:   ");
-		for (j=0;j<MIN(20, BUF_SIZE-i);j++) {
+		for (j=0;j<MIN(20, block_size-i);j++) {
 			printf("%02x ", buf2[j+i]);
 		}
 		printf("\n");
 
 		printf("Incorrect: ");
-		for (j=0;j<MIN(20, BUF_SIZE-i);j++) {
+		for (j=0;j<MIN(20, block_size-i);j++) {
 			printf("%02x ", buf[j+i]);
 		}
 		printf("\n");
 		exit(1);
 	}
+
+	free(buf2);
 }
 
 /*
@@ -74,10 +89,11 @@ static void check_buffer(uchar *buf, int loop, int child, int fnum, int ofs)
  */
 static void create_file(const char *dir, int loop, int child, int fnum)
 {
-	uchar buf[BUF_SIZE];
+	uchar *buf;
 	int size, fd;
 	char fname[1024];
 
+	buf = x_malloc(block_size);
 	sprintf(fname, "%s/file%d", dir, fnum);
 	fd = open(fname, O_RDWR|O_CREAT|O_TRUNC, 0644);
 	if (fd == -1) {
@@ -86,9 +102,9 @@ static void create_file(const char *dir, int loop, int child, int fnum)
 	}
 		
 	if (!use_mmap) {
-		for (size=0; size<file_size; size += BUF_SIZE) {
+		for (size=0; size<file_size; size += block_size) {
 			gen_buffer(buf, loop, child, fnum, size);
-			if (pwrite(fd, buf, BUF_SIZE, size) != BUF_SIZE) {
+			if (pwrite(fd, buf, block_size, size) != block_size) {
 				fprintf(stderr,"Write failed at offset %d\n", size);
 				exit(1);
 			}
@@ -104,12 +120,13 @@ static void create_file(const char *dir, int loop, int child, int fnum)
 			perror("mmap");
 			exit(1);
 		}
-		for (size=0; size<file_size; size += BUF_SIZE) {
+		for (size=0; size<file_size; size += block_size) {
 			gen_buffer(p+size, loop, child, fnum, size);
 		}
 		munmap(p, file_size);
 	}
 
+	free(buf);
 	close(fd);
 }
 
@@ -118,9 +135,11 @@ static void create_file(const char *dir, int loop, int child, int fnum)
  */
 static void check_file(const char *dir, int loop, int child, int fnum)
 {
-	uchar buf[BUF_SIZE];
+	uchar *buf;
 	int size, fd;
 	char fname[1024];
+
+	buf = x_malloc(block_size);
 
 	sprintf(fname, "%s/file%d", dir, fnum);
 	fd = open(fname, O_RDONLY);
@@ -129,14 +148,15 @@ static void check_file(const char *dir, int loop, int child, int fnum)
 		exit(1);
 	}
 
-	for (size=0; size<file_size; size += BUF_SIZE) {
-		if (pread(fd, buf, BUF_SIZE, size) != BUF_SIZE) {
+	for (size=0; size<file_size; size += block_size) {
+		if (pread(fd, buf, block_size, size) != block_size) {
 			fprintf(stderr,"read failed at offset %d\n", size);
 			exit(1);
 		}
 		check_buffer(buf, loop, child, fnum, size);
 	}
 
+	free(buf);
 	close(fd);
 }
 
@@ -221,6 +241,7 @@ static void usage(void)
 " -n num_children       set number of child processes\n"
 " -f num_files          set number of files\n"
 " -s file_size          set file sizes\n"
+" -b block_size         set block (IO) size\n"
 " -p path               set base path\n"
 " -l loops              set loop count\n"
 " -m                    use mmap\n"
@@ -236,10 +257,13 @@ int main(int argc, char *argv[])
 	int num_children = 1;
 	int i, status, ret;
 
-	while ((c = getopt(argc, argv, "n:s:f:p:l:hm")) != -1) {
+	while ((c = getopt(argc, argv, "n:s:f:p:l:b:hm")) != -1) {
 		switch (c) {
 		case 'n':
 			num_children = strtol(optarg, NULL, 0);
+			break;
+		case 'b':
+			block_size = strtol(optarg, NULL, 0);
 			break;
 		case 'f':
 			num_files = strtol(optarg, NULL, 0);
@@ -269,7 +293,11 @@ int main(int argc, char *argv[])
 	argv += optind;
 
 	/* round up the file size */
-	file_size = (file_size + (BUF_SIZE-1)) & ~(BUF_SIZE-1);
+	if (file_size % block_size != 0) {
+		file_size = (file_size + (block_size-1)) / block_size;
+		file_size *= block_size;
+		printf("Rounded file size to %d\n", file_size);
+	}
 
 	printf("num_children=%d file_size=%d num_files=%d loop_count=%d mmap=%d\n",
 	       num_children, file_size, num_files, loop_count, use_mmap);
