@@ -63,7 +63,9 @@ static int load_completions_file(const char *fname)
 		line[len-1] = 0;
 		cmd_list = (char **)realloc(cmd_list, sizeof(char *)*(num_commands+1));
 		if (!cmd_list) break;
-		cmd_list[num_commands++] = strdup(line);
+		if (*line) {
+			cmd_list[num_commands++] = strdup(line);
+		}
 	}
 
 	fclose(f);
@@ -182,6 +184,22 @@ void line_handler(char *line)
 	}
 }
 
+
+/* setup the slave side of a pty appropriately */
+static void setup_terminal(int fd)
+{
+	struct termios term;
+	tcgetattr(fd, &term);
+	
+	term.c_lflag &= ~(ICANON|ISIG|ECHO|ECHOCTL| 
+			  ECHOE|ECHOK|ECHOKE|ECHONL| 
+			  ECHOPRT);
+	term.c_iflag |= IGNBRK;
+	term.c_cc[VMIN] = 1;
+	term.c_cc[VTIME] = 0;
+	tcsetattr(fd, TCSANOW, &term);
+}
+
 /*
   main program
 */
@@ -206,6 +224,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (pid == 0) {
+		setup_terminal(0);
 		execvp(argv[1], argv+1);
 		/* it failed?? maybe command not found */
 		perror(argv[1]);
