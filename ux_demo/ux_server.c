@@ -30,22 +30,6 @@ static void timer_processing(void)
 	printf("tick!\n");
 }
 
-#if SNAP
-/*
-  handle a k8051 event
-*/
-static void k8051_event(int fd)
-{
-	struct k8051_event event;
-
-	event.event_mask = K8051_EVENT_ALL;
-
-	if (ioctl(fd, IOCTL_SNAP_NOBLOCK_EVENT, &event) != 0) return;
-
-	printf("Got 8051 event 0x%02x\n", event.reply_pkt[6]);
-}
-#endif
-
 /*
   handle a new client joining
 */
@@ -120,7 +104,7 @@ static void client_input(struct client *c)
 }
 
 /* main processing loop */
-static void process(int ux_sock, int snap8051_fd)
+static void process(int ux_sock)
 {
 	struct pollfd *polls = NULL;
 
@@ -129,18 +113,12 @@ static void process(int ux_sock, int snap8051_fd)
 		int i, poll_count;
 
 		/* setup for a poll */
-		polls = x_realloc(polls, (2+num_clients) * sizeof(*polls));
+		polls = x_realloc(polls, (1+num_clients) * sizeof(*polls));
 		polls[0].fd = ux_sock;
 		polls[0].events = POLLIN;
 
-#if SNAP
-		/* notice the strange poll mask for the 8051 */
-		polls[1].fd = snap8051_fd;
-		polls[1].events = K8051_EVENT_ALL;
-#endif
-
 		/* setup the clients */
-		for (i=2, c = clients; c; i++, c = c->next) {
+		for (i=1, c = clients; c; i++, c = c->next) {
 			polls[i].fd = c->fd;
 			polls[i].events = POLLIN;
 		}
@@ -161,7 +139,7 @@ static void process(int ux_sock, int snap8051_fd)
 		}
 
 		/* see if a client wants to speak to us */
-		for (i=2, c = clients; c; i++) {
+		for (i=1, c = clients; c; i++) {
 			struct client *next = c->next;
 			if (polls[i].revents & POLLIN) {
 				client_input(c);
@@ -173,13 +151,6 @@ static void process(int ux_sock, int snap8051_fd)
 		if (polls[0].revents & POLLIN) {
 			new_client(ux_sock);
 		}
-
-#if SNAP
-		/* see if we got a 8051 event */
-		if (polls[1].revents) {
-			k8051_event(snap8051_fd);
-		}
-#endif
 	}
 }
 
@@ -187,7 +158,6 @@ static void process(int ux_sock, int snap8051_fd)
 /* main program */
 int main(int argc, char *argv[])
 {
-	int snap8051_fd = -1;
 	int ux_sock;
 
 	ux_sock = ux_socket_listen(SOCKET_NAME);
@@ -196,13 +166,7 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	snap8051_fd = open("/dev/snap8051", O_RDONLY);
-	if (snap8051_fd == -1) {
-		perror("/dev/snap8051");
-		exit(1);
-	}
-
-	process(ux_sock, snap8051_fd);
+	process(ux_sock);
 	
 	return 0;
 }
