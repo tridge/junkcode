@@ -7,10 +7,16 @@
   released under the GNU General Public License version 2 or later
 */
 
+/*
+  This program was inspired by lphdisk which was written by Patrick
+  Ashmore and Alex Stewart. The main difference is that tphdisk
+  doesn't muck about with partition tables, which makes it easy to use
+  it for either a hibernation partition or a save2dsk.bin file.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
 
 typedef unsigned short u16;
 typedef unsigned u32;
@@ -39,7 +45,8 @@ static void write_phdisk(int fd, u32 size)
 
 	memset(sector, 0, 512);
 
-	/* form the header */
+	/* form the header - this is x86 byte order dependent, but who
+	   has a non-intel lapptop with a phoenix notebios? */
 	strcpy(sector, "TimO");
 	sector[12] = 2;
 	*(u32 *)&sector[16] = size;
@@ -83,7 +90,7 @@ use it you should do something like this:
 5) Do a full reboot
 
 The only parameter is the size in megabytes of the save file. This
-needs to be at least as bg as your main memory + video memory, but you
+needs to be at least as big as your main memory + video memory, but you
 can make it larger if you want to.
 ");
 		exit(1);
