@@ -1,7 +1,10 @@
-CFLAGS = -O2 -Wall -D_STANDALONE_
+#OPT = -g -ftest-coverage -fprofile-arcs 
+OPT = -O2
+CFLAGS = $(OPT) -Wall -D_STANDALONE_
 
 testsuite: talloc.o testsuite.o
-	$(CC) -o testsuite testsuite.o talloc.o
+	$(CC) $(CFLAGS) -o testsuite testsuite.o talloc.o
 
 clean:
-	rm -f *~ *.o testsuite
+	rm -f *~ *.o testsuite *.gc??
+

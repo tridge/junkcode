@@ -74,6 +74,7 @@ static double end_timer(void)
 	} \
 } while (0)
 
+
 /*
   test references 
 */
@@ -271,11 +272,11 @@ static BOOL test_ref4(void)
 /*
   test references 
 */
-static BOOL test_unref1(void)
+static BOOL test_unlink1(void)
 {
 	void *root, *p1, *p2, *ref, *r1;
 
-	printf("TESTING UNREFERENCE\n");
+	printf("TESTING UNLINK\n");
 
 	root = talloc_named_const(NULL, 0, "root");
 	p1 = talloc_named_const(root, 1, "p1");
@@ -293,7 +294,7 @@ static BOOL test_unref1(void)
 	CHECK_BLOCKS(r1, 2);
 
 	printf("Unreferencing r1\n");
-	talloc_unreference(r1, p2);
+	talloc_unlink(r1, p2);
 	talloc_report_full(root, stdout);
 
 	CHECK_BLOCKS(p1, 6);
@@ -344,11 +345,16 @@ static BOOL test_misc(void)
 	talloc_free(p1);
 	CHECK_BLOCKS(p1, 1);
 	CHECK_BLOCKS(root, 2);
-	talloc_unreference(NULL, p1);
+	talloc_unlink(NULL, p1);
 	CHECK_BLOCKS(p1, 1);
 	CHECK_BLOCKS(root, 2);
-	if (talloc_unreference(root, p1) != NULL) {
-		printf("failed: talloc_unreference() of non-reference context should return NULL\n");
+	p2 = talloc_strdup(p1, "foo");
+	if (talloc_unlink(root, p2) != -1) {
+		printf("failed: talloc_unlink() of non-reference context should return -1\n");
+		return False;
+	}
+	if (talloc_unlink(p1, p2) != 0) {
+		printf("failed: talloc_unlink() of parent should succeed\n");
 		return False;
 	}
 	talloc_free(p1);
@@ -435,6 +441,44 @@ static BOOL test_misc(void)
 
 	talloc_free(p1);
 	CHECK_BLOCKS(root, 1);
+
+	p1 = talloc_named(root, 100, "%d bytes", 100);
+	CHECK_BLOCKS(p1, 2);
+	CHECK_BLOCKS(root, 3);
+	talloc_unlink(root, p1);
+
+	p1 = talloc_init("%d bytes", 200);
+	p2 = talloc_asprintf(p1, "my test '%s'", "string");
+	CHECK_BLOCKS(p1, 3);
+	CHECK_SIZE(p2, 17);
+	CHECK_BLOCKS(root, 1);
+	talloc_unlink(NULL, p1);
+
+	p1 = talloc_named_const(root, 10, "p1");
+	p2 = talloc_named_const(root, 20, "p2");
+	talloc_reference(p1, p2);
+	talloc_report_full(root, stdout);
+	talloc_unlink(root, p2);
+	talloc_report_full(root, stdout);
+	CHECK_BLOCKS(p2, 1);
+	CHECK_BLOCKS(p1, 2);
+	CHECK_BLOCKS(root, 3);
+	talloc_unlink(p1, p2);
+	talloc_unlink(root, p1);
+
+	p1 = talloc_named_const(root, 10, "p1");
+	p2 = talloc_named_const(root, 20, "p2");
+	talloc_reference(NULL, p2);
+	talloc_report_full(root, stdout);
+	talloc_unlink(root, p2);
+	talloc_report_full(root, stdout);
+	CHECK_BLOCKS(p2, 1);
+	CHECK_BLOCKS(p1, 1);
+	CHECK_BLOCKS(root, 2);
+	talloc_unlink(NULL, p2);
+	talloc_unlink(root, p1);
+
+	
 
 	talloc_report(root, stdout);
 	talloc_report(NULL, stdout);
@@ -643,12 +687,14 @@ BOOL torture_local_talloc(int dummy)
 	ret &= test_ref2();
 	ret &= test_ref3();
 	ret &= test_ref4();
-	ret &= test_unref1();
+	ret &= test_unlink1();
 	ret &= test_misc();
 	ret &= test_realloc();
 	ret &= test_steal();
 	ret &= test_ldb();
-	ret &= test_speed();
+	if (ret) {
+		ret &= test_speed();
+	}
 
 	return ret;
 }
