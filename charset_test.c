@@ -97,7 +97,7 @@ static void check_compat(iconv_t cd, smb_ucs2_t uc)
 {
 	char buf[10];
 	int inlen=2, outlen=10;
-	char *p = &uc;
+	char *p = (char *)&uc;
 	char *q = buf;
 
 	/* only care about 7 bit chars */
@@ -109,6 +109,28 @@ static void check_compat(iconv_t cd, smb_ucs2_t uc)
 		printf("ucs2 char %04x not C compatible\n",
 		       uc);
 		error_count++;
+	}
+}
+
+/* check if a character is strchr compatible */
+static void check_strchr_compat(iconv_t cd, smb_ucs2_t uc)
+{
+	char buf[10];
+	int inlen=2, outlen=10;
+	int i;
+	char *p = (char *)&uc;
+	char *q = buf;
+
+	iconv(cd, &p, &inlen, &q, &outlen);
+
+	if (10 - outlen <= 1) return;
+
+	for (i=0; i<10-outlen; i++) {
+		if (! (buf[i] & 0x80)) {
+			printf("ucs2 char %04x not strchr compatible\n",
+			       uc);
+			error_count++;
+		}
 	}
 }
 
@@ -129,6 +151,7 @@ int main(int argc, char *argv[])
 		check_null(cd, i);
 		check_case(cd, i);
 		check_compat(cd, i);
+		/* check_strchr_compat(cd, i); */
 	}
 
 	printf("%d chars convertible\n", 0x10000 - zero_len);
