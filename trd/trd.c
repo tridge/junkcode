@@ -20,18 +20,21 @@
 #include <asm/uaccess.h>
 
 #define TRD_BLOCK_SIZE 1024
+#define TRD_CHUNK_SIZE (32*TRD_BLOCK_SIZE)
 #define TRD_SIZE (trd_size<<10)
 
 static int trd_blocksizes[1] = {TRD_BLOCK_SIZE};
-static void *trd_base;
+static void **trd_base;
+static int trd_chunks;
 static unsigned trd_size = 4096;
 
 MODULE_PARM (trd_size, "1i");
 
 static void do_trd_request(request_queue_t * q)
 {
-	u_long start, len;
+	u_long start, ofs, len, len1;
 	void *addr;
+	int chunk;
 
 	while (1) {
 		INIT_REQUEST;
@@ -53,12 +56,24 @@ static void do_trd_request(request_queue_t * q)
 			continue;
 		}
 
-		addr = (void *) (((char *)trd_base) + start);
+		while (len) {
+			chunk = start / TRD_CHUNK_SIZE;
+			ofs = start % TRD_CHUNK_SIZE;
+			addr = (void *) (((char *)(trd_base[chunk])) + ofs);
 
-		if (CURRENT->cmd == READ) {
-			memcpy(CURRENT->buffer, (char *)addr, len);
-		} else {
-			memcpy((char *)addr, CURRENT->buffer, len);
+			len1 = len;
+			if (ofs + len1 > TRD_CHUNK_SIZE) {
+				len1 = TRD_CHUNK_SIZE - ofs;
+			}
+
+			if (CURRENT->cmd == READ) {
+				memcpy(CURRENT->buffer, (char *)addr, len1);
+			} else {
+				memcpy((char *)addr, CURRENT->buffer, len1);
+			}
+
+			len -= len1;
+			start += len1;
 		}
 	    
 		end_request(1);
@@ -107,13 +122,19 @@ static struct block_device_operations trd_fops =
 
 static int trd_init(void)
 {
-	trd_base = vmalloc(TRD_SIZE);
+	int i;
 
-	if (!trd_base) {
-		printk(KERN_ERR DEVICE_NAME ": Unable to allocate trd of size %d\n",
-		       TRD_SIZE);
-		return -1;
+	trd_chunks = (TRD_SIZE + (TRD_CHUNK_SIZE-1)) / TRD_CHUNK_SIZE;
+	trd_base = (void **)vmalloc(sizeof(void *)*trd_chunks);
+	if (!trd_base) goto nomem;
+	memset(trd_base, 0, sizeof(void *)*trd_chunks);
+
+	for (i=0;i<trd_chunks-1;i++) {
+		trd_base[i] = vmalloc(TRD_CHUNK_SIZE);
+		if (!trd_base[i]) goto nomem;
 	}
+	trd_base[i] = vmalloc(TRD_SIZE - (i-1)*TRD_CHUNK_SIZE);
+	if (!trd_base[i]) goto nomem;
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &trd_fops)) {
 		printk(KERN_ERR DEVICE_NAME ": Unable to register_blkdev(%d)\n", MAJOR_NR);
@@ -127,12 +148,32 @@ static int trd_init(void)
 	printk(KERN_DEBUG DEVICE_NAME ": trd initialised size=%d\n", TRD_SIZE);
 
 	return 0;
+
+nomem:
+	if (trd_base) {
+		for (i=0;i<trd_chunks;i++) {
+			if (trd_base[i]) vfree(trd_base[i]);
+		}
+		vfree(trd_base);
+		trd_base = NULL;
+	}	
+
+	printk(KERN_ERR DEVICE_NAME ": Unable to allocate trd of size %d\n",
+	       TRD_SIZE);
+	return -ENOMEM;
 }
 
 static void __exit trd_cleanup(void)
 {
+	int i;
+
 	unregister_blkdev(MAJOR_NR, DEVICE_NAME);
+
+	for (i=0;i<trd_chunks;i++) {
+		vfree(trd_base[i]);
+	}
 	vfree(trd_base);
+	trd_base = NULL;
 }
 
 module_init(trd_init);
