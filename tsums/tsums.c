@@ -33,6 +33,7 @@ static TDB_CONTEXT *tdb;
 static int do_update;
 static int do_ignore;
 static int do_quick;
+static int verbose;
 
 static void tsums_dir(const char *dname);
 
@@ -272,6 +273,9 @@ Options:
 
 static void process_one(char *fname)
 {
+	if (verbose) {
+		printf("%s\n", fname);
+	}
 	if (do_ignore) {
 		ignore_file(fname);
 	} else {
@@ -298,13 +302,16 @@ int main(int argc, char *argv[])
 	int do_dump = 0;
 	int use_all = 0;
 
-	while ((c = getopt(argc, argv, "qhuf:ida")) != -1){
+	while ((c = getopt(argc, argv, "qhuf:idav")) != -1){
 		switch (c) {
 		case 'h':
 			usage();
 			break;
 		case 'a':
 			use_all = 1;
+			break;
+		case 'v':
+			verbose++;
 			break;
 		case 'q':
 			do_quick = 1;
