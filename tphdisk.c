@@ -73,30 +73,30 @@ int main(int argc, char *argv[])
 	int size;
 
 	if (argc < 2) {
-		fprintf(stderr,"
-Usage: tphdisk <size in MB>
-
-written by Andrew Tridgell <tridge@samba.org>
-
-
-This program writes a 'save2dsk.bin' hibernation file to stdout. To
-use it you should do something like this:
-
-1) create a type 16 (Hidden FAT16) partition on your laptop
-2) format the partition with 'mkdosfs'
-3) mount the partition as VFAT
-4) create the 'save2dsk.bin' file on the partition using something like
-      tphdisk 280 > save2dsk.bin
-5) Do a full reboot
-
-The only parameter is the size in megabytes of the save file. This
-needs to be at least as big as your main memory + video memory, but you
-can make it larger if you want to.
-
-You should also be able to use this to create a hibernation partition
-by directing the output to the right device (eg. /dev/hdaX) and
-setting the partition type to A0.  I haven't tried this as my thinkpad
-doesn't seem to support hibernation partitions.
+		fprintf(stderr,"\n \
+Usage: tphdisk <size in MB>\n \
+\n \
+written by Andrew Tridgell <tridge@samba.org>\n \
+\n \
+\n \
+This program writes a 'save2dsk.bin' hibernation file to stdout. To\n \
+use it you should do something like this:\n \
+\n \
+1) create a type 16 (Hidden FAT16) partition on your laptop\n \
+2) format the partition with 'mkdosfs'\n \
+3) mount the partition as VFAT\n \
+4) create the 'save2dsk.bin' file on the partition using something like\n \
+      tphdisk 280 > save2dsk.bin\n \
+5) Do a full reboot\n \
+\n \
+The only parameter is the size in megabytes of the save file. This\n \
+needs to be at least as big as your main memory + video memory, but you\n \
+can make it larger if you want to.\n \
+\n \
+You should also be able to use this to create a hibernation partition\n \
+by directing the output to the right device (eg. /dev/hdaX) and\n \
+setting the partition type to A0.  I haven't tried this as my thinkpad\n \
+doesn't seem to support hibernation partitions.\n \
 ");
 		exit(1);
 	}
