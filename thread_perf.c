@@ -5,6 +5,12 @@
 
   Released under the GNU GPL version 2 or later
 */
+
+/*
+  this program is designed to test the relative performance of threads/processes
+  for operations typically performed by fileserving applications.
+*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -19,40 +25,80 @@
 #include <dirent.h>
 #include <pthread.h>
 
-static void start_timer(void);
-
 /* this contains per-task data */
 static struct {
 	char *dname;
 	char *fname;
 } *id_data;
 
-/* this pair of pipes that is used for synchronised
-   startup of the tasks */
-static int wait_fd1[2];
-static int wait_fd2[2];
+/* these pipes are used for synchronised startup of the tasks */
+static struct barrier {
+	int fd1[2];
+	int fd2[2];
+} barriers[2];
 
-
-/* wait for the startup pointer */
-static void startup_wait(int id)
+/* setup a barrier */
+static void barrier_setup(struct barrier *b)
 {
-	int rc;
-	fd_set s;
+	if (pipe(b->fd1) != 0 || pipe(b->fd2) != 0) {
+		fprintf(stderr,"Barrier setup failed\n");
+		exit(1);
+	}
+}
+
+/* cleanup the barrier pipes */
+static void barrier_cleanup(struct barrier *b)
+{
+	close(b->fd1[0]);
+	close(b->fd1[1]);
+	close(b->fd2[0]);
+	close(b->fd2[1]);
+}
+
+/* wait for the parent to signal startup */
+static void barrier_wait(struct barrier *b)
+{
 	char c = 0;
 
-	/* tell the parent that we are ready */
-	write(wait_fd1[1], &c, 1);
+	if (write(b->fd1[1], &c, 1) != 1 ||
+	    read(b->fd2[0], &c, 1) != 1) {
+		fprintf(stderr, "Barrier wait failed\n");
+		exit(1);
+	}
+}
 
-	/* we wait till the wait_fd is readable - this gives
-	   a nice in-kernel barrier wait */
-	do {
-		FD_ZERO(&s);
-		FD_SET(wait_fd2[0], &s);
-		rc = select(wait_fd2[0]+1, &s, NULL, NULL, NULL);
-		if (rc == -1 && errno != EINTR) {
+/* synchronise children. Return the amount of time since the last
+   barrier */
+static double barrier_parent(struct barrier *b, int nprocs)
+{
+	char *s = calloc(nprocs, 1);
+	int i, nwritten=0;
+	char c = 0;
+	double t;
+	static struct timeval tp1;
+	struct timeval tp2;
+
+	for (i=0;i<nprocs;i++) {
+		while (read(b->fd1[0], &c, 1) != 1) ;
+	}
+
+	/* putting the timer here prevents problems with the parent getting
+	   rescheduled after the write */
+	gettimeofday(&tp2,NULL);
+	t = (tp2.tv_sec + (tp2.tv_usec*1.0e-6)) - 
+		(tp1.tv_sec + (tp1.tv_usec*1.0e-6));
+	gettimeofday(&tp1,NULL);
+
+	while (nwritten != nprocs) {
+		int n = write(b->fd2[1], s, nprocs-nwritten);
+		if (n <= 0) {
+			fprintf(stderr, "Barrier parent failed\n");
 			exit(1);
 		}
-	} while (rc != 1);
+		nwritten += n;
+	}
+	free(s);
+	return t;
 }
 
 /*
@@ -114,28 +160,21 @@ static int proc_join(pid_t id)
 
 
 /* run a function under a set of threads */
-static void run_threads(int nthreads, void *(*fn)(int ))
+static double run_threads(int nthreads, void *(*fn)(int ))
 {
 	int i;
-	pthread_t *ids = malloc(sizeof(*ids) * nthreads);
-	char c = 0;
+	pthread_t *ids = calloc(sizeof(*ids), nthreads);
+	double t;
 
-	if (pipe(wait_fd1) != 0 || pipe(wait_fd2) != 0) {
-		fprintf(stderr,"Pipe failed\n");
-		exit(1);
-	}
+	barrier_setup(&barriers[0]);
+	barrier_setup(&barriers[1]);
 
 	for (i=0;i<nthreads;i++) {
 		ids[i] = thread_start(fn, i);
 	}
 
-	for (i=0;i<nthreads;i++) {
-		while (read(wait_fd1[0], &c, 1) != 1) ;
-	}
-
-	start_timer();
-
-	write(wait_fd2[1], &c, 1);
+	barrier_parent(&barriers[0], nthreads);
+	t = barrier_parent(&barriers[1], nthreads);
 
 	for (i=0;i<nthreads;i++) {
 		int rc;
@@ -146,23 +185,23 @@ static void run_threads(int nthreads, void *(*fn)(int ))
 		}
 	}
 
-	close(wait_fd1[0]);
-	close(wait_fd1[1]);
-	close(wait_fd2[0]);
-	close(wait_fd2[1]);
+	barrier_cleanup(&barriers[0]);
+	barrier_cleanup(&barriers[1]);
+
+	free(ids);
+
+	return t;
 }
 
 /* run a function under a set of processes */
-static void run_processes(int nprocs, void *(*fn)(int ))
+static double run_processes(int nprocs, void *(*fn)(int ))
 {
 	int i;
-	pid_t *ids = malloc(sizeof(*ids) * nprocs);
-	char c = 0;
+	pid_t *ids = calloc(sizeof(*ids), nprocs);
+	double t;
 
-	if (pipe(wait_fd1) != 0 || pipe(wait_fd2) != 0) {
-		fprintf(stderr,"Pipe failed\n");
-		exit(1);
-	}
+	barrier_setup(&barriers[0]);
+	barrier_setup(&barriers[1]);
 
 	for (i=0;i<nprocs;i++) {
 		ids[i] = proc_start(fn, i);
@@ -174,13 +213,8 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 		}
 	}
 
-	for (i=0;i<nprocs;i++) {
-		while (read(wait_fd1[0], &c, 1) != 1) ;
-	}
-
-	start_timer();
-
-	write(wait_fd2[1], &c, 1);
+	barrier_parent(&barriers[0], nprocs);
+	t = barrier_parent(&barriers[1], nprocs);
 
 	for (i=0;i<nprocs;i++) {
 		int rc;
@@ -191,10 +225,12 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 		}
 	}
 
-	close(wait_fd1[0]);
-	close(wait_fd1[1]);
-	close(wait_fd2[0]);
-	close(wait_fd2[1]);
+	barrier_cleanup(&barriers[0]);
+	barrier_cleanup(&barriers[1]);
+
+	free(ids);
+
+	return t;
 }
 
 
@@ -208,7 +244,7 @@ static void *test_malloc(int id)
 	int i, j;
 	void *ptrs[NMALLOCS];
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
 	for (j=0;j<500;j++) {
 		for (i=1;i<NMALLOCS;i++) {
@@ -222,6 +258,8 @@ static void *test_malloc(int id)
 			free(ptrs[i]);
 		}
 	}
+
+	barrier_wait(&barriers[1]);
 	return NULL;
 }
 
@@ -236,7 +274,7 @@ static void *test_readwrite(int id)
 	/* we use less than 1 page to prevent page table games */
 	char buf[4095];
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
 	fd_in = open("/dev/zero", O_RDONLY);
 	fd_out = open("/dev/null", O_WRONLY);
@@ -256,6 +294,8 @@ static void *test_readwrite(int id)
 	close(fd_in);
 	close(fd_out);
 	
+	barrier_wait(&barriers[1]);
+
 	return NULL;
 }
 
@@ -267,13 +307,15 @@ static void *test_stat(int id)
 {
 	int i;
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
 	for (i=0;i<30000;i++) {
 		struct stat st;
 		if (stat(id_data[id].dname, &st) != 0) goto failed;
 		if (stat(id_data[id].fname, &st) == 0) goto failed;
 	}
+
+	barrier_wait(&barriers[1]);
 
 	return NULL;
 
@@ -289,7 +331,7 @@ static void *test_dir(int id)
 {
         int i;
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
         for (i=0;i<2000;i++) {
                 DIR *d = opendir(id_data[id].dname);
@@ -298,6 +340,7 @@ static void *test_dir(int id)
                 closedir(d);
         }
 
+	barrier_wait(&barriers[1]);
         return NULL;
 
 failed: 
@@ -312,7 +355,7 @@ static void *test_dirsingle(int id)
 {
         int i;
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
         for (i=0;i<2000;i++) {
                 DIR *d = opendir(".");
@@ -321,6 +364,7 @@ static void *test_dirsingle(int id)
                 closedir(d);
         }
 
+	barrier_wait(&barriers[1]);
         return NULL;
 
 failed: 
@@ -336,7 +380,7 @@ static void *test_create(int id)
 {
 	int i;
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
 	for (i=0;i<3000;i++) {
 		int fd;
@@ -347,6 +391,7 @@ static void *test_create(int id)
 		if (unlink(id_data[id].fname) != 0) goto failed;
 	}
 	
+	barrier_wait(&barriers[1]);
 	return NULL;
 
 failed:
@@ -363,7 +408,7 @@ static void *test_lock(int id)
 	int i;
 	int fd;
 
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
 
 	fd = open(id_data[id].fname, O_CREAT|O_RDWR, 0666);
 	if (fd == -1) goto failed;
@@ -386,6 +431,7 @@ static void *test_lock(int id)
 
 	close(fd);
 	
+	barrier_wait(&barriers[1]);
 	return NULL;
 
 failed:
@@ -398,7 +444,8 @@ do nothing!
 ************************************************************************/
 static void *test_noop(int id)
 {
-	startup_wait(id);
+	barrier_wait(&barriers[0]);
+	barrier_wait(&barriers[1]);
 	return NULL;
 }
 
@@ -419,20 +466,6 @@ static void show_result(const char *name, double *t, int nrepeats)
 	printf("%s  %5.2f +/- %.2f seconds\n", name, total/nrepeats, (maxt-mint)/2);
 }
 
-
-static struct timeval tp1,tp2;
-
-static void start_timer(void)
-{
-	gettimeofday(&tp1,NULL);
-}
-
-static double end_timer(void)
-{
-	gettimeofday(&tp2,NULL);
-	return (tp2.tv_sec + (tp2.tv_usec*1.0e-6)) - 
-		(tp1.tv_sec + (tp1.tv_usec*1.0e-6));
-}
 
 /* lock a byte range in a open file */
 int main(int argc, char *argv[])
@@ -497,14 +530,11 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		printf("Running test '%s'\n", tests[i].name);
+		printf("Running test '%s' with %d tasks\n", tests[i].name, nprocs);
 
 		for (j=0;j<NREPEATS;j++) {
-			run_threads(nprocs, tests[i].fn);
-			t_threads[j] = end_timer();
-
-			run_processes(nprocs, tests[i].fn);
-			t_processes[j] = end_timer();
+			t_threads[j]   = run_threads(nprocs, tests[i].fn);
+			t_processes[j] = run_processes(nprocs, tests[i].fn);
 		}
 		show_result("Threads  ", t_threads, NREPEATS);
 		show_result("Processes", t_processes, NREPEATS);
@@ -519,6 +549,12 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 	}
+
+	for (i=0;i<nprocs;i++) {
+		free(id_data[i].dname);
+		free(id_data[i].fname);
+	}
+	free(id_data);
 
 	return 0;
 }
