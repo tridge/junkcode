@@ -1,9 +1,9 @@
 #include "socklib.h"
 
 
-static char *tcp_options="";
+static char *tcp_options="TCP_NODELAY IPTOS_THROUGHPUT";
 static int port=7001;
-static int bufsize=8192;
+static int bufsize=0x10000;
 static int use_sendfile;
 
 #if WITH_SENDFILE
@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 	while ((opt = getopt (argc, argv, "p:t:H:b:hS")) != EOF) {
 		switch (opt) {
 		case 'p':
-			port = atoi(optarg);
+			port = strtol(optarg, NULL, 0);
 			break;
 		case 'S':
 #if WITH_SENDFILE
@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
 			tcp_options = optarg;
 			break;
 		case 'b':
-			bufsize = atoi(optarg);
+			bufsize = strtol(optarg, NULL, 0);
 			break;
 
 		case 'h':
@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	printf("port=%d options=[%s]\n", port, tcp_options);
+	printf("port=%d bufsize=%d options=[%s]\n", port, bufsize, tcp_options);
 
 	listener();
 

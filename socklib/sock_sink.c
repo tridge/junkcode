@@ -1,10 +1,10 @@
 #include "socklib.h"
 
 
-static char *tcp_options="";
+static char *tcp_options="TCP_NODELAY IPTOS_THROUGHPUT";
 static int port=7001;
-static int bufsize=8192;
-static char *host;
+static int bufsize=0x10000;
+static char *host="127.0.0.1";
 
 static void sender(void)
 {
@@ -12,6 +12,8 @@ static void sender(void)
 	char *buf;
 	
 	fd = open_socket_out(host, port);
+
+	if (fd == -1) exit(1);
 
 	set_socket_options(fd, tcp_options);
 
@@ -52,7 +54,7 @@ int main(int argc, char *argv[])
 	while ((opt = getopt (argc, argv, "p:t:H:b:h")) != EOF) {
 		switch (opt) {
 		case 'p':
-			port = atoi(optarg);
+			port = strtol(optarg, NULL, 0);
 			break;
 		case 't':
 			tcp_options = optarg;
@@ -61,7 +63,7 @@ int main(int argc, char *argv[])
 			host = optarg;
 			break;
 		case 'b':
-			bufsize = atoi(optarg);
+			bufsize = strtol(optarg, NULL, 0);
 			break;
 
 		case 'h':
@@ -71,7 +73,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	printf("host=%s port=%d options=[%s]\n", host, port, tcp_options);
+	printf("host=%s port=%d bufsize=%d options=[%s]\n", host, port, bufsize, tcp_options);
 
 	sender();
 

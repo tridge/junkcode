@@ -244,5 +244,5 @@ double end_timer()
 
 void report_time(int total)
 {
-	printf("%g MB/sec\n", (total/(1.0e6))/end_timer());
+	printf("%.6g MB/sec\n", (total/(1.0e6))/end_timer());
 }
