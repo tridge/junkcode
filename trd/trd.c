@@ -174,6 +174,7 @@ static void __exit trd_cleanup(void)
 	}
 	vfree(trd_base);
 	trd_base = NULL;
+	printk(KERN_DEBUG DEVICE_NAME ": trd released\n");
 }
 
 module_init(trd_init);
