@@ -22,9 +22,11 @@ struct packet {
 #define PROXY_TAG 0x42
 #define WEB_PORT 80
 
-#ifndef INADDR_BCAST
-#define INADDR_BCAST 0xffffffff
-#endif
+#define IPROXY_LIST_TAG ((uint32)~0)
+
+#define ADDR_LOCALHOST "127.0.0.1"
+#define ADDR_BROADCAST "255.255.255.255"
+#define ADDR_ANY       "0.0.0.0"
 
 int open_socket_in(int type, const char *dst, int port);
 int open_socket_out(int type, const char *dst, int port);
