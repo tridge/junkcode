@@ -79,6 +79,9 @@ def read_words():
     """Read from stdin onto all_words"""
     # indexed by length; contents is a list of words of that length
     by_len = {}
+
+    # XXX: You'll get a deprecation warning here for Python 2.3.  I just use
+    # xreadlines for the benefit of old machines.
     
     for w in xreadlines(sys.stdin):
         if w[-1] == '\n':
@@ -162,4 +165,11 @@ def main():
 
         
 if __name__ == '__main__':
-    profile.run('main()')
+    try:
+        # Cool!  Psyco roughly halves the runtime.
+        import psyco
+        psyco.log('/tmp/psyco.log')
+        psyco.full()
+    except:
+        print 'Psyco not found, ignoring it'
+    main()
