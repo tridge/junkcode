@@ -5,6 +5,8 @@
 # Copyright Andrew Tridgell <tridge@samba.org> 1997-2002
 # released under the GNU General Public License version 2 or later
 
+VERSION="1.2"
+
 # setup the default configuration
 MAIL_SSH="ssh"
 MAIL_DIR="Mail"
@@ -12,15 +14,31 @@ MAIL_INBOX="$HOME/InBox"
 MAIL_RUNNER="mail.runner"
 SENDMAIL="/usr/lib/sendmail"
 SENDMAIL_OPTS=""
+RSYNC_OPTS="-Pavz"
 MAIL_TIMEOUT=300
-
-VERSION="1.1"
+PROCMAIL_COMMAND="formail -s procmail"
+MAIL_VERBOSE=2
+MAIL_NO_PIDOF=0
 
 # sensible paths are often not setup when invoking commands remotely
 export PATH=$PATH:$HOME/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
 
+
+# define an empty sendmail hook - replace this in .mail.runner for 
+# interesting multi-host tricks
+mail_sendmail_hook() {
+ msg="$1"
+}
+
+
 # load the user specific config
-. $HOME/.mail.runner
+if [ -f $HOME/.mail.runner ]; then
+    HAVE_MAIL_RUNNER_CONFIG=1
+    . $HOME/.mail.runner
+else 
+    echo "YOU MUST HAVE A .mail.runner config!" 1>&2
+    HAVE_MAIL_RUNNER_CONFIG=0
+fi
 
 if [ ! -z "$MAIL_RUNNER_CONF" -a -r "$MAIL_RUNNER_CONF" ]; then
  . $MAIL_RUNNER_CONF
@@ -35,19 +53,54 @@ fi
 # processing now continues in MAIN SCRIPT section at bottom of file
 
 
+##############################################################
+# print a message if the level <= $MAIL_VERBOSE
+debug_msg() {
+    level=$1;
+    if [ $level -le $MAIL_VERBOSE ]; then
+	message="$2";
+	echo "$message";
+    fi
+}
+
+##################################
+# print an error message to stderr
+error_msg() {
+    echo "$1" 1>&2;
+}
+
+
+##############################################################
+# try to make sure two copies of this script don't run at once
+exit_if_running() {
+    if [ "$MAIL_NO_PIDOF" == 1 ]; then
+	debug_msg 2 "Warning: skipping pidof";
+	return;
+    fi
+    if pidof -x -o $$ mail.runner > /dev/null; then
+	debug_msg 1 "mail.runner is already running"
+	exit 1
+    fi  
+}
+
+
+
+
 ###############################################################################
 # send all pending mail, invoking mail.deliver at the other end
 mail_send() {
+    exit_if_running
+
     list=`echo $HOME/$MAIL_OUT_DIR/mail.out.*.*[0-9]`
-    echo
+    debug_msg 2 "";
     if [ "$list" = "" ]; then
-	echo "No messages to send";
+	debug_msg 2 "No messages to send";
 	return 0;
     fi
-    echo "Sending `echo $list | wc -w` messages"
+    debug_msg 1 "Sending `echo $list | wc -w` messages";
 
     if rsync --rsync-path="$MAIL_RUNNER remote_deliver" \
-	--timeout=$MAIL_TIMEOUT -Pavze $MAIL_SSH \
+	--timeout=$MAIL_TIMEOUT $RSYNC_OPTS -e "$MAIL_SSH" \
 	$list $MAIL_HOST:$MAIL_DIR/; then
          rm -f $list
     fi
@@ -57,21 +110,23 @@ mail_send() {
 ###############################################################################
 # fetch mail from the remote host and deliver it via procmail
 mail_fetch() {
-    if ! rsync --timeout=$MAIL_TIMEOUT -Pavze $MAIL_SSH \
+    exit_if_running
+
+    if ! rsync --timeout=$MAIL_TIMEOUT $RSYNC_OPTS -e "$MAIL_SSH" \
 	    --rsync-path="$MAIL_RUNNER remote_send" \
 	    $MAIL_HOST:$MAIL_DIR/EMPTY_FILE $HOME/$MAIL_DIR/; then
-	echo transfer failed;
+	error_msg "transfer failed";
 	return 1;
     fi
 
     if [ "`echo $HOME/$MAIL_DIR/mail.in.*.*`" = "" ]; then 
-	echo
-	echo "No mail to retrieve"
+	debug_msg 1 "";
+	debug_msg 1 "No mail to retrieve";
 	return 1
     fi
 
     for f in $HOME/$MAIL_DIR/mail.in.*.*; do
-	if cat $f | formail -s procmail; then
+	if cat $f | $PROCMAIL_COMMAND; then
 	    # it is useful seeing what mail is being processed
 	    if [ "$MAIL_FRM" = "1" ]; then
 		frm $f
@@ -82,7 +137,9 @@ mail_fetch() {
 
     # this is useful for seeing where procmail has put things ...
     if [ "$MAIL_PROCMAIL_TAIL" = "1" ]; then
-	echo ; echo ; tail $HOME/$MAIL_DIR/procmail.log
+	debug_msg 2 "";
+	debug_msg 2 "";
+	debug_msg 2 `tail $HOME/$MAIL_DIR/procmail.log`;
     fi
 
     return 0;
@@ -94,7 +151,10 @@ mail_fetch() {
 # mail_send to find
 mail_sendmail() {
     msg=$HOME/$MAIL_DIR/mail.out.$RANDOM.$$
-    cat > $msg
+    tmp=tmp.$msg
+    cat > $tmp
+    /bin/mv $tmp $msg
+    mail_sendmail_hook $msg
     exit 0
 }
 
@@ -102,6 +162,8 @@ mail_sendmail() {
 ##############################################################################
 # a rsync wrapper function that delivers mail on the remote host
 mail_remote_deliver() {
+    exit_if_running
+
     rsync $*
     status=$?
 
@@ -113,7 +175,7 @@ mail_remote_deliver() {
 	    if $SENDMAIL $SENDMAIL_OPTS < $f; then
 		rm -f $f
 	    else
-		echo Mail of $f failed $status 1>&2
+		error_msg "Mail of $f failed $status";
 	    fi
     done
     return 0
@@ -122,6 +184,8 @@ mail_remote_deliver() {
 ###############################################################################
 # a rsync wrapper function for fetching mail from the remote host
 mail_remote_send() {
+    exit_if_running
+
     # atomically move mail from InBox to a temporary file
     if test -s $MAIL_INBOX; then
 	movemail $MAIL_INBOX $HOME/$MAIL_DIR/mail.in.$RANDOM.$$ > /dev/null
@@ -260,6 +324,24 @@ Other options are:
     lines of your '\$MAIL_DIR/procmail.log' after processing incoming
     emails.
 
+  RSYNC_OPTS 
+    This defaults to "$RSYNC_OPTS", you may wish to remove the
+    -v and add -q for quieter operation
+
+  PROCMAIL_COMMAND
+    This sets the command used to deliver mail locally. 
+    It defaults to "$PROCMAIL_COMMAND"
+
+  MAIL_VERBOSE
+    Verbosity level:
+      1 - Summary of messages sent and received.
+      2 - Additional whitespace and output when no mail to send.
+
+  MAIL_NO_PIDOF
+    If this is set to "1" no "pidof" checking is done.  You should set
+    this to "1" if you don't have pidof or your pidof is broken in 
+    one way.
+
 
 LICENSE
 -------
@@ -282,7 +364,7 @@ EOF
 ###############################################################################
 
 # See if user is just after help, if so display and exit
-if [ "$1" = "-h" -o "$1" = "--help" ]; then
+if [ "$1" = "-h" -o "$1" = "--help" -o $HAVE_MAIL_RUNNER_CONFIG == 0 ]; then
     mail_help
     exit 0
 fi
@@ -290,16 +372,10 @@ fi
 # we rely on expansion to a null list
 shopt -s nullglob
 
-# try to make sure two copies of this script don't run at once
-if pidof -x -o $$ `basename $0` > /dev/null; then
-    echo "`basename $0` is already running" 1>&2
-    exit 1
-fi  
-
 # make sure the necessary variables are defined
 if [ "$MAIL_HOST" = "" ]; then
-    echo "You must define a MAIL_HOST in $HOME/.mail.runner" 1>&2
-    echo "Use -h for more help" 1>&2
+    error_msg "You must define a MAIL_HOST in $HOME/.mail.runner";
+    error_msg "Use -h for more help";
     exit 1
 fi
 
