@@ -43,7 +43,7 @@ Step 1: Compile Samba
 
   realm = YOUR.KERBEROS.REALM
   ads server = your.kerberos.server
-  security = USER
+  security = ADS
   encrypt passwords = yes
 
   You do *not* need a smbpasswd file, although it won't do any harm
