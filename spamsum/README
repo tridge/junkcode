@@ -96,6 +96,33 @@ Running spamsum
 
 Please run 'spamsum -h' for help with command line operation. 
 
+In spam-checking mode (-c or -C) spamsum returns 0 (success) for
+messages that score at least the threshold and are probably spam, and
+1 for other errors, and 2 for non-spam messages.
+
+Using "success" to indicate a match is consistent with Vipul's Razor,
+and means that internal errors should not cause messages to be
+discarded or tagged.
+
+Note that the "action" option (-c or -C) must be *last* on the command
+line.
+
+Procmail recipes
+----------------
+
+spamsum works well from procmail(1).  It should be called as a message
+filter, using the 'c' flag to feed it a copy of the message, and the
+'W' flag to examine its exit code.  The following rule should have the
+'e' (error) flag if it will be used for non-spam message, and the 'e'
+(and) flag to be used for spam messages.
+
+For example, to file spam in a separate mailbox:
+
+:0 Wc
+| spamsum -H -T50 -d /home/mbp/spamsum/sigs.txt -C -
+:0 a:
+/home/mbp/Mail/spamsum-caught
+
 
 Infrastructure
 --------------

@@ -564,13 +564,18 @@ or
 or
    spamsum [options] -d sigs.txt -C file
 
-When called with a list of filenames spamsum will write out the signatures of each file
-on a separate line. You can specify the filename '-' for standard input.
+When called with a list of filenames spamsum will write out the
+signatures of each file on a separate line. You can specify the
+filename '-' for standard input.
 
 When called with the second form, spamsum will print the best score
 for the given signature with the signatures in the given database. A
 score of 100 means a perfect match, and a score of 0 means a complete
 mismatch.
+
+When checking, spamsum returns 0 (success) when the message *is* spam,
+1 for internal errors, and 2 for messages whose signature is not
+found.
 
 The 3rd form is just like the second form, but you pass a file
 containing a message instead of a pre-computed signature.
@@ -579,7 +584,8 @@ Options:
    -W              ignore whitespace
    -H              skip past mail headers
    -B <bsize>      force a block size of bsize
-   -T <threshold>  set the threshold above which spamsum will stop looking (default 90)
+   -T <threshold>  set the threshold above which spamsum will stop
+                   looking (default 90)
 ");
 }
 
@@ -626,7 +632,7 @@ int main(int argc, char *argv[])
 			score = spamsum_match_db(dbname, optarg, 
 						 threshold);
 			printf("%u\n", score);
-			exit(0);
+			exit(score >= threshold ? 0 : 2);
 
 		case 'C':
 			if (!dbname) {
@@ -638,7 +644,7 @@ int main(int argc, char *argv[])
 							      block_size), 
 						 threshold);
 			printf("%u\n", score);
-			exit(0);
+			exit(score >= threshold ? 0 : 2);
 
 		case 'h':
 		default:

@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -W -O2
+CFLAGS = -Wall -W -g
 
 OBJS = spamsum.o edit_dist.o
 
