@@ -30,7 +30,7 @@ struct template_var {
 
 struct template_state {
 	/* methods */
-	int (*process)(struct template_state *, const char *);
+	int (*process)(struct template_state *, const char *, int);
 	void (*put)(struct template_state *, const char *, const char *, template_fn fn);
 	const char *(*get)(struct template_state *, const char *name);
 	void (*destroy)(struct template_state *);

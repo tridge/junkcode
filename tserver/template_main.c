@@ -58,11 +58,11 @@ int main(int argc, char *argv[])
 	if (argc > 1) {
 		int i;
 		for (i=1; i<argc; i++) {
-			cgi->tmpl->process(cgi->tmpl, argv[i]);
+			cgi->tmpl->process(cgi->tmpl, argv[i], 1);
 		}
 	} else {
 		/* this allows us to work as a shell script */
-		cgi->tmpl->process(cgi->tmpl, "/proc/self/fd/0");
+		cgi->tmpl->process(cgi->tmpl, "/proc/self/fd/0", 1);
 	}
 
 	return 0;

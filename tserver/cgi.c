@@ -381,7 +381,7 @@ static void download(struct cgi_state *cgi, const char *path)
 	mtype = cgi->http_header(cgi, path);
 
 	if (mtype == MIME_TYPE_TEXT_HTML) {
-		cgi->tmpl->process(cgi->tmpl, path);
+		cgi->tmpl->process(cgi->tmpl, path, 1);
 		return;
 	}
 

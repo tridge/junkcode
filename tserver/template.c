@@ -110,7 +110,7 @@ static void process_escaped_variable(struct template_state *tmpl, const char *ta
    all current template variables are passed to the script in the environment
    recursively processes any tags in the output of the script
  */
-static void process_shell(struct template_state *tmpl, const char *tag)
+static void process_shell(struct template_state *tmpl, const char *tag, int recurse)
 {
 	pid_t pid;
 
@@ -136,7 +136,7 @@ static void process_shell(struct template_state *tmpl, const char *tag)
 
 			tag1 = realloc(tag1, taglen+2);
 			tag1[taglen++] = c; tag1[taglen] = 0;
-			if (strncmp(tag1, START_TAG, taglen) != 0) {
+			if (!recurse || strncmp(tag1, START_TAG, taglen) != 0) {
 				fputs(tag1, stdout);
 				free(tag1); tag1 = NULL; taglen = 0;
 				continue;
@@ -213,35 +213,43 @@ static void process_c_call(struct template_state *tmpl, const char *tag)
 */
 static void process_tag(struct template_state *tmpl, const char *tag)
 {
-	char *tag2;
+	char *tag2, *p;
+	int recurse = 1;
 
 	while (isspace(*tag)) tag++;
 
 	tag2 = strdup(tag);
 	trim_tail(tag2, " \t\n\r");
 
-	switch (*tag2) {
+	p = tag2;
+
+	if (*p == '-') {
+		p++;
+		recurse = 0;
+	}
+
+	switch (*p) {
 	case '$':
-		process_variable(tmpl, tag2+1);
+		process_variable(tmpl, p+1);
 		break;
 	case '%':
-		process_escaped_variable(tmpl, tag2+1);
+		process_escaped_variable(tmpl, p+1);
 		break;
 	case '!':
-		process_shell(tmpl, tag2+1);
+		process_shell(tmpl, p+1, recurse);
 		break;
 	case '@':
-		process_c_call(tmpl, tag2+1);
+		process_c_call(tmpl, p+1);
 		break;
 	case '#':
 		/* its a comment, ignore it */
 		break;
 	default:
 		if (strchr(tag2, '=')) {
-			process_set_var(tmpl, tag2);
+			process_set_var(tmpl, p);
 		} else {
 			/* an include file */
-			tmpl->process(tmpl, tag2);
+			tmpl->process(tmpl, p, recurse);
 		}
 	}
 	free(tag2);
@@ -252,7 +260,7 @@ static void process_tag(struct template_state *tmpl, const char *tag)
 /*
   process a template file
 */
-static int process(struct template_state *tmpl, const char *filename)
+static int process(struct template_state *tmpl, const char *filename, int recurse)
 {
 	size_t size, remaining;
 	char *m, *mp;
@@ -281,7 +289,7 @@ static int process(struct template_state *tmpl, const char *filename)
 	/* tags look like {{ TAG }} 
 	   where TAG can be of several forms
 	*/
-	while (remaining && (p = strstr(m, START_TAG))) {
+	while (recurse && remaining && (p = strstr(m, START_TAG))) {
 		const char *m0 = m;
 		int len;
 		char *contents, *s2, *m2;
