@@ -21,7 +21,6 @@
 #include <asm/uaccess.h>
 
 #define TRD_BLOCK_SIZE 1024
-#define TRD_CHUNK_SIZE (1024*TRD_BLOCK_SIZE)
 #define TRD_SIZE (trd_size<<10)
 
 static int trd_blocksizes[1] = {TRD_BLOCK_SIZE};
@@ -59,13 +58,13 @@ static void do_trd_request(request_queue_t * q)
 		}
 
 		while (len) {
-			chunk = start / TRD_CHUNK_SIZE;
-			ofs = start % TRD_CHUNK_SIZE;
+			chunk = start / PAGE_SIZE;
+			ofs = start % PAGE_SIZE;
 			addr = (void *) (((char *)(trd_base[minor][chunk])) + ofs);
 
 			len1 = len;
-			if (ofs + len1 > TRD_CHUNK_SIZE) {
-				len1 = TRD_CHUNK_SIZE - ofs;
+			if (ofs + len1 > PAGE_SIZE) {
+				len1 = PAGE_SIZE - ofs;
 			}
 
 			if (CURRENT->cmd == READ) {
@@ -93,12 +92,12 @@ static int trd_allocate(int minor)
 	if (!trd_base[minor]) goto nomem;
 	memset(trd_base[minor], 0, sizeof(void *)*trd_chunks);
 
-	for (i=0;i<trd_chunks-1;i++) {
-		trd_base[minor][i] = vmalloc(TRD_CHUNK_SIZE);
+	for (i=0;i<trd_chunks;i++) {
+		trd_base[minor][i] = (void *)__get_free_page(GFP_USER);
 		if (!trd_base[minor][i]) goto nomem;
+		/* we have to zero it to ensure private data doesn't leak */
+		memset(trd_base[minor][i], 0, PAGE_SIZE);
 	}
-	trd_base[minor][i] = vmalloc(TRD_SIZE - (i-1)*TRD_CHUNK_SIZE);
-	if (!trd_base[minor][i]) goto nomem;
 
 	printk(KERN_INFO DEVICE_NAME ": Allocated %dk to minor %d\n",
 	       TRD_SIZE>>10, minor);
@@ -108,7 +107,8 @@ static int trd_allocate(int minor)
 nomem:
 	if (trd_base[minor]) {
 		for (i=0;i<trd_chunks;i++) {
-			if (trd_base[minor][i]) vfree(trd_base[minor][i]);
+			if (trd_base[minor][i]) 
+				free_page((unsigned long)trd_base[minor][i]);
 		}
 		vfree(trd_base[minor]);
 		trd_base[minor] = NULL;
@@ -163,7 +163,7 @@ static struct block_device_operations trd_fops =
 
 static int trd_init(void)
 {
-	trd_chunks = (TRD_SIZE + (TRD_CHUNK_SIZE-1)) / TRD_CHUNK_SIZE;
+	trd_chunks = (TRD_SIZE + (PAGE_SIZE-1)) / PAGE_SIZE;
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &trd_fops)) {
 		printk(KERN_ERR DEVICE_NAME ": Unable to register_blkdev(%d)\n", MAJOR_NR);
@@ -188,7 +188,7 @@ static void __exit trd_cleanup(void)
 	for (minor=0;minor<MAX_DEVS;minor++) {
 		if (!trd_base[minor]) continue;
 		for (i=0;i<trd_chunks;i++) {
-			vfree(trd_base[minor][i]);
+			free_page((unsigned long)trd_base[minor][i]);
 		}
 		vfree(trd_base[minor]);
 		trd_base[minor] = NULL;
