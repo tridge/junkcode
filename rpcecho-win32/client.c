@@ -258,6 +258,22 @@ void main(int argc, char **argv)
 			goto done;
 		}
 
+		if (strcmp(argv[0], "sleep") == 0) {
+			long arg, result;
+
+			if (argc != 2) {
+				printf("Usage: sleep num\n");
+				exit(1);
+			}
+
+			arg = atoi(argv[1]);
+
+			result = TestSleep(arg);
+			printf("Slept for %d seconds\n", result);
+
+			goto done;
+		}
+
 		printf("Invalid command '%s'\n", argv[0]);
 
 	} RpcExcept(1) {

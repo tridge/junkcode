@@ -105,6 +105,13 @@ long TestCall2(short level, echo_Info **info)
 	return 0;
 }
 
+long TestSleep(long seconds)
+{
+	printf("Sleeping for %d seconds\n", seconds);
+	Sleep(1000 * seconds);
+	return seconds;
+}
+
 void main(int argc, char **argv)
 {
 	RPC_STATUS status;
