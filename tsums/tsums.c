@@ -195,7 +195,7 @@ static void tsums_file(const char *fname)
 	sum.device = st.st_dev;
 	sum.inode = st.st_ino;
 	sum.nlink = st.st_nlink;
-	if (!S_ISREG(st.st_mode)) {
+	if (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode)) {
 		sum.rdev = st.st_rdev;
 	}
 
