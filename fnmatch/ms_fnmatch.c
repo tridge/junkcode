@@ -65,40 +65,60 @@ static int fnmatch_orig(const char *p, const char *n)
 }
 
 
+static int null_match(const char *p)
+{
+	for (;*p;p++) {
+		if (*p != '*' &&
+		    *p != '<' &&
+		    *p != '"' &&
+		    *p != '>') return -1;
+	}
+	return 0;
+}
+
 /*
-  the new, hopefully better function. Fiddle this until it works and is fast
+  the original, recursive function. Needs replacing, but with exactly
+  the same output
 */
-static int fnmatch_test(const char *p, const char *n)
+static int fnmatch_test2(const char *p, const char *n)
 {
 	char c;
 
 	while ((c = *p++)) {
 		switch (c) {
 		case '?':
-			if (! *n) return -1;
+			if (! *n) {
+				return -1;
+			}
 			n++;
 			break;
 
 		case '>':
 			if (n[0] == '.') {
-				if (! n[1] && fnmatch_test(p, n+1) == 0) return 0;
-				if (fnmatch_test(p, n) == 0) return 0;
-				return -1;
+				if (! n[1] && null_match(p) == 0) {
+					return 0;
+				}
+				break;
 			}
-			if (! *n) return fnmatch_test(p, n);
+			if (! *n) return null_match(p);
 			n++;
 			break;
 
 		case '*':
 			for (; *n; n++) {
-				if (fnmatch_test(p, n) == 0) return 0;
+				if (fnmatch_test2(p, n) == 0) {
+					return 0;
+				}
 			}
 			break;
 
 		case '<':
 			for (; *n; n++) {
-				if (fnmatch_test(p, n) == 0) return 0;
-				if (*n == '.' && !strchr(n+1,'.')) {
+				if (fnmatch_test2(p, n) == 0) {
+					return 0;
+				}
+				if (*n == '.' && 
+				    !strchr(n+1,'.')) {
 					n++;
 					break;
 				}
@@ -106,22 +126,62 @@ static int fnmatch_test(const char *p, const char *n)
 			break;
 
 		case '"':
-			if (*n == 0 && fnmatch_test(p, n) == 0) return 0;
+			if (*n == 0 && 
+			    null_match(p) == 0) {
+				return 0;
+			}
 			if (*n != '.') return -1;
 			n++;
 			break;
 
 		default:
-			if (c != *n && toupper(c) != toupper(*n)) return -1;
+			if (c != *n && 
+			    toupper(c) != 
+			    toupper(*n)) {
+				return -1;
+			}
 			n++;
 		}
 	}
 	
-	if (! *n) return 0;
+	if (! *n) {
+		return 0;
+	}
 	
 	return -1;
 }
 
+static char *compress_pattern(const char *pattern)
+{
+	char *p, *new;
+
+	p = new = strdup(pattern);
+	while (p[0] && p[1]) {
+		/*  ** => *  */
+		/*  *< => *  */
+		if (p[0] == '*' && (p[1] == '*' || p[1] == '<'))
+			memmove(p+1, p+2, strlen(p+1));
+		/* << => <* */
+		else if (p[0] == '<' && p[1] == '<')
+			p[1] = '*';
+		else
+			p++;
+	}
+	return new;
+}
+
+/*
+  the new, hopefully better function. Fiddle this until it works and is fast
+*/
+static int fnmatch_test(const char *p, const char *n)
+{
+	char *new = compress_pattern(p);
+	int ret;
+
+	ret = fnmatch_test2(new, n);
+	free(new);
+	return ret;
+}
 
 static void randstring(char *s, int len, const char *chars)
 {
@@ -131,9 +191,12 @@ static void randstring(char *s, int len, const char *chars)
 	*s = 0;
 }
 
+static const char *p_used;
+static const char *n_used;
+
 static void sig_alrm(int sig)
 {
-	printf("Too slow!!\n");
+	printf("Too slow!!  p='%s'  s='%s'\n", p_used, n_used);
 	exit(0);
 }
 
@@ -150,8 +213,8 @@ int main(void)
 	alarm(0);
 
 	for (i=0;i<100000;i++) {
-		int len1 = random() % 20;
-		int len2 = random() % 20;
+		int len1 = random() % 30;
+		int len2 = random() % 30;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
@@ -159,12 +222,20 @@ int main(void)
 		randstring(p, len1, "*?<>\".abc");
 		randstring(n, len2, "abc.");
 
+		p_used = p;
+		n_used = n;
+
+		alarm(0);
 		ret1 = fnmatch_orig(p, n);
+		alarm(2);
 		ret2 = fnmatch_test(p, n);
+		alarm(0);
 
 		if (ret1 != ret2) {
 			printf("mismatch: ret1=%d ret2=%d pattern='%s' string='%s'\n",
 			       ret1, ret2, p, n);
+			printf("Pattern actually used: '%s' => '%s'\n",
+			       p, compress_pattern(p));
 			free(p);
 			free(n);
 			exit(0);
