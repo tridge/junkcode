@@ -8,6 +8,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pty.h>
+#include <utmp.h>
 #include <errno.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -166,14 +168,14 @@ static char **completion_function(const char *line, int start, int end)
 }
 
 /* used by line_handler */
-static int pipe_fd;
+static int child_fd;
 
 /* callback function when readline has a whole line */
 void line_handler(char *line) 
 {
 	if (!line) exit(0);
 	/* send the line down the pipe to the command */
-	dprintf(pipe_fd, "%s\n", line);
+	dprintf(child_fd, "%s\n", line);
 	if (*line) {
 		/* only add non-empty lines to the history */
 		add_history(line);
@@ -185,8 +187,8 @@ void line_handler(char *line)
 */
 int main(int argc, char *argv[])
 {
-	int fd1[2], fd2[2];
 	char *prompt;
+	pid_t pid;
 
 	if (argc < 2 || argv[1][0] == '-') {
 		usage();
@@ -196,31 +198,19 @@ int main(int argc, char *argv[])
 	/* load the completions list */
 	load_completions(argv[1]);
 
-	/* we will use pipes to talk to the child */
-	if (pipe(fd1) != 0 || pipe(fd2) != 0) {
-		perror("pipe");
+	pid = forkpty(&child_fd, NULL, NULL, NULL);
+
+	if (pid == (pid_t)-1) {
+		perror("forkpty");
 		exit(1);
 	}
 
-	/* start the child process */
-	if (fork() == 0) {
-		close(fd1[1]);
-		close(fd2[0]);
-		close(0);
-		close(1);
-		dup2(fd1[0], 0);
-		dup2(fd2[1], 1);
+	if (pid == 0) {
 		execvp(argv[1], argv+1);
 		/* it failed?? maybe command not found */
 		perror(argv[1]);
 		exit(1);
 	}
-
-	/* remember the connection to the child */
-	pipe_fd = fd1[1];
-
-	close(fd2[1]);
-	close(fd1[0]);
 
 	/* initial blank prompt */
 	prompt = strdup("");
@@ -237,10 +227,10 @@ int main(int argc, char *argv[])
 
 		FD_ZERO(&fds);
 		FD_SET(0, &fds);
-		FD_SET(fd2[0], &fds);
+		FD_SET(child_fd, &fds);
 
 		/* wait for some activity */
-		ret = select(fd2[0]+1, &fds, NULL, NULL, NULL);
+		ret = select(child_fd+1, &fds, NULL, NULL, NULL);
 		if (ret == -1 && errno == EINTR) continue;
 		if (ret <= 0) break;
 
@@ -251,10 +241,10 @@ int main(int argc, char *argv[])
 
 		/* data from the program is used to intuit the
 		   prompt. This works surprisingly well */
-		if (FD_ISSET(fd2[0], &fds)) {
+		if (FD_ISSET(child_fd, &fds)) {
 			char buf[1024];
 			char *p;
-			int n = read(fd2[0], buf, sizeof(buf)-1);
+			int n = read(child_fd, buf, sizeof(buf)-1);
 			if (n <= 0) break;
 			buf[n] = 0;
 
