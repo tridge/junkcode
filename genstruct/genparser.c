@@ -102,17 +102,6 @@ static char *decode_bytes(const char *s, unsigned *len)
 	return ret;
 }
 
-static char *encode_string(const char *s)
-{
-	return encode_bytes(s, strlen(s));
-}
-
-static char *decode_string(const char *s)
-{
-	unsigned len;
-	return decode_bytes(s, &len);
-}
-
 static int addstr(struct parse_string *p, const char *fmt, ...)
 {
 	char *s = NULL;
@@ -231,7 +220,7 @@ static int gen_dump_array(struct parse_string *p,
 			size = sizeof(void *);
 		}
 		
-		if (all_zero(p2, pinfo->size)) {
+		if ((count || pinfo->ptr_count) && all_zero(ptr, size)) {
 			ptr += size;
 			continue;
 		}
@@ -265,6 +254,11 @@ static int find_var(const struct parse_struct *pinfo,
 {
 	int i;
 	const char *ptr;
+
+	/* this allows for constant lengths */
+	if (isdigit(*var)) {
+		return atoi(var);
+	}
 
 	for (i=0;pinfo[i].name;i++) {
 		if (strcmp(pinfo[i].name, var) == 0) break;
