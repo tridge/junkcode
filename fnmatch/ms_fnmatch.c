@@ -244,8 +244,8 @@ int main(void)
 //	exit(0);
 
 	for (i=0;i<20000;i++) {
-		int len1 = random() % 25;
-		int len2 = random() % 25;
+		int len1 = random() % 30;
+		int len2 = random() % 30;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
@@ -284,6 +284,6 @@ int main(void)
 		fflush(stdout);
 	}
 
-	printf("\nALL OK worst1=%.4f worst2=%.4f\n", w1, w2);
+	printf("\nALL OK speedup=%.4f\n", w1/w2);
 	return 0;
 }
