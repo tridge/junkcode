@@ -54,9 +54,17 @@ void main(int argc, char **argv)
 		case '-':
 			option = &argv[0][2];
 			if (strcmp(option, "sign") == 0) {
-				sec_options |= RPC_C_AUTHN_LEVEL_PKT_INTEGRITY;
+				if (sec_options == RPC_C_AUTHN_LEVEL_PKT_PRIVACY) {
+					printf("You must choose sign or seal, not both\n");
+					exit(1);
+				}
+				sec_options = RPC_C_AUTHN_LEVEL_PKT_INTEGRITY;
 			} else if (strcmp(option, "seal") == 0) {
-				sec_options |= RPC_C_AUTHN_LEVEL_PKT_PRIVACY;
+				if (sec_options == RPC_C_AUTHN_LEVEL_PKT_INTEGRITY) {
+					printf("You must choose sign or seal, not both\n");
+					exit(1);
+				}
+				sec_options = RPC_C_AUTHN_LEVEL_PKT_PRIVACY;
 			} else {
 				printf("Bad security option '%s'\n", option);
 				exit(1);
@@ -142,6 +150,7 @@ void main(int argc, char **argv)
 	}
 
 
+	while (argc > 0) {
 	RpcTryExcept {
 
 		/* Add one to a number */
@@ -149,7 +158,7 @@ void main(int argc, char **argv)
 		if (strcmp(argv[0], "addone") == 0) {
 			int arg, result;
 
-			if (argc != 2) {
+			if (argc < 2) {
 				printf("Usage: addone num\n");
 				exit(1);
 			}
@@ -159,7 +168,9 @@ void main(int argc, char **argv)
 			AddOne(arg, &result);
 			printf("%d + 1 = %d\n", arg, result);
 
-			goto done;
+			argc -= 2;
+			argv += 2;
+			continue;
 		}
 
 		/* Echo an array */
@@ -168,7 +179,7 @@ void main(int argc, char **argv)
 			int arg, i;
 			char *indata, *outdata;
 
-			if (argc != 2) {
+			if (argc < 2) {
 				printf("Usage: echo num\n");
 				exit(1);
 			}
@@ -190,6 +201,8 @@ void main(int argc, char **argv)
 
 			EchoData(arg, indata, outdata);
 
+			printf("echo %d\n", arg);
+
 			for (i = 0; i < arg; i++) {
 				if (indata[i] != outdata[i]) {
 					printf("data mismatch at offset %d, %d != %d\n",
@@ -198,14 +211,16 @@ void main(int argc, char **argv)
 				}
 			}
 
-			goto done;
+			argc -= 2;
+			argv += 2;
+			continue;
 		}
 
 		if (strcmp(argv[0], "sinkdata") == 0) {
 			int arg, i;
 			char *indata;
 
-			if (argc != 2) {
+			if (argc < 2) {
 				printf("Usage: sinkdata num\n");
 				exit(1);
 			}
@@ -222,14 +237,17 @@ void main(int argc, char **argv)
 
 			SinkData(arg, indata);
 
-			goto done;
+			printf("sinkdata %d\n", arg);
+			argc -= 2;
+			argv += 2;
+			continue;
 		}
 
 		if (strcmp(argv[0], "sourcedata") == 0) {
 			int arg, i;
 			unsigned char *outdata;
 
-			if (argc != 2) {
+			if (argc < 2) {
 				printf("Usage: sourcedata num\n");
 				exit(1);
 			}
@@ -243,6 +261,8 @@ void main(int argc, char **argv)
 
 			SourceData(arg, outdata);
 
+			printf("sourcedata %d\n", arg);
+
 			for (i = 0; i < arg; i++) {
 				if (outdata[i] != (i & 0xff)) {
 					printf("data mismatch at offset %d, %d != %d\n",
@@ -250,31 +270,40 @@ void main(int argc, char **argv)
 				}
 			}
 
-			goto done;
+			argc -= 2;
+			argv += 2;
+			continue;
 		}
 
 		if (strcmp(argv[0], "test") == 0) {
 			printf("no TestCall\n");
-			goto done;
+
+			argc -= 1;
+			argv += 1;
+			continue;
 		}
 
 		if (strcmp(argv[0], "sleep") == 0) {
 			long arg, result;
 
-			if (argc != 2) {
+			if (argc < 2) {
 				printf("Usage: sleep num\n");
 				exit(1);
 			}
 
 			arg = atoi(argv[1]);
 
-			result = TestSleep(arg);
-			printf("Slept for %d seconds\n", result);
+//			result = TestSleep(arg);
+//			printf("Slept for %d seconds\n", result);
+			printf("Sleep disabled (need async code)\n");
 
-			goto done;
+			argc -= 2;
+			argv += 2;
+			continue;
 		}
 
 		printf("Invalid command '%s'\n", argv[0]);
+		goto done;
 
 	} RpcExcept(1) {
 		unsigned long ex;
@@ -282,6 +311,7 @@ void main(int argc, char **argv)
 		ex = RpcExceptionCode();
 		printf("Runtime error 0x%x\n", ex);
 	} RpcEndExcept
+		  }
 
 done:
 

@@ -23,4 +23,5 @@
 ]
 interface rpcecho
 {
+/*	[async] TestSleep(); */
 }

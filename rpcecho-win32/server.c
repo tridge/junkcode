@@ -18,6 +18,8 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+#define _WIN32_WINNT 0x0500
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -105,12 +107,23 @@ long TestCall2(short level, echo_Info **info)
 	return 0;
 }
 
+#if 0
+void TestSleep(PRPC_ASYNC_STATE pAsync, long seconds)
+{
+	long ret;
+	printf("async Sleeping for %d seconds\n", seconds);
+	Sleep(1000 * seconds);
+	ret = seconds;
+	RpcAsyncCompleteCall(pAsync, &ret);
+}
+#else
 long TestSleep(long seconds)
 {
-	printf("Sleeping for %d seconds\n", seconds);
+	printf("non-async Sleeping for %d seconds\n", seconds);
 	Sleep(1000 * seconds);
 	return seconds;
 }
+#endif
 
 void main(int argc, char **argv)
 {
