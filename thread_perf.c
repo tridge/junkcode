@@ -1,3 +1,10 @@
+/*
+  simple thread/process benchmark
+
+  Copyright (C) Andrew Tridgell <tridge@samba.org> 2003
+
+  Released under the GNU GPL version 2 or later
+*/
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
