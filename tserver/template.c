@@ -79,6 +79,19 @@ static void process_variable(struct template_state *tmpl, const char *tag)
 	}
 }
 
+/* process setting a template variable */
+static void process_set_var(struct template_state *tmpl, char *tag)
+{
+	char *p;
+	p = strchr(tag, '=');
+	if (!p) return;
+	*p++ = 0;
+	trim_tail(tag, " \t");
+	trim_tail(p, " \t");
+	while (isspace(*p)) p++;
+	tmpl->put(tmpl, tag, p, NULL);
+}
+
 /* process a template variable with quote escaping */
 static void process_escaped_variable(struct template_state *tmpl, const char *tag)
 {
@@ -220,9 +233,16 @@ static void process_tag(struct template_state *tmpl, const char *tag)
 	case '@':
 		process_c_call(tmpl, tag2+1);
 		break;
+	case '#':
+		/* its a comment, ignore it */
+		break;
 	default:
-		/* an include file */
-		tmpl->process(tmpl, tag2);
+		if (strchr(tag2, '=')) {
+			process_set_var(tmpl, tag2);
+		} else {
+			/* an include file */
+			tmpl->process(tmpl, tag2);
+		}
 	}
 	free(tag2);
 

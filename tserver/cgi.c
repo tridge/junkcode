@@ -455,6 +455,7 @@ static int setup_standalone(struct cgi_state *cgi)
 	if (!url) {
 		cgi->http_error(cgi, "400 Bad Request", "",
 				"You must specify a GET or POST request");
+		exit(1);
 	}
 
 	/* trim the URL */

@@ -98,3 +98,5 @@ void trim_tail(char *s, char *trim_chars)
 	while (len > 0 && strchr(trim_chars, s[len-1])) len--;
 	s[len] = 0;
 }
+
+
