@@ -45,10 +45,12 @@ int main(int argc, char *argv[])
 
 	for (i=0;i<1000000;i++) {
 		if (trygroups(i) != 0) {
-			printf("max of %d supplementary groups\n", i-1);
+			printf("\nmax of %d supplementary groups\n", i-1);
 			exit(0);
 		}
+		printf("%d\r", i);
+		fflush(stdout);
 	}
-	printf("no limit on supplementary groups!?\n");
+	printf("\nno limit on supplementary groups!?\n");
 	return 0;
 }
