@@ -1,4 +1,5 @@
 #include "rproxy.h"
+#include "librsync/rsync.h"
 
 struct mem_buf {
 	char *buf;
@@ -338,7 +339,6 @@ void sig_decode(FILE *f_in, FILE *f_out, FILE *f_orig, FILE *f_cache,
 {
 	rs_buffers_t rbuf;
 	struct file_buf fbuf_orig, fbuf_out, fbuf_in;
-	ssize_t n;
 	rs_job_t *job;
 	rs_result r;
 
@@ -370,7 +370,7 @@ void sig_decode(FILE *f_in, FILE *f_out, FILE *f_orig, FILE *f_cache,
 	rs_job_free(job);
 
 	logmsg("librsync_decode->%d (in=%d out=%d)\n", 
-	       n, (int)sig_inbytes, (int)sig_outbytes);
+	       (int)r, (int)sig_inbytes, (int)sig_outbytes);
 }
 
 
@@ -405,7 +405,6 @@ void sig_encode(FILE *f_in, FILE *f_out, char *signature, FILE *f_cache,
 	struct mem_buf mbuf;
 	char *sig2;
 	size_t sig_length;
-	ssize_t n;
 	rs_job_t *job;
 	rs_signature_t *sig;
 	rs_result r;
@@ -455,5 +454,5 @@ void sig_encode(FILE *f_in, FILE *f_out, char *signature, FILE *f_cache,
 
 	free(sig2);
 	logmsg("librsync_encode->%d (in=%d out=%d)\n", 
-	       n, (int)sig_inbytes, (int)sig_outbytes);
+	       (int)r, (int)sig_inbytes, (int)sig_outbytes);
 }

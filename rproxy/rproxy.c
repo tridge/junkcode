@@ -265,7 +265,8 @@ static int child_main(int fd)
 
 static void usage(void)
 {
-	printf("read the code\n");
+	printf("rproxy - an experimental web proxy with HTTP delta compression\n");
+	printf("Usage: rproxy host:port\n");
 }
 
 void exit_cleanup(int code)

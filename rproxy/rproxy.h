@@ -129,8 +129,6 @@
 #endif
 
 #include "dlinklist.h"
-#include "librsync/rsync.h"
-#include "librsync/sumset.h"
 
 #define BUFFER_SIZE 512
 #define CACHE_DIR "cache"
