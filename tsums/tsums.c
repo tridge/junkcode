@@ -26,7 +26,7 @@ struct sum_struct {
 	mode_t mode;
 	uid_t uid;
 	gid_t gid;
-	char sum[16];
+	unsigned char sum[16];
 	ino_t inode;
 	dev_t device;
 	dev_t rdev;
