@@ -4,6 +4,39 @@
 static char *tcp_options="";
 static int port=7001;
 static int bufsize=8192;
+static int use_sendfile;
+
+#if WITH_SENDFILE
+#include <sys/sendfile.h>
+
+static int do_write(int fd, const char *buf, size_t size)
+{
+	off_t offset = 0;
+	static int tmp_fd = -1;
+	char template[] = "/tmp/socklib.XXXXXX";
+
+	if (!use_sendfile) {
+		return write(fd, buf, size);
+	}
+
+	if (tmp_fd == -1) {
+		tmp_fd = mkstemp(template);
+		if (tmp_fd == -1) {
+			perror("mkstemp");
+			exit(1);
+		}
+		unlink(template);
+		write(tmp_fd, buf, size);
+	}
+
+	return sendfile(fd, tmp_fd, &offset, size);
+}
+#else
+static int do_write(int fd, const char *buf, size_t size)
+{
+	return write(fd, buf, size);
+}
+#endif
 
 static void server(int fd)
 {
@@ -25,7 +58,7 @@ static void server(int fd)
 	start_timer();
 
 	while (1) {
-		int ret = write(fd, buf, bufsize);
+		int ret = do_write(fd, buf, bufsize);
 		if (ret <= 0) break;
 		total += ret;
 		if (end_timer() > 2.0) {
@@ -77,10 +110,18 @@ int main(int argc, char *argv[])
 	int opt;
 	extern char *optarg;
 
-	while ((opt = getopt (argc, argv, "p:t:H:b:h")) != EOF) {
+	while ((opt = getopt (argc, argv, "p:t:H:b:hS")) != EOF) {
 		switch (opt) {
 		case 'p':
 			port = atoi(optarg);
+			break;
+		case 'S':
+#if WITH_SENDFILE
+			use_sendfile = 1;
+#else
+			printf("sendfile not compiled in\n");
+			exit(1);
+#endif
 			break;
 		case 't':
 			tcp_options = optarg;

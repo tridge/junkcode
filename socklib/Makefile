@@ -1,4 +1,4 @@
-CFLAGS = -Wall
+CFLAGS = -Wall -DWITH_SENDFILE=1
 
 all: sock_sink sock_source
 
