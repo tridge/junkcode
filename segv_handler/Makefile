@@ -9,7 +9,7 @@ testprog: testprog.c
 	$(CC) -g -o testprog{,.c}
 
 test: all
-	-LD_PRELOAD=segv_handler.so ./testprog
+	-LD_PRELOAD=./segv_handler.so ./testprog
 	ls -l /tmp/segv_testprog.*
 
 clean:
