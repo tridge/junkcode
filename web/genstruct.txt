@@ -1,0 +1,7 @@
+genstruct is a system for building marshalling/unmarshalling functions
+for C. It parses C header files to generate an internal table
+describing the data structures, and can then use this table to
+linearise a complex data structure at runtime into a string, or
+convert a string back into a data structure.
+
+{{! echo "$DIR_SOURCE" }}

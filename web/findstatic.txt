@@ -1,0 +1,6 @@
+Findstatic is a simple perl script for finding functions or variables
+in a project that might be able to be made static. Once you make them
+static then the compiler should tell you if they aren't called at all
+and can be removed completely.
+
+{{! echo "$PERL_SOURCE" }}

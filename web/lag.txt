@@ -1,0 +1,5 @@
+A C function for measuring lag on a TCP socket by measuring when data
+has been acked. Could be used as part of a chess server for
+determining player lag.
+
+{{! echo "$C_SOURCE" }}

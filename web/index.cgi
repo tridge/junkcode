@@ -74,6 +74,7 @@ href="http://samba.org/~tridge/">Andrew Tridgell<a>.
 </table>
 
 {{ C_SOURCE=<p>Download and compile <a href="{{$JUNKCODE}}/{{$name}}.c">{{$name}}.c</a><p> }}
+{{ PERL_SOURCE=<p>Download and run <a href="{{$JUNKCODE}}/{{$name}}.pl">{{$name}}.pl</a><p> }}
 {{ DIR_SOURCE=<p>Download <a href="{{$JUNKCODE}}/{{$name}}/">here</a><p> }}
 {{ TOP_SOURCE=<p>Download <a href="/ftp/unpacked/{{$name}}/">here</a><p> }}
 

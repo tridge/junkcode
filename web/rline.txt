@@ -1,0 +1,22 @@
+Run any command line driven program under readline control. 
+
+To use it just run 'rline COMMAND' and the command will be run with
+readline control.<p>
+
+rline will try to load a completions file from one of the following locations
+in this order:
+<ul>
+    <li> $RLINE_COMPLETIONS_FILE
+    <li> $RLINE_COMPLETIONS_DIR/COMMAND
+    <li> $HOME/.rline/COMMAND
+    <li> /usr/share/rline/COMMAND
+</ul>
+
+A completion file consists of one completion per line, with multi-part completions
+separated by spaces. You can use the special word [FILE] to mean
+filename completion.<p>
+
+Some example completion files are
+<a href={{$JUNKCODE}}/rline/examples>here</a>.
+
+{{! echo "$DIR_SOURCE" }}
