@@ -23,9 +23,10 @@
 #define TRD_BLOCK_SIZE 1024
 #define TRD_SIZE (trd_size<<10)
 
-static int trd_blocksizes[1] = {TRD_BLOCK_SIZE};
+static int trd_blocksizes[MAX_DEVS];
+static int trd_blk_sizes[MAX_DEVS];
 static void **trd_base[MAX_DEVS];
-static int trd_chunks;
+static int trd_pages;
 static unsigned trd_size = 4096;
 
 MODULE_PARM (trd_size, "1i");
@@ -34,7 +35,7 @@ static void do_trd_request(request_queue_t * q)
 {
 	u_long start, ofs, len, len1;
 	void *addr;
-	int chunk, minor;
+	int page, minor;
 
 	while (1) {
 		INIT_REQUEST;
@@ -58,9 +59,9 @@ static void do_trd_request(request_queue_t * q)
 		}
 
 		while (len) {
-			chunk = start / PAGE_SIZE;
+			page = start / PAGE_SIZE;
 			ofs = start % PAGE_SIZE;
-			addr = (void *) (((char *)(trd_base[minor][chunk])) + ofs);
+			addr = (void *) (((char *)(trd_base[minor][page])) + ofs);
 
 			len1 = len;
 			if (ofs + len1 > PAGE_SIZE) {
@@ -88,11 +89,14 @@ static int trd_allocate(int minor)
 	/* it might be already allocated */
 	if (trd_base[minor]) return 0;
 
-	trd_base[minor] = (void **)vmalloc(sizeof(void *)*trd_chunks);
-	if (!trd_base[minor]) goto nomem;
-	memset(trd_base[minor], 0, sizeof(void *)*trd_chunks);
+	trd_blocksizes[minor] = TRD_BLOCK_SIZE;
+	trd_blk_sizes[minor] = trd_size;
 
-	for (i=0;i<trd_chunks;i++) {
+	trd_base[minor] = (void **)vmalloc(sizeof(void *)*trd_pages);
+	if (!trd_base[minor]) goto nomem;
+	memset(trd_base[minor], 0, sizeof(void *)*trd_pages);
+
+	for (i=0;i<trd_pages;i++) {
 		trd_base[minor][i] = (void *)__get_free_page(GFP_USER);
 		if (!trd_base[minor][i]) goto nomem;
 		/* we have to zero it to ensure private data doesn't leak */
@@ -106,7 +110,7 @@ static int trd_allocate(int minor)
 
 nomem:
 	if (trd_base[minor]) {
-		for (i=0;i<trd_chunks;i++) {
+		for (i=0;i<trd_pages;i++) {
 			if (trd_base[minor][i]) 
 				free_page((unsigned long)trd_base[minor][i]);
 		}
@@ -123,8 +127,11 @@ nomem:
 static int trd_open(struct inode *inode, struct file *filp)
 {
 	int ret;
+	int minor = MINOR(inode->i_rdev);
 
-	ret = trd_allocate(MINOR(inode->i_rdev));
+	if (minor >= MAX_DEVS) return -ENODEV;
+
+	ret = trd_allocate(minor);
 	if (ret != 0) return ret;
 
 	MOD_INC_USE_COUNT;
@@ -163,7 +170,7 @@ static struct block_device_operations trd_fops =
 
 static int trd_init(void)
 {
-	trd_chunks = (TRD_SIZE + (PAGE_SIZE-1)) / PAGE_SIZE;
+	trd_pages = (TRD_SIZE + (PAGE_SIZE-1)) / PAGE_SIZE;
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &trd_fops)) {
 		printk(KERN_ERR DEVICE_NAME ": Unable to register_blkdev(%d)\n", MAJOR_NR);
@@ -172,7 +179,7 @@ static int trd_init(void)
 
 	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
 	blksize_size[MAJOR_NR] = trd_blocksizes;
-	blk_size[MAJOR_NR] = &trd_size;
+	blk_size[MAJOR_NR] = trd_blk_sizes;
 
 	printk(KERN_DEBUG DEVICE_NAME ": trd initialised size=%dk\n", 
 	       trd_size);
@@ -188,7 +195,7 @@ static void __exit trd_cleanup(void)
 
 	for (minor=0;minor<MAX_DEVS;minor++) {
 		if (!trd_base[minor]) continue;
-		for (i=0;i<trd_chunks;i++) {
+		for (i=0;i<trd_pages;i++) {
 			free_page((unsigned long)trd_base[minor][i]);
 		}
 		vfree(trd_base[minor]);
