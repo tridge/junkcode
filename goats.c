@@ -30,7 +30,7 @@ static void choose2(void)
 {
 	switch (strategy) {
 	case 0:
-		choice2 == choice1;
+		choice2 = choice1;
 		break;
 	case 1:
 		for (choice2 = 0; choice2 < 3; choice2++) {
