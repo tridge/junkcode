@@ -210,6 +210,7 @@ int main(int argc, char *argv[])
 {
 	char *prompt;
 	pid_t pid;
+	struct termios term, *pterm=NULL;
 
 	if (argc < 2 || argv[1][0] == '-') {
 		usage();
@@ -219,9 +220,13 @@ int main(int argc, char *argv[])
 	/* load the completions list */
 	load_completions(argv[1]);
 
+	if (tcgetattr(0, &term) == 0) {
+		pterm = &term;
+	}
+
 	/* by using forkpty we give a true pty to the child, which means it should 
 	   behave the same as if run from a terminal */
-	pid = forkpty(&child_fd, NULL, NULL, NULL);
+	pid = forkpty(&child_fd, NULL, pterm, NULL);
 
 	if (pid == (pid_t)-1) {
 		perror("forkpty");
