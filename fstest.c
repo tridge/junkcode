@@ -22,7 +22,8 @@ static int num_files = 1;
 static int file_size = 1024*1024;
 static int block_size = 1024;
 static char *base_dir = ".";
-static int use_mmap = 0;
+static int use_mmap;
+static int use_sync;
 
 typedef unsigned char uchar;
 
@@ -95,7 +96,7 @@ static void create_file(const char *dir, int loop, int child, int fnum)
 
 	buf = x_malloc(block_size);
 	sprintf(fname, "%s/file%d", dir, fnum);
-	fd = open(fname, O_RDWR|O_CREAT|O_TRUNC, 0644);
+	fd = open(fname, O_RDWR|O_CREAT|O_TRUNC | (use_sync?O_SYNC:0), 0644);
 	if (fd == -1) {
 		perror(fname);
 		exit(1);
@@ -245,6 +246,7 @@ static void usage(void)
 " -p path               set base path\n"
 " -l loops              set loop count\n"
 " -m                    use mmap\n"
+" -S                    use synchronous IO\n"
 " -h                    show this help message\n");
 }
 
@@ -257,7 +259,7 @@ int main(int argc, char *argv[])
 	int num_children = 1;
 	int i, status, ret;
 
-	while ((c = getopt(argc, argv, "n:s:f:p:l:b:hm")) != -1) {
+	while ((c = getopt(argc, argv, "n:s:f:p:l:b:Shm")) != -1) {
 		switch (c) {
 		case 'n':
 			num_children = strtol(optarg, NULL, 0);
@@ -276,6 +278,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'm':
 			use_mmap = 1;
+			break;
+		case 'S':
+			use_sync = 1;
 			break;
 		case 'l':
 			loop_count = strtol(optarg, NULL, 0);
@@ -299,8 +304,8 @@ int main(int argc, char *argv[])
 		printf("Rounded file size to %d\n", file_size);
 	}
 
-	printf("num_children=%d file_size=%d num_files=%d loop_count=%d mmap=%d\n",
-	       num_children, file_size, num_files, loop_count, use_mmap);
+	printf("num_children=%d file_size=%d num_files=%d loop_count=%d block_size=%d\nmmap=%d sync=%d\n",
+	       num_children, file_size, num_files, loop_count, block_size, use_mmap, use_sync);
 
 	printf("Total data size %.1f Mbyte\n",
 	       num_files * num_children * 1.0e-6 * file_size);
