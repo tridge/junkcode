@@ -35,7 +35,7 @@ diagnosing problems with your Snapserver
       echo "<tr align=right>"
       echo "<td>$d</td>";
       echo "<td>"`cat $d/model`"</td>";
-      echo "<td>"`cat $d/capacity`"</td>"
+      echo "<td>"`cat $d/capacity 2> /dev/null`"</td>"
       echo "</tr>"
    done
 }}
