@@ -5,6 +5,18 @@
 #include <pwd.h>
 #include <sys/types.h>
 
+#include <asm/unistd.h>
+static int setgroups(size_t size, const gid_t *list)
+{
+	return syscall(__NR_setgroups, size, list);
+}
+
+static int getgroups(int size, gid_t list[])
+{
+	return syscall(__NR_getgroups, size, list);
+}
+
+
 int listgroups(char *user)
 {
 	struct passwd *pass;
