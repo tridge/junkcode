@@ -274,6 +274,9 @@ int main(int argc, char *argv[])
 	printf("num_children=%d file_size=%d num_files=%d loop_count=%d mmap=%d\n",
 	       num_children, file_size, num_files, loop_count, use_mmap);
 
+	printf("Total data size %.1f Mbyte\n",
+	       num_files * num_children * 1.0e-6 * file_size);
+
 	/* fork and run run_child() for each child */
 	for (i=0;i<num_children;i++) {
 		if (fork() == 0) {
