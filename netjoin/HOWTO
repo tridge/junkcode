@@ -12,7 +12,6 @@ the code develops.
 Pieces you need before you begin:
 
 - a Windows 2000 server running at least service pack 2
-- a copy of netjoin.tar.gz from http://samba.org/ftp/tridge/kerberos/
 - the latest CVS source code for Samba. See http://cvs.samba.org/ for how to
   fetch this.
 - the MIT kerberos development libraries (either install from the
@@ -29,7 +28,7 @@ Step 1: Compile Samba
   
   If your kerberos libraries are in a non-standard location then
   remember to add the configure option --with-krb5=DIR. For example,
-  on RedHat 7.1 you will need --with-krb5=/usr/kerberos
+  on RedHat you will need --with-krb5=/usr/kerberos
 
   After you run configure make sure that include/config.h contains a
   line like this:
@@ -43,6 +42,7 @@ Step 1: Compile Samba
   following 3 options in smb.conf:
 
   realm = YOUR.KERBEROS.REALM
+  ads server = your.kerberos.server
   security = USER
   encrypt passwords = yes
 
@@ -59,16 +59,6 @@ Step 2: Setup your /etc/krb5.conf
 
     [libdefaults]
 	    default_realm = YOUR.KERBEROS.REALM
-	    default_tgs_enctypes = des-cbc-md5
-	    default_tkt_enctypes = des-cbc-md5
-	    permitted_enctypes = des-cbc-md5
-
-    [realms]
-
-    YOUR.KERBEROS.REALM = {
-	    kdc = YOUR.KERBEROS.SERVER
-	    kpasswd_server = YOUR.KERBEROS.SERVER
-    }
 
   Test your config by doing a "kinit USERNAME" and making sure that
   your password is accepted by the Win2000 KDC. 
@@ -83,21 +73,11 @@ Step 2: Setup your /etc/krb5.conf
 
 Step 3: Create the computer account
 
-  Download and unpack the netjoin.tar.gz package from
-  http://samba.org/ftp/tridge/kerberos/
-
   Do a "kinit" as a user that has authority to change arbitrary
   passwords on the KDC ("Administrator" is a good choice). Then as a
-  user that has write permission on /etc/krb5.keytab run netjoin like
-  this:
+  user that has write permission on /etc/krb5.keytab run:
 
-     netjoin YOUR.KERBEROS.SERVER hostname REALM
-
-  For example I run:
-
-     netjoin win2000 blu VNET2.HOME.SAMBA.ORG
-
-  Note: The hostname must be in lowercase. The realm must be in uppercase.
+     net ads join
 
 Step 4: Test your server setup
 
@@ -112,14 +92,3 @@ Step 5: Testing with smbclient
   server using smbclient and kerberos. Use smbclient as usual, but
   specify the -k option to choose kerberos authentication.
 
-
-TODO:
-
-To make this whole process easier we need to do the following:
-
-- fix netjoin so it uses GSSAPI with kerberos, so the administrator
-  password is not exposed to the network
-- store the keytab data in secrets.tdb, so you don't need to stuff
-  around with /etc/krb5.keytab
-- force the encoding types in our kerberos code, so we don't need a
-  /etc/krb5.conf file
