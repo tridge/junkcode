@@ -1,0 +1,65 @@
+{{ header.html }}
+
+<h2>Snapserver Installation Diagnostics</h2>
+
+This page shows some basic hardware information which may be useful in
+diagnosing problems with your Snapserver
+
+<h3>PCI Devices</h3>
+
+<small>
+<pre>
+{{ !
+   lspci
+}}
+</pre>
+</small>
+
+<h3>Kernel Version</h3>
+
+<small>
+<pre>
+{{ !
+   cat /proc/version
+}}
+</pre>
+</small>
+
+<h3>Attached Disks</h3>
+
+<table border=1>
+<tr><th>Device</th><th>Model</th><th>Capacity (sectors)</th></tr>
+{{ !
+   cd /proc/ide || exit 1;
+   for d in hd*; do
+      echo "<tr align=right>"
+      echo "<td>$d</td>";
+      echo "<td>"`cat $d/model`"</td>";
+      echo "<td>"`cat $d/capacity`"</td>"
+      echo "</tr>"
+   done
+}}
+</table>
+
+<h3>Disk Partitions</h3>
+
+<pre>{{ ! cat /proc/partitions }}</pre>
+
+<h3>Network devices</h3>
+
+<pre>
+{{ !
+   ifconfig -a;
+   route -n
+}}
+</pre>
+
+<h3>CPU Info</h3>
+
+<pre>
+{{ !
+   cat /proc/cpuinfo
+}}
+</pre>
+
+{{footer.html}}

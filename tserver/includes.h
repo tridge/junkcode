@@ -14,13 +14,18 @@
 #include <unistd.h>
 #include <fnmatch.h>
 #include <strings.h>
+#include <dlfcn.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
+
+#include "cgi.h"
+#include "template.h"
 
 typedef unsigned BOOL;
 #define True 1
@@ -29,22 +34,15 @@ typedef unsigned BOOL;
 #define TSERVER_PORT 8003
 #define TSERVER_LOGFILE "tserver.log"
 
-#define SAFE_FREE(v) ((v)?free(v):NULL, (v) = NULL)
-
 #define MMAP_FAILED ((void *)-1)
-
-#define INCLUDE_TAG "<!--#include virtual=\""
-#define INCLUDE_TAG_END "\" -->"
 
 /* prototypes */
 void tcp_listener(int port, const char *logfile, void (*fn)(void));
-void cgi_setup(void);
-char *cgi_variable(char *name);
-void dump_file(const char *fname);
-void cgi_download(char *file);
 
 void *map_file(const char *fname, size_t *size);
-void unmap_file(const void *p, size_t size);
+void unmap_file(void *p, size_t size);
+void *x_malloc(size_t size);
+
 
 
 

@@ -1,0 +1,20 @@
+{{ header.html }}
+
+<h2>Clipper installation</h2>
+
+<table>
+<tr><td><b>Archive Location:</b></td><td>{{$archive_location}}</td></tr>
+<tr><td><b>Proxy Server:</b></td><td>{{$proxy_server}}</td></tr>
+<tr><td><b>Install Script:</b></td><td>{{$install_script}}</td></tr>
+</table>
+
+<hr size=2 width="100%">
+
+<pre>
+{{ !
+   echo "Starting install script";
+   ./install.sh   
+}}
+</pre>
+
+{{footer.html}}

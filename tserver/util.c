@@ -29,10 +29,8 @@ void tcp_listener(int port, const char *logfile, void (*fn)(void))
 		if (fork() == 0) {
 			close(res);
 			/* setup stdin and stdout */
-			close(0);
-			close(1);
-			dup(fd);
-			dup(fd);
+			dup2(fd, 0);
+			dup2(fd, 1);
 			close(fd);
 			fn();
 			fflush(stdout);
@@ -59,17 +57,31 @@ void *map_file(const char *fname, size_t *size)
 		return NULL;
 	}
 	fstat(fd, &st);
-	p = mmap(NULL, st.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FILE, fd, 0);
+	p = mmap(NULL, st.st_size+1, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FILE, fd, 0);
 	close(fd);
 	if (p == MMAP_FAILED) {
 		fprintf(stderr, "Failed to mmap %s - %s\n", fname, strerror(errno));
 		return NULL;
 	}
 	*size = st.st_size;
+
+	/* make sure its terminated */
+	*((char *)p+st.st_size) = 0;
 	return p;
 }
 
-void unmap_file(const void *p, size_t size)
+void unmap_file(void *p, size_t size)
 {
-	munmap(p, size);
+	munmap(p, size+1);
+}
+
+void *x_malloc(size_t size)
+{
+	void *ret;
+	ret = malloc(size);
+	if (!ret) {
+		fprintf(stderr, "Out of memory on size %d\n", (int)size);
+		_exit(1);
+	}
+	return ret;
 }
