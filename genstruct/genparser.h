@@ -38,5 +38,5 @@ struct parse_struct {
 char *gen_dump(const struct parse_struct *pinfo, 
 	       const char *data, 
 	       unsigned indent);
-void gen_parse(const struct parse_struct *pinfo, char *data, const char *str0);
+int gen_parse(const struct parse_struct *pinfo, char *data, const char *str0);
 

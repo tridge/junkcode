@@ -7,8 +7,6 @@
 use strict;
 use Getopt::Long;
 
-my($opt_parsers) = 0;
-
 ###################################################
 # general handler
 sub handle_general($$$$$$$)
@@ -157,18 +155,6 @@ sub parse_elements($$)
 	}
 
 	print CFILE "{NULL, 0, 0, 0, 0, 0, NULL}};\n\n";
-
-	if ($opt_parsers) {
-		# now the dump function
-		print CFILE "
-/* dump a $name structure */
-char *dump_$name(const struct $name *$name) 
-{
-	return gen_dump(pinfo_$name, (const char *)$name, 0);
-}
-
-";
-}
 }
 
 
@@ -254,8 +240,7 @@ Options:
 GetOptions (
 	    'help|h|?' => \$opt_help, 
 	    'header=s' => \$opt_header,
-	    'cfile=s' => \$opt_cfile,
-	    'parsers' => \$opt_parsers
+	    'cfile=s' => \$opt_cfile
 	    );
 
 if ($opt_help) {

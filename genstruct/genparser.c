@@ -28,6 +28,7 @@
 #include <ctype.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <errno.h>
 #include "genparser.h"
 
 struct parse_string {
@@ -35,7 +36,7 @@ struct parse_string {
 	char *s;
 };
 
-static void addstr(struct parse_string *p, const char *fmt, ...)
+static int addstr(struct parse_string *p, const char *fmt, ...)
 {
 	char *s = NULL;
 	int n;
@@ -44,6 +45,10 @@ static void addstr(struct parse_string *p, const char *fmt, ...)
 	n = vasprintf(&s, fmt, ap);
 	va_end(ap);
 	p->s = realloc(p->s, p->length + n + 1);
+	if (!p->s) {
+		errno = ENOMEM;
+		return -1;
+	}
 	if (n != 0) {
 		memcpy(p->s + p->length, s, n);
 	}
@@ -51,6 +56,7 @@ static void addstr(struct parse_string *p, const char *fmt, ...)
 	p->s[p->length] = 0;
 
 	if (s) free(s);
+	return 0;
 }
 
 static int all_zero(const char *ptr, unsigned size)
@@ -71,69 +77,63 @@ static const char *tabstr(unsigned level)
 	return str;
 }
 
-static void gen_dump_base(struct parse_string *p, 
+static int gen_dump_base(struct parse_string *p, 
 			  enum parse_type type, 
 			  const char *ptr)
 {
 	switch (type) {
 	case T_STRING:
-		addstr(p, "{%s}", *(char **)(ptr));
-		break;
+		return addstr(p, "{%s}", *(char **)(ptr));
 	case T_FSTRING:
-		addstr(p, "{%s}", ptr);
-		break;
+		return addstr(p, "{%s}", ptr);
 	case T_TIME_T:
-		addstr(p, "%u", *(time_t *)(ptr));
-		break;
+		return addstr(p, "%u", *(time_t *)(ptr));
 	case T_UNSIGNED:
-		addstr(p, "%u", *(unsigned *)(ptr));
-		break;
+		return addstr(p, "%u", *(unsigned *)(ptr));
 	case T_ENUM:
-		addstr(p, "%u", *(unsigned *)(ptr));
-		break;
+		return addstr(p, "%u", *(unsigned *)(ptr));
 	case T_DOUBLE:
-		addstr(p, "%lg", *(double *)(ptr));
-		break;
+		return addstr(p, "%lg", *(double *)(ptr));
 	case T_INT:
-		addstr(p, "%d", *(int *)(ptr));
-		break;
+		return addstr(p, "%d", *(int *)(ptr));
 	case T_LONG:
-		addstr(p, "%ld", *(long *)(ptr));
-		break;
+		return addstr(p, "%ld", *(long *)(ptr));
 	case T_ULONG:
-		addstr(p, "%lu", *(unsigned long *)(ptr));
-		break;
+		return addstr(p, "%lu", *(unsigned long *)(ptr));
 	case T_CHAR:
-		addstr(p, "%u", *(unsigned char *)(ptr));
-		break;
+		return addstr(p, "%u", *(unsigned char *)(ptr));
 	case T_FLOAT:
-		addstr(p, "%g", *(float *)(ptr));
-		break;
+		return addstr(p, "%g", *(float *)(ptr));
 	case T_STRUCT:
-		break;
+		return -1;
 	}
+	return 0;
 }
 
-static void gen_dump_one(struct parse_string *p, 
+static int gen_dump_one(struct parse_string *p, 
 			 const struct parse_struct *pinfo,
 			 const char *ptr,
 			 unsigned indent)
 {
 	if (pinfo->type == T_STRUCT) {
 		char *s = gen_dump(pinfo->pinfo, ptr, indent+1);
-		addstr(p, "{\n%s%s}", s, tabstr(indent));
+		if (!s) return -1;
+		if (addstr(p, "{\n%s%s}", s, tabstr(indent)) != 0) {
+			free(s);
+			return -1;
+		}
 		free(s);
-		return;
+		return 0;
 	}
-	gen_dump_base(p, pinfo->type, ptr);
+	return gen_dump_base(p, pinfo->type, ptr);
 }
 
 
-static void gen_dump_array(struct parse_string *p,
-			   const struct parse_struct *pinfo, 
-			   const char *ptr,
-			   int array_len,
-			   int indent)
+static int gen_dump_array(struct parse_string *p,
+			  const struct parse_struct *pinfo, 
+			  const char *ptr,
+			  int array_len,
+			  int indent)
 {
 	int i, count=0;
 	for (i=0;i<array_len;i++) {
@@ -151,19 +151,26 @@ static void gen_dump_array(struct parse_string *p,
 			continue;
 		}
 		if (count == 0) {
-			addstr(p, "%s%s = %u:", 
-			       tabstr(indent),
-			       pinfo->name, i);
+			if (addstr(p, "%s%s = %u:", 
+				   tabstr(indent),
+				   pinfo->name, i) != 0) {
+				return -1;
+			}
 		} else {
-			addstr(p, ", %u:", i);
+			if (addstr(p, ", %u:", i) != 0) {
+				return -1;
+			}
 		}
-		gen_dump_one(p, pinfo, p2, indent);
+		if (gen_dump_one(p, pinfo, p2, indent) != 0) {
+			return -1;
+		}
 		ptr += size;
 		count++;
 	}
 	if (count) {
-		addstr(p, "\n");
+		return addstr(p, "\n");
 	}
+	return 0;
 }
 
 
@@ -192,7 +199,6 @@ static int find_var(const struct parse_struct *pinfo,
 		return *(char *)ptr;
 	default:
 		return -1;
-		break;
 	}
 	return -1;
 }
@@ -207,7 +213,9 @@ char *gen_dump(const struct parse_struct *pinfo,
 	p.length = 0;
 	p.s = NULL;
 
-	addstr(&p, "");
+	if (addstr(&p, "") != 0) {
+		return NULL;
+	}
 	
 	for (i=0;pinfo[i].name;i++) {
 		const char *ptr = data + pinfo[i].offset;
@@ -221,25 +229,34 @@ char *gen_dump(const struct parse_struct *pinfo,
 		if (pinfo[i].array_len != 0 && 
 		    pinfo[i].ptr_count == 0 &&
 		    pinfo[i].type == T_CHAR) {
-			addstr(&p, "%s%s = ", tabstr(indent), pinfo[i].name);
-			gen_dump_base(&p, T_FSTRING, ptr);
-			addstr(&p, "\n");
+			if (addstr(&p, "%s%s = ", tabstr(indent), pinfo[i].name) ||
+			    gen_dump_base(&p, T_FSTRING, ptr) ||
+			    addstr(&p, "\n")) {
+				goto failed;
+			}
 			continue;
 		}
 
 		if (pinfo[i].array_len) {
-			gen_dump_array(&p, &pinfo[i], ptr, 
-				       pinfo[i].array_len, indent);
+			if (gen_dump_array(&p, &pinfo[i], ptr, 
+					   pinfo[i].array_len, indent)) {
+				goto failed;
+			}
 			continue;
 		}
 
 		if (pinfo[i].dynamic_len) {
 			int len = find_var(pinfo, data, pinfo[i].dynamic_len);
 			struct parse_struct p2 = pinfo[i];
+			if (len < 0) {
+				goto failed;
+			}
 			if (len > 0) {
 				p2.ptr_count--;
-				gen_dump_array(&p, &p2, *(char **)ptr, 
-					       len, indent);
+				if (gen_dump_array(&p, &p2, *(char **)ptr, 
+						   len, indent) != 0) {
+					goto failed;
+				}
 			}
 			continue;
 		}
@@ -251,11 +268,17 @@ char *gen_dump(const struct parse_struct *pinfo,
 			ptr = *(const char **)ptr;
 		}
 
-		addstr(&p, "%s%s = ", tabstr(indent), pinfo[i].name);
-		gen_dump_one(&p, &pinfo[i], ptr, indent);
-		addstr(&p, "\n");
+		if (addstr(&p, "%s%s = ", tabstr(indent), pinfo[i].name) ||
+		    gen_dump_one(&p, &pinfo[i], ptr, indent) ||
+		    addstr(&p, "\n")) {
+			goto failed;
+		}
 	}
 	return p.s;
+
+failed:
+	free(p.s);
+	return NULL;
 }
 
 
@@ -276,27 +299,36 @@ static char *match_braces(char *s, char c)
 	return s;
 }
 
-static void gen_parse_base(const struct parse_struct *pinfo, 
+static int gen_parse_base(const struct parse_struct *pinfo, 
 			  char *ptr, 
 			  const char *str)
 {
 	if (pinfo->ptr_count) {
 		struct parse_struct p2 = *pinfo;
 		*(void **)ptr = calloc(1, pinfo->ptr_count?sizeof(void *):pinfo->size);
+		if (! *(void **)ptr) {
+			return -1;
+		}
 		ptr = *(char **)ptr;
 		p2.ptr_count--;
-		gen_parse_base(&p2, ptr, str);
-		return;
+		return gen_parse_base(&p2, ptr, str);
 	}
 
 	switch (pinfo->type) {
 	case T_STRING:
 		*(char **)ptr = strdup(str);
+		if (*(char **)ptr == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
 		break;
 	case T_TIME_T:
 	{
 		unsigned v = 0;
-		sscanf(str, "%u", &v);
+		if (sscanf(str, "%u", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(time_t *)ptr = v;
 		break;
 	}
@@ -304,62 +336,82 @@ static void gen_parse_base(const struct parse_struct *pinfo,
 	case T_ENUM:
 	{
 		unsigned v = 0;
-		sscanf(str, "%u", &v);
+		if (sscanf(str, "%u", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(unsigned *)ptr = v;
 		break;
 	}
 	case T_INT:
 	{
 		int v = 0;
-		sscanf(str, "%d", &v);
+		if (sscanf(str, "%d", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(int *)ptr = v;
 		break;
 	}
 	case T_LONG:
 	{
 		long v = 0;
-		sscanf(str, "%ld", &v);
+		if (sscanf(str, "%ld", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(long *)ptr = v;
 		break;
 	}
 	case T_ULONG:
 	{
 		unsigned long v = 0;
-		sscanf(str, "%lu", &v);
+		if (sscanf(str, "%lu", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(unsigned long *)ptr = v;
 		break;
 	}
 	case T_CHAR:
 	{
 		unsigned v = 0;
-		sscanf(str, "%u", &v);
+		if (sscanf(str, "%u", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(unsigned char *)ptr = v;
 		break;
 	}
 	case T_FLOAT:
 	{
 		float v = 0;
-		sscanf(str, "%g", &v);
+		if (sscanf(str, "%g", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(float *)ptr = v;
 		break;
 	}
 	case T_DOUBLE:
 	{
 		double v = 0;
-		sscanf(str, "%lg", &v);
+		if (sscanf(str, "%lg", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
 		*(double *)ptr = v;
 		break;
 	}
 	case T_STRUCT:
-		gen_parse(pinfo->pinfo, ptr, str);
-		break;
+		return gen_parse(pinfo->pinfo, ptr, str);
 	case T_FSTRING:
-		/* handled inline */
-		break;
+		return -1;
 	}
+	return 0;
 }
 
-static void gen_parse_array(const struct parse_struct *pinfo, 
+static int gen_parse_array(const struct parse_struct *pinfo, 
 			    char *ptr, 
 			    const char *str,
 			    int array_len)
@@ -372,7 +424,7 @@ static void gen_parse_array(const struct parse_struct *pinfo,
 	    pinfo->ptr_count == 0 &&
 	    pinfo->type == T_CHAR) {
 		strncpy(ptr, str, array_len);
-		return;
+		return 0;
 	}
 
 	if (pinfo->ptr_count) {
@@ -396,17 +448,21 @@ static void gen_parse_array(const struct parse_struct *pinfo,
 			p[strlen(p)-1] = 0;
 		}
 
-		gen_parse_base(pinfo, ptr + idx*size, p);
+		if (gen_parse_base(pinfo, ptr + idx*size, p) != 0) {
+			return -1;
+		}
 
 		if (done) break;
 		str = p2+1;
 	}
+
+	return 0;
 }
 
-static void gen_parse_one(const struct parse_struct *pinfo, 
-			  const char *name, 
-			  char *data, 
-			  const char *str)
+static int gen_parse_one(const struct parse_struct *pinfo, 
+			 const char *name, 
+			 char *data, 
+			 const char *str)
 {
 	int i;
 	for (i=0;pinfo[i].name;i++) {
@@ -415,35 +471,43 @@ static void gen_parse_one(const struct parse_struct *pinfo,
 		}
 	}
 	if (pinfo[i].name == NULL) {
-		return;
+		return 0;
 	}
 
 	if (pinfo[i].array_len) {
-		gen_parse_array(&pinfo[i], data+pinfo[i].offset, 
-				str, pinfo[i].array_len);
-		return;
+		return gen_parse_array(&pinfo[i], data+pinfo[i].offset, 
+				       str, pinfo[i].array_len);
 	}
 
 	if (pinfo[i].dynamic_len) {
 		int len = find_var(pinfo, data, pinfo[i].dynamic_len);
+		if (len < 0) {
+			errno = EINVAL;
+			return -1;
+		}
 		if (len > 0) {
 			struct parse_struct p2 = pinfo[i];
 			char *ptr = calloc(len, pinfo[i].size);
+			if (!ptr) {
+				errno = ENOMEM;
+				return -1;
+			}
 			*((char **)(data + pinfo[i].offset)) = ptr;
 			p2.ptr_count--;
-			gen_parse_array(&p2, ptr, str, len);
+			return gen_parse_array(&p2, ptr, str, len);
 		}
-		return;
+		return 0;
 	}
 
-	gen_parse_base(&pinfo[i], data + pinfo[i].offset, str);
+	return gen_parse_base(&pinfo[i], data + pinfo[i].offset, str);
 }
 
-void gen_parse(const struct parse_struct *pinfo, char *data, const char *str0)
+int gen_parse(const struct parse_struct *pinfo, char *data, const char *s)
 {
-	char *str;
-
-	str = strdup(str0);
+	char *str, *s0;
+	
+	s0 = strdup(s);
+	str = s0;
 
 	while (*str) {
 		char *p;
@@ -473,6 +537,12 @@ void gen_parse(const struct parse_struct *pinfo, char *data, const char *str0)
 
 		*str++ = 0;
 		
-		gen_parse_one(pinfo, name, data, value);
+		if (gen_parse_one(pinfo, name, data, value) != 0) {
+			free(s0);
+			return -1;
+		}
 	}
+
+	free(s0);
+	return 0;
 }

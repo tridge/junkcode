@@ -104,7 +104,10 @@ int main(void)
 
 	memset(&t2, 0, sizeof(t2));
 
-	gen_parse(pinfo_test1, (char *)&t2, s);
+	if (gen_parse(pinfo_test1, (char *)&t2, s) != 0) {
+		printf("Parse failed!\n");
+		exit(1);
+	}
 
 	s2 = gen_dump(pinfo_test1, (char *)&t2, 0);
 	printf("%s\n", s);
