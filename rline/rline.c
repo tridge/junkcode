@@ -14,26 +14,121 @@
 static void usage(void)
 {
 	printf("
-readline <command>
+readline [options] <command>
 
 This add readline support to any command line driven program. 
+
+Options:
+   -c FILE          load a list of command completions from FILE
+   -h               show this help
+   --               stop processing options (used to allow options to programs)
 ");
+}
+
+/* list of command completions */
+static char **cmd_list;
+static int num_commands;
+
+static void load_completions(const char *fname)
+{
+	FILE *f = fopen(fname, "r");
+	char line[200];
+
+	if (!f) {
+		perror(fname);
+		return;
+	}
+
+	while (fgets(line, sizeof(line), f)) {
+		int len = strlen(line);
+		if (len == 0) continue;
+		line[len-1] = 0;
+		cmd_list = (char **)realloc(cmd_list, sizeof(char *)*(num_commands+1));
+		if (!cmd_list) break;
+		cmd_list[num_commands++] = strdup(line);
+	}
+
+	fclose(f);
+}
+
+
+/*
+  command completion generator
+ */
+static char *command_generator(const char *line, int state)
+{
+	static int idx, len;
+
+	if (!cmd_list) return NULL;
+
+	if (!state) {
+		/* first call */
+		idx = 0;
+		len = strlen(line);
+	}
+
+	while (idx < num_commands &&
+	       strncmp(line, cmd_list[idx], len) != 0) {
+		idx++;
+	}
+
+	if (idx == num_commands) return NULL;
+
+	return strdup(cmd_list[idx++]);
+}
+
+
+/* 
+   our completion function, so we can support tab completion
+ */
+static char **completion_function(const char *line, int start, int end)
+{
+	if (start != 0) {
+		/* they are trying to complete an argument */
+		return NULL;
+	}
+
+	return (char **)completion_matches(line, command_generator);
+}
+
+static int pipe_fd;
+
+/* callback function when readline has a whole line */
+void line_handler(char *line) 
+{
+	if (!line) exit(0);
+	dprintf(pipe_fd, "%s\n", line);
+	if (*line) {
+		add_history(line);
+	}
 }
 
 int main(int argc, char *argv[])
 {
 	int fd1[2], fd2[2];
 	char *prompt;
+	int c;
+	extern int optind;
+	extern char *optarg;
 
-	void line_handler(char *line) {
-		if (!line) exit(0);
-		dprintf(fd1[1], "%s\n", line);
-		if (*line) {
-			add_history(line);
+	while ((c = getopt(argc, argv, "c:h")) != -1) {
+		switch (c) {
+		case '-':
+			break;
+		case 'c':
+			load_completions(optarg);
+			break;
+		case 'h':
+		default:
+			usage();
+			exit(1);
 		}
 	}
 
-	if (argc < 2) {
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1) {
 		usage();
 		exit(1);
 	}
@@ -50,14 +145,17 @@ int main(int argc, char *argv[])
 		close(1);
 		dup2(fd1[0], 0);
 		dup2(fd2[1], 1);
-		return execvp(argv[1], argv+1);
+		return execvp(argv[0], argv);
 	}
+
+	pipe_fd = fd1[1];
 
 	close(fd2[1]);
 	close(fd1[0]);
 
-	prompt = strdup("> ");
+	prompt = strdup("");
 	rl_already_prompted = 1;
+	rl_attempted_completion_function = completion_function;
 	rl_callback_handler_install(prompt, line_handler);
 
 	while (1) {
