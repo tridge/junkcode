@@ -198,6 +198,10 @@ static void tsums_file(const char *fname)
 	key.dptr = (void *)keystr;
 	key.dsize = strlen(keystr)+1;
 	data = tdb_fetch(tdb, key);
+
+	if (data.dptr && memcmp(&sum, data.dptr, sizeof(sum)) == 0) {
+		return;
+	}
 	
 	if (data.dptr && memcmp(&sum, data.dptr, sizeof(sum)) != 0) {
 		if (do_quick) {
