@@ -1,0 +1,14 @@
+Trivial ramdisk for Linux 2.4
+
+Usage:
+	make
+	mknod /dev/trd b 240 0
+	insmod trd.o trd_size=SIZE
+
+where SIZE is in k.
+	
+then use /dev/trd in the usual way.
+
+Limitations:
+	- only one ramdisk can be loaded at a time
+	- memory is allocated on insmod, not when used
