@@ -32,6 +32,7 @@ static int wait_fd;
 /* wait for the startup pointer */
 static void startup_wait(int id)
 {
+	int rc;
 	fd_set s;
 	startup_ptr[id] = 1;
 
@@ -40,7 +41,11 @@ static void startup_wait(int id)
 	do {
 		FD_ZERO(&s);
 		FD_SET(wait_fd, &s);
-	} while (select(wait_fd+1, &s, NULL, NULL, NULL) != 1);
+		rc = select(wait_fd+1, &s, NULL, NULL, NULL);
+		if (rc == -1 && errno != EINTR) {
+			exit(1);
+		}
+	} while (rc != 1);
 }
 
 /*
