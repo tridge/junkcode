@@ -21,7 +21,8 @@ static int segv_handler(int sig)
 	snprintf(cmd, sizeof(cmd), "backtrace %d > /tmp/segv_%s.%d.out 2>&1", 
 		 (int)getpid(), p+1, (int)getpid());
 	system(cmd);
-	_exit(1);
+	signal(SIGSEGV, SIG_DFL);
+	return 0;
 }
 
 void _init(void)
