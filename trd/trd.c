@@ -174,7 +174,8 @@ static int trd_init(void)
 	blksize_size[MAJOR_NR] = trd_blocksizes;
 	blk_size[MAJOR_NR] = &trd_size;
 
-	printk(KERN_DEBUG DEVICE_NAME ": trd initialised size=%d\n", TRD_SIZE);
+	printk(KERN_DEBUG DEVICE_NAME ": trd initialised size=%dk\n", 
+	       trd_size);
 
 	return 0;
 }
