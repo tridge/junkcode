@@ -2,47 +2,48 @@
 #include <string.h>
 #include <zlib.h>
 
-static unsigned infunc(void *in_desc, unsigned char **bptr)
-{
-	static char buf[1024];
-	int fd = *(int *)in_desc;
-	int count;
-
-	count = read(fd, buf, sizeof(buf));
-	if (count <= 0) return 0;
-
-	*bptr = buf;
-	return count;	
-}
-
-static int outfunc(void *out_desc, unsigned char *buf, unsigned count)
-{
-	int fd = *(int *)out_desc;
-	int ret = write(fd, buf, count);
-	if (ret == count) return 0;
-	return -1;	
-}
 
 int main(void)
 {
-	z_stream stream;
-	char buf[32768];
+	char inbuf[1024], outbuf[1024];
+	struct z_stream_s zs;
 	int ret;
-	int in_desc=0, out_desc=1;
 
-	memset(&stream, 0, sizeof(stream));
+	memset(&zs, 0, sizeof(zs));
 
-	ret = inflateBackInit(&stream, 15, buf);
+	zs.next_out = outbuf;
+	zs.avail_out = sizeof(outbuf);
+
+	ret = inflateInit2(&zs, -15);
 	if (ret != Z_OK) {
-		fprintf(stderr, "inflateBackInit failed - %d\n", ret);
-		return -1;
+		fprintf(stderr,"inflateInit2 error %d\n", ret);
+		goto failed;
 	}
-	
-	ret = inflateBack(&stream, infunc, &in_desc, outfunc, &out_desc);
-	if (ret < 0) {
-		fprintf(stderr, "inflateBack failed - %d\n", ret);
-		return -1;
+
+	while (1) {
+		if (zs.avail_in == 0) {
+			zs.avail_in = read(0, inbuf, sizeof(inbuf));
+			zs.next_in = inbuf;
+			if (zs.avail_in == 0) break;
+		}
+
+		ret = inflate(&zs, Z_SYNC_FLUSH);
+
+		if (zs.avail_out < sizeof(outbuf)) {
+			write(1, outbuf, sizeof(outbuf) - zs.avail_out);
+			zs.avail_out = sizeof(outbuf);
+			zs.next_out = outbuf;
+		}
+
+		if (ret == Z_STREAM_END) break;
+		if (ret != Z_OK) {
+			fprintf(stderr,"inflate error %d\n", ret);
+			goto failed;
+		}
 	}
 
 	return 0;
+
+failed:
+	return -1;
 }
