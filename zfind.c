@@ -1,3 +1,7 @@
+/*
+  look for raw deflate regions in a file
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include <zlib.h>
@@ -56,6 +60,8 @@ static void *map_file(const char *fname, size_t *size)
 	struct stat st;
 	void *p;
 
+	if (fd == -1) return MAP_FAILED;
+
 	fstat(fd, &st);
 	p = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	close(fd);
@@ -93,7 +99,8 @@ int main(int argc, const char *argv[])
 			goto failed;
 		}
 
-		inflate(&zs, Z_SYNC_FLUSH);
+		while (inflate(&zs, Z_SYNC_FLUSH) == 0 &&
+		       zs.avail_out > 0) ;
 
 		if (zs.avail_out != sizeof(outbuf)) {
 			printf("Inflated %u bytes at offset %u\n", 
