@@ -17,31 +17,38 @@
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
-#include <signal.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
 #include <pthread.h>
 
 static void start_timer(void);
 
-/* this shared memory area is used to synchronise the startup times of
-   the tasks */
-static volatile int *startup_ptr;
-static int wait_fd;
+/* this contains per-task data */
+static struct {
+	char *dname;
+	char *fname;
+} *id_data;
+
+/* this pair of pipes that is used for synchronised
+   startup of the tasks */
+static int wait_fd1[2];
+static int wait_fd2[2];
+
 
 /* wait for the startup pointer */
 static void startup_wait(int id)
 {
 	int rc;
 	fd_set s;
-	startup_ptr[id] = 1;
+	char c = 0;
+
+	/* tell the parent that we are ready */
+	write(wait_fd1[1], &c, 1);
 
 	/* we wait till the wait_fd is readable - this gives
 	   a nice in-kernel barrier wait */
 	do {
 		FD_ZERO(&s);
-		FD_SET(wait_fd, &s);
-		rc = select(wait_fd+1, &s, NULL, NULL, NULL);
+		FD_SET(wait_fd2[0], &s);
+		rc = select(wait_fd2[0]+1, &s, NULL, NULL, NULL);
 		if (rc == -1 && errno != EINTR) {
 			exit(1);
 		}
@@ -111,17 +118,11 @@ static void run_threads(int nthreads, void *(*fn)(int ))
 {
 	int i;
 	pthread_t *ids = malloc(sizeof(*ids) * nthreads);
-	int fd[2];
 	char c = 0;
 
-	if (pipe(fd) != 0) {
+	if (pipe(wait_fd1) != 0 || pipe(wait_fd2) != 0) {
 		fprintf(stderr,"Pipe failed\n");
 		exit(1);
-	}
-	wait_fd = fd[0];
-
-	for (i=0;i<nthreads;i++) {
-		startup_ptr[i] = 0;
 	}
 
 	for (i=0;i<nthreads;i++) {
@@ -129,12 +130,12 @@ static void run_threads(int nthreads, void *(*fn)(int ))
 	}
 
 	for (i=0;i<nthreads;i++) {
-		while (startup_ptr[i] != 1) usleep(1);
+		while (read(wait_fd1[0], &c, 1) != 1) ;
 	}
 
 	start_timer();
 
-	write(fd[1], &c, 1);
+	write(wait_fd2[1], &c, 1);
 
 	for (i=0;i<nthreads;i++) {
 		int rc;
@@ -145,8 +146,10 @@ static void run_threads(int nthreads, void *(*fn)(int ))
 		}
 	}
 
-	close(fd[0]);
-	close(fd[1]);
+	close(wait_fd1[0]);
+	close(wait_fd1[1]);
+	close(wait_fd2[0]);
+	close(wait_fd2[1]);
 }
 
 /* run a function under a set of processes */
@@ -154,17 +157,11 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 {
 	int i;
 	pid_t *ids = malloc(sizeof(*ids) * nprocs);
-	int fd[2];
 	char c = 0;
 
-	if (pipe(fd) != 0) {
+	if (pipe(wait_fd1) != 0 || pipe(wait_fd2) != 0) {
 		fprintf(stderr,"Pipe failed\n");
 		exit(1);
-	}
-	wait_fd = fd[0];
-
-	for (i=0;i<nprocs;i++) {
-		startup_ptr[i] = 0;
 	}
 
 	for (i=0;i<nprocs;i++) {
@@ -178,12 +175,12 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 	}
 
 	for (i=0;i<nprocs;i++) {
-		while (startup_ptr[i] != 1) usleep(1);
+		while (read(wait_fd1[0], &c, 1) != 1) ;
 	}
 
 	start_timer();
 
-	write(fd[1], &c, 1);
+	write(wait_fd2[1], &c, 1);
 
 	for (i=0;i<nprocs;i++) {
 		int rc;
@@ -194,8 +191,10 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 		}
 	}
 
-	close(fd[0]);
-	close(fd[1]);
+	close(wait_fd1[0]);
+	close(wait_fd1[1]);
+	close(wait_fd2[0]);
+	close(wait_fd2[1]);
 }
 
 
@@ -267,26 +266,15 @@ test stat() operations
 static void *test_stat(int id)
 {
 	int i;
-	char fname[60];
-        char dname[30];
 
 	startup_wait(id);
 
-        sprintf(dname, "testd_%d", id);
-        rmdir(dname);
-
-        if (mkdir(dname, 0777) != 0) goto failed;
-
-	sprintf(fname, "%s/test%d.dat", dname, id);
-
-	for (i=0;i<10000;i++) {
+	for (i=0;i<30000;i++) {
 		struct stat st;
-		if (stat(dname, &st) != 0) goto failed;
-		if (stat(fname, &st) == 0) goto failed;
+		if (stat(id_data[id].dname, &st) != 0) goto failed;
+		if (stat(id_data[id].fname, &st) == 0) goto failed;
 	}
 
-        if (rmdir(dname) != 0) goto failed;
-	
 	return NULL;
 
 failed:
@@ -300,23 +288,15 @@ test directory operations
 static void *test_dir(int id)
 {
         int i;
-        char dname[30];
 
 	startup_wait(id);
 
-        sprintf(dname, "testd_%d", id);
-        rmdir(dname);
-
-        if (mkdir(dname, 0777) != 0) goto failed;
-
         for (i=0;i<2000;i++) {
-                DIR *d = opendir(dname);
+                DIR *d = opendir(id_data[id].dname);
                 if (!d) goto failed;
                 while (readdir(d)) {} ;
                 closedir(d);
         }
-
-        if (rmdir(dname) != 0) goto failed;
 
         return NULL;
 
@@ -326,7 +306,7 @@ failed:
 }
 
 /***********************************************************************
-test directory operations on a single directory
+test directory operations
 ************************************************************************/
 static void *test_dirsingle(int id)
 {
@@ -344,9 +324,10 @@ static void *test_dirsingle(int id)
         return NULL;
 
 failed: 
-        fprintf(stderr,"dir failed\n");
+        fprintf(stderr,"dirsingle failed\n");
         exit(1);
 }
+
 
 /***********************************************************************
 test create/unlink operations
@@ -354,29 +335,18 @@ test create/unlink operations
 static void *test_create(int id)
 {
 	int i;
-	char fname[60];
-        char dname[30];
 
 	startup_wait(id);
 
-        sprintf(dname, "testd_%d", id);
-        rmdir(dname);
-
-        if (mkdir(dname, 0777) != 0) goto failed;
-
-	sprintf(fname, "%s/test%d.dat", dname, id);
-
-	for (i=0;i<1000;i++) {
+	for (i=0;i<3000;i++) {
 		int fd;
-		fd = open(fname, O_CREAT|O_TRUNC|O_RDWR, 0666);
+		fd = open(id_data[id].fname, O_CREAT|O_TRUNC|O_RDWR, 0666);
 		if (fd == -1) goto failed;
-		if (open(fname, O_CREAT|O_TRUNC|O_RDWR|O_EXCL, 0666) != -1) goto failed;
+		if (open(id_data[id].fname, O_CREAT|O_TRUNC|O_RDWR|O_EXCL, 0666) != -1) goto failed;
 		close(fd);
-		if (unlink(fname) != 0) goto failed;
+		if (unlink(id_data[id].fname) != 0) goto failed;
 	}
 	
-        if (rmdir(dname) != 0) goto failed;
-
 	return NULL;
 
 failed:
@@ -391,16 +361,13 @@ test fcntl lock operations
 static void *test_lock(int id)
 {
 	int i;
-	char fname[30];
 	int fd;
 
 	startup_wait(id);
 
-	sprintf(fname, "test%d.dat", id);
-
-	fd = open(fname, O_CREAT|O_RDWR, 0666);
+	fd = open(id_data[id].fname, O_CREAT|O_RDWR, 0666);
 	if (fd == -1) goto failed;
-	unlink(fname);
+	unlink(id_data[id].fname);
 
 	for (i=0;i<20000;i++) {
 		struct flock lock;
@@ -449,7 +416,7 @@ static void show_result(const char *name, double *t, int nrepeats)
 		if (t[i] > maxt) maxt = t[i];
 		total += t[i];
 	}
-	printf("%s  %.2f +/- %.2f seconds\n", name, total/nrepeats, (maxt-mint)/2);
+	printf("%s  %5.2f +/- %.2f seconds\n", name, total/nrepeats, (maxt-mint)/2);
 }
 
 
@@ -466,29 +433,6 @@ static double end_timer(void)
 	return (tp2.tv_sec + (tp2.tv_usec*1.0e-6)) - 
 		(tp1.tv_sec + (tp1.tv_usec*1.0e-6));
 }
-
-/* 
-   this is used to create the synchronised startup area 
-*/
-void *shm_setup(int size)
-{
-	int shmid;
-	void *ret;
-
-	shmid = shmget(IPC_PRIVATE, size, SHM_R | SHM_W);
-	if (shmid == -1) {
-		fprintf(stderr, "can't get shared memory\n");
-		return NULL;
-	}
-	ret = (void *)shmat(shmid, 0, 0);
-	if (!ret || ret == (void *)-1) {
-		fprintf(stderr, "can't attach to shared memory\n");
-		return NULL;
-	}
-	shmctl(shmid, IPC_RMID, 0);
-	return ret;
-}
-
 
 /* lock a byte range in a open file */
 int main(int argc, char *argv[])
@@ -522,9 +466,26 @@ int main(int argc, char *argv[])
 		tname = argv[2];
 	}
 
-	startup_ptr = shm_setup(sizeof(*startup_ptr) * nprocs);
-	if (!startup_ptr) {
+	id_data = calloc(nprocs, sizeof(*id_data));
+	if (!id_data) {
 		exit(1);
+	}
+
+	for (i=0;i<nprocs;i++) {
+		char s[30];
+		sprintf(s, "testd_%d", i);
+		id_data[i].dname = strdup(s);
+
+		sprintf(s, "%s/test.dat", id_data[i].dname);
+		id_data[i].fname = strdup(s);
+
+		rmdir(id_data[i].dname);
+		if (mkdir(id_data[i].dname, 0777) != 0) {
+			fprintf(stderr, "Failed to create %s\n", id_data[i].dname);
+			exit(1);
+		}
+
+		unlink(id_data[i].fname);
 	}
 
 	for (i=0;tests[i].name;i++) {
@@ -539,11 +500,9 @@ int main(int argc, char *argv[])
 		printf("Running test '%s'\n", tests[i].name);
 
 		for (j=0;j<NREPEATS;j++) {
-			start_timer();
 			run_threads(nprocs, tests[i].fn);
 			t_threads[j] = end_timer();
 
-			start_timer();
 			run_processes(nprocs, tests[i].fn);
 			t_processes[j] = end_timer();
 		}
@@ -552,6 +511,13 @@ int main(int argc, char *argv[])
 
 		printf("\n");
 		fflush(stdout);
+	}
+
+	for (i=0;i<nprocs;i++) {
+		if (rmdir(id_data[i].dname) != 0) {
+			fprintf(stderr, "Failed to delete %s\n", id_data[i].dname);
+			exit(1);
+		}
 	}
 
 	return 0;
