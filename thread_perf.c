@@ -164,19 +164,23 @@ test stat() operations
 static void *test_stat(int id)
 {
 	int i;
-	char buf[1024], buf2[1024];
+	char fname[60];
+        char dname[30];
 
-	if (!getcwd(buf, sizeof(buf))) goto failed;
+        sprintf(dname, "testd_%d", id);
+        rmdir(dname);
 
+        if (mkdir(dname, 0777) != 0) goto failed;
+
+	sprintf(fname, "%s/test%d.dat", dname, id);
 
 	for (i=0;i<10000;i++) {
 		struct stat st;
-		if (stat(buf, &st) != 0) goto failed;
-
-		sprintf(buf2, "%s/NON_EXISTANT_FILE_%d_%d", buf, id, i);
-
-		if (stat(buf2, &st) == 0) goto failed;
+		if (stat(dname, &st) != 0) goto failed;
+		if (stat(fname, &st) == 0) goto failed;
 	}
+
+        if (rmdir(dname) != 0) goto failed;
 	
 	return NULL;
 
@@ -190,23 +194,49 @@ test directory operations
 ************************************************************************/
 static void *test_dir(int id)
 {
-	int i;
-	char buf[1024];
+        int i;
+        char dname[30];
 
-	if (!getcwd(buf, sizeof(buf))) goto failed;
+        sprintf(dname, "testd_%d", id);
+        rmdir(dname);
 
-	for (i=0;i<2000;i++) {
-		DIR *d = opendir(buf);
-		if (!d) goto failed;
-		while (readdir(d)) {} ;
-		closedir(d);
-	}
-	
-	return NULL;
+        if (mkdir(dname, 0777) != 0) goto failed;
 
-failed:
-	fprintf(stderr,"dir failed\n");
-	exit(1);
+        for (i=0;i<2000;i++) {
+                DIR *d = opendir(dname);
+                if (!d) goto failed;
+                while (readdir(d)) {} ;
+                closedir(d);
+        }
+
+        if (rmdir(dname) != 0) goto failed;
+
+        return NULL;
+
+failed: 
+        fprintf(stderr,"dir failed\n");
+        exit(1);
+}
+
+/***********************************************************************
+test directory operations on a single directory
+************************************************************************/
+static void *test_dirsingle(int id)
+{
+        int i;
+
+        for (i=0;i<2000;i++) {
+                DIR *d = opendir(".");
+                if (!d) goto failed;
+                while (readdir(d)) {} ;
+                closedir(d);
+        }
+
+        return NULL;
+
+failed: 
+        fprintf(stderr,"dir failed\n");
+        exit(1);
 }
 
 /***********************************************************************
@@ -215,9 +245,15 @@ test create/unlink operations
 static void *test_create(int id)
 {
 	int i;
-	char fname[30];
+	char fname[60];
+        char dname[30];
 
-	sprintf(fname, "test%d.dat", id);
+        sprintf(dname, "testd_%d", id);
+        rmdir(dname);
+
+        if (mkdir(dname, 0777) != 0) goto failed;
+
+	sprintf(fname, "%s/test%d.dat", dname, id);
 
 	for (i=0;i<1000;i++) {
 		int fd;
@@ -228,6 +264,8 @@ static void *test_create(int id)
 		if (unlink(fname) != 0) goto failed;
 	}
 	
+        if (rmdir(dname) != 0) goto failed;
+
 	return NULL;
 
 failed:
@@ -322,6 +360,7 @@ int main(int argc, char *argv[])
 		{"readwrite", test_readwrite},
 		{"stat", test_stat},
 		{"dir", test_dir},
+		{"dirsingle", test_dirsingle},
 		{"create", test_create},
 		{"lock", test_lock},
 		{NULL, NULL}
