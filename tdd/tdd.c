@@ -234,6 +234,7 @@ int main(int argc, char *argv[])
 			total_out++;
 			if (verbose) {
 				printf("%lld M\r", bytes_out/(1<<20));
+				fflush(stdout);
 			}
 		}		
 	}
