@@ -2,6 +2,8 @@
 OPT = -O2
 CFLAGS = $(OPT) -Wall -D_STANDALONE_
 
+all: testsuite
+
 testsuite: talloc.o testsuite.o
 	$(CC) $(CFLAGS) -o testsuite testsuite.o talloc.o
 

@@ -602,7 +602,7 @@ static BOOL test_steal(void)
 	talloc_free(root);
 
 	p1 = talloc(NULL, 3);
-	CHECK_SIZE(NULL, 3);
+	CHECK_SIZE(p1, 3);
 	talloc_free(p1);
 
 	return True;
@@ -619,18 +619,43 @@ static BOOL test_ldb(void)
 
 	root = talloc(NULL, 0);
 
-	p1 = talloc_ldb_alloc(root, NULL, 10);
+	p1 = talloc_realloc_fn(root, NULL, 10);
 	CHECK_BLOCKS(root, 2);
 	CHECK_SIZE(root, 10);
-	p1 = talloc_ldb_alloc(root, p1, 20);
+	p1 = talloc_realloc_fn(root, p1, 20);
 	CHECK_BLOCKS(root, 2);
 	CHECK_SIZE(root, 20);
-	p1 = talloc_ldb_alloc(root, p1, 0);
+	p1 = talloc_realloc_fn(root, p1, 0);
 	CHECK_BLOCKS(root, 1);
 	CHECK_SIZE(root, 0);
 
 	talloc_free(root);
 
+
+	return True;
+}
+
+
+static BOOL test_unref_reparent(void)
+{
+	void *root, *p1, *p2, *c1;
+
+	printf("TESTING UNREFERENCE AFTER PARENT FREED\n");
+
+	root = talloc_named_const(NULL, 0, "root");
+	p1 = talloc_named_const(root, 1, "orig parent");
+	p2 = talloc_named_const(root, 1, "parent by reference");
+
+	c1 = talloc_named_const(p1, 1, "child");
+	talloc_reference(p2, c1);
+
+	talloc_free(p1);
+	talloc_unlink(p2, c1);
+
+	CHECK_SIZE(root, 1);
+
+	talloc_free(p2);
+	talloc_free(root);
 
 	return True;
 }
@@ -688,10 +713,11 @@ BOOL torture_local_talloc(int dummy)
 	ret &= test_ref3();
 	ret &= test_ref4();
 	ret &= test_unlink1();
-	ret &= test_misc();
 	ret &= test_realloc();
 	ret &= test_steal();
+	ret &= test_unref_reparent();
 	ret &= test_ldb();
+	ret &= test_misc();
 	if (ret) {
 		ret &= test_speed();
 	}
