@@ -121,7 +121,7 @@ def read_words():
 
 def make_pop(w):
     # Make a 26-tuple giving the count of each letter in a word
-    pop = [0]
+    pop = []
     for l in string.ascii_lowercase:
         pop.append(w.count(l))
     return tuple(pop)
@@ -130,7 +130,7 @@ def make_reduced(p):
     """Given a population p, return a sequence of populations that are
     reduced by one character from p."""
     r = []
-    for i in range(26):
+    for i in range(len(p)):
         if p[i] > 0:
             # Copy it and reduce the i'th element.  The extra comma is
             # to form a tuple.
