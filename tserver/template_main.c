@@ -34,8 +34,10 @@ int main(int argc, char *argv[])
 {
 	struct cgi_state *cgi;
 	extern char *optarg;
+	extern int optind;
 	int opt;
 	int use_cgi = 0;
+	int i;
 
 	while ((opt = getopt(argc, argv, "ch")) != -1) {
 		switch (opt) {
@@ -48,6 +50,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	argv += optind;
+	argc -= optind;
+
 	cgi = cgi_init();
 
 	if (use_cgi) {
@@ -55,14 +60,8 @@ int main(int argc, char *argv[])
 		cgi->load_variables(cgi);
 	}
 	
-	if (argc > 1) {
-		int i;
-		for (i=1; i<argc; i++) {
-			cgi->tmpl->process(cgi->tmpl, argv[i], 1);
-		}
-	} else {
-		/* this allows us to work as a shell script */
-		cgi->tmpl->process(cgi->tmpl, "/proc/self/fd/0", 1);
+	for (i=0; i<argc; i++) {
+		cgi->tmpl->process(cgi->tmpl, argv[i], 1);
 	}
 
 	return 0;
