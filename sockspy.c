@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 

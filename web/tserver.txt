@@ -1,5 +1,9 @@
 tserver is a tiny web server and templating system. It uses bash for
-server side scripting. These web pages are generated using the
-templating system.
+server side scripting, allowing you to embed arbitrary bash scripts
+inside your web pages (sort of like PHP, but with bash). The web
+server is small enough to be used in embedded systems (which is why I
+wrote it - I needed a flashable web server with scripting).<p>
+
+These web pages are generated using the templating system.
 
 {{! echo "$DIR_SOURCE" }}

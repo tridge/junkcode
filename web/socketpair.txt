@@ -1,3 +1,5 @@
-A C function like pipe() but using local TCP sockets
+A C function like pipe() but using local TCP sockets. This can be
+useful when you want to run a program locally on a pipe, but that
+program wants a real TCP socket.
 
 {{! echo "$C_SOURCE" }}

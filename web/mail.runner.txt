@@ -1,4 +1,6 @@
-mail.runner is a script for sending and receiving email.<p>
+mail.runner is a script for sending and receiving email. Think of it
+as a tiny replacement for fetchmail and sendmail on your client
+machine.<p>
 
 The main features of mail.runner are
 <ul>

@@ -1,4 +1,7 @@
 A general compression program for very large files. See my thesis for
-details on the algorithm.
+details on the algorithm. rzip is VERY slow, but produces compression
+ratios for large files better than any other algorithm I have heard
+of. On some types of data the compression can be twice as good as
+systems like bzip2 and gzip.<p>
 
 {{! echo "$TOP_SOURCE" }}

@@ -1,4 +1,5 @@
 A multi-alternate digram based string search function. Highly
 efficient for searching for a bunch of possible strings in a file.
+The name comes from the well known 'boyer-moore-gosper' algorithm.
 
 {{! echo "$C_SOURCE" }}
