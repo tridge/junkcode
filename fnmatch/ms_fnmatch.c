@@ -77,11 +77,16 @@ static int null_match(const char *p)
 	return 0;
 }
 
+
+struct max_n {
+	const char *predot;
+	const char *postdot;
+};
+
 /*
-  the original, recursive function. Needs replacing, but with exactly
-  the same output
+  the test function
 */
-static int fnmatch_test2(const char *p, const char *n, const char **max_n)
+static int fnmatch_test2(const char *p, const char *n, struct max_n *max_n, const char *ldot)
 {
 	char c;
 	int i;
@@ -89,28 +94,33 @@ static int fnmatch_test2(const char *p, const char *n, const char **max_n)
 	while ((c = *p++)) {
 		switch (c) {
 		case '*':
-			if (*max_n && *max_n <= n) {
+			if (max_n->predot && max_n->predot <= n) {
 				return null_match(p);
 			}
 			for (i=0; n[i]; i++) {
-				if (fnmatch_test2(p, n+i, max_n+1) == 0) {
+				if (fnmatch_test2(p, n+i, max_n+1, ldot) == 0) {
 					return 0;
 				}
 			}
-			if (!*max_n || *max_n > n) *max_n = n;
+			if (!max_n->predot || max_n->predot > n) max_n->predot = n;
 			return null_match(p);
 
 		case '<':
-			if (*max_n && *max_n <= n) {
+			if (max_n->predot && max_n->predot <= n) {
 				return null_match(p);
 			}
+			if (max_n->postdot && max_n->postdot <= n && n < ldot) {
+				return -1;
+			}
 			for (i=0; n[i]; i++) {
-				if (fnmatch_test2(p, n+i, max_n+1) == 0) return 0;
-				if (n[i] == '.' && !strchr(n+i+1,'.')) {
-					return fnmatch_test2(p, n+i+1, max_n+1);
+				if (fnmatch_test2(p, n+i, max_n+1, ldot) == 0) return 0;
+				if (n+i == ldot) {
+					if (fnmatch_test2(p, n+i+1, max_n+1, ldot) == 0) return 0;
+					if (!max_n->postdot || max_n->postdot > n) max_n->postdot = n;
+					return -1;
 				}
 			}
-			if (!*max_n || *max_n > n) *max_n = n;
+			if (!max_n->predot || max_n->predot > n) max_n->predot = n;
 			return null_match(p);
 
 		case '?':
@@ -161,17 +171,17 @@ static int fnmatch_test2(const char *p, const char *n, const char **max_n)
 static int fnmatch_test(const char *p, const char *n)
 {
 	int ret, count, i;
-	const char **max_n = NULL;
+	struct max_n *max_n = NULL;
 
 	for (count=i=0;p[i];i++) {
 		if (p[i] == '*' || p[i] == '<') count++;
 	}
 
 	if (count) {
-		max_n = calloc(sizeof(char *), count);
+		max_n = calloc(sizeof(struct max_n), count);
 	}
 
-	ret = fnmatch_test2(p, n, max_n);
+	ret = fnmatch_test2(p, n, max_n, strrchr(n, '.'));
 
 	if (max_n) {
 		free(max_n);
@@ -193,7 +203,7 @@ static const char *n_used;
 
 static void sig_alrm(int sig)
 {
-	printf("Too slow!!\np='%s'\ns='%s'\n", p_used, n_used);
+	printf("\nToo slow!!\np='%s'\ns='%s'\n", p_used, n_used);
 	exit(0);
 }
 
@@ -220,13 +230,14 @@ int main(void)
 	signal(SIGALRM, sig_alrm);
 
 	for (i=0;i<200000;i++) {
-		int len1 = random() % 20;
-		int len2 = random() % 20;
+		int len1 = random() % 25;
+		int len2 = random() % 25;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
 
 		randstring(p, len1, "*<>\"?a.");
+//		randstring(p, len1, "<a.");
 		randstring(n, len2, "a.");
 
 		p_used = p;
@@ -247,7 +258,7 @@ int main(void)
 		if (t2 > w2) w2 = t2;
 
 		if (ret1 != ret2) {
-			printf("mismatch: ret1=%d ret2=%d pattern='%s' string='%s'\n",
+			printf("\nmismatch: ret1=%d ret2=%d pattern='%s' string='%s'\n",
 			       ret1, ret2, p, n);
 			free(p);
 			free(n);
