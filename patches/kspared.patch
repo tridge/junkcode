@@ -1,0 +1,116 @@
+--- page_alloc.c	2001/07/02 15:59:04	1.45
++++ page_alloc.c	2001/08/11 02:41:54
+@@ -501,6 +501,13 @@
+ 			return page;
+ 	}
+ 
++	/* desperation */
++	if (order == 0) {
++		extern struct page *kspared_alloc(void);
++		page = kspared_alloc();
++		if (page) return page;
++	}
++
+ 	/* No luck.. */
+ 	printk(KERN_ERR "__alloc_pages: %lu-order allocation failed.\n", order);
+ 	return NULL;
+--- vmscan.c	2001/07/05 21:03:50	1.62
++++ vmscan.c	2001/08/11 02:41:55
+@@ -1049,12 +1049,97 @@
+ }
+ 
+ 
++struct spare {
++	struct spare *next;
++	struct page *page;
++};
++static struct spare *avail_list;
++static struct spare *used_list;
++static struct semaphore	kspared_sem;
++
++struct page *kspared_alloc(void)
++{
++	struct page *page;
++	struct spare *s;
++
++	if (avail_list == NULL) {
++		printk("kspared oom - sorry\n");
++		return NULL;
++	}
++
++	down(&kspared_sem);
++	if (avail_list == NULL) {
++		up(&kspared_sem);
++		return NULL;
++	}
++
++	s = avail_list;
++	avail_list = s->next;
++	page = s->page;
++	s->next = used_list;
++	s->page = NULL;
++	used_list = s;
++
++	up(&kspared_sem);
++	printk("kspared to the rescue!\n");
++	return page;
++}
++
++int kspared(void *unused)
++{
++	struct task_struct *tsk = current;
++	int interval = HZ;
++	int num_reserved = 25000;
++	int i;
++
++	daemonize();
++	strcpy(tsk->comm, "kspared");
++	sigfillset(&tsk->blocked);
++	current->flags |= PF_MEMALLOC;
++
++	init_MUTEX(&kspared_sem);
++
++	for (i=0; i<num_reserved; i++) {
++		struct spare *s;
++		s = (struct spare *)kmalloc(sizeof(*s), GFP_KERNEL);
++		if (!s) break;
++		down(&kspared_sem);
++		s->next = used_list;
++		s->page = NULL;
++		used_list = s;
++		up(&kspared_sem);
++	}
++
++	printk("kspared started with %d reserved pages\n", i);
++
++	while (1) {
++		tsk->state = TASK_INTERRUPTIBLE;
++		schedule_timeout(interval);
++
++		while (used_list) {
++			struct page *page = alloc_pages(GFP_KERNEL, 0);
++			struct spare *s;
++			if (!page) break;
++			down(&kspared_sem);
++			s = used_list;
++			used_list = used_list->next;
++			s->next = avail_list;
++			s->page = page;
++			avail_list = s;
++			up(&kspared_sem);
++			if (!used_list) printk("kspared refilled\n");
++		}
++	}
++}
++
++
+ static int __init kswapd_init(void)
+ {
+ 	printk("Starting kswapd v1.8\n");
+ 	swap_setup();
+ 	kernel_thread(kswapd, NULL, CLONE_FS | CLONE_FILES | CLONE_SIGNAL);
+ 	kernel_thread(kreclaimd, NULL, CLONE_FS | CLONE_FILES | CLONE_SIGNAL);
++	kernel_thread(kspared, NULL, CLONE_FS | CLONE_FILES | CLONE_SIGNAL);
+ 	return 0;
+ }
+ 
