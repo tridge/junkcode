@@ -56,13 +56,53 @@ void SourceData(int len, unsigned char __RPC_FAR out_data[  ])
 		out_data[i] = i & 0xff;
 }
 
-void TestCall(Struct1 **s1)
+void TestCall(wchar_t **s1, wchar_t **s2)
 {
-	static int x = 7;
-	(*s1) = malloc(1000);
-	printf("TestCall\n");
-	(*s1)->level = 3;
-	(*s1)->e.enum3.count = &x;	
+	if (*s1) {
+		printf("s1='%S'\n", *s1);
+	} else {
+		printf("s1=NULL\n");
+	}
+	*s2 = L"test string";
+}
+
+long TestCall2(short level, echo_Info **info)
+{
+	static echo_Info i;
+
+	printf("TestCall2 level %d\n", level);
+
+	*info = &i;
+
+	switch (level) {
+	case 1:
+		i.info1.v = 10;
+		break;
+	case 2:
+		i.info2.v = 20;
+		break;
+	case 3:
+		i.info3.v = 30;
+		break;
+	case 4:
+		i.info4.v = 40;
+		break;
+	case 5:
+		i.info5.v1 = 50;
+		i.info5.v2 = 51;
+		break;
+	case 6:
+		i.info6.v1 = 60;
+		i.info6.info1.v = 61;
+		break;
+	case 7:
+		i.info7.v1 = 70;
+		i.info7.info4.v = 71;
+		break;
+	default:
+		return -1;
+	}
+	return 0;
 }
 
 void main(int argc, char **argv)
