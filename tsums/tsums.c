@@ -32,6 +32,7 @@ struct sum_struct {
 static TDB_CONTEXT *tdb;
 static int do_update;
 static int do_ignore;
+static int do_quick;
 
 static void tsums_dir(const char *dname);
 
@@ -164,7 +165,7 @@ static int is_ignored(const char *fname)
 static void tsums_file(const char *fname)
 {
 	struct stat st;
-	struct sum_struct sum;
+	struct sum_struct sum, old;
 	TDB_DATA key, data;
 	char *keystr=NULL;
 
@@ -187,7 +188,9 @@ static void tsums_file(const char *fname)
 	if (S_ISLNK(st.st_mode)) {
 		link_checksum(fname, &sum.sum[0]);
 	} else {
-		file_checksum(fname, &sum.sum[0]);
+		if (!do_quick) {
+			file_checksum(fname, &sum.sum[0]);
+		}
 	}
 
 	asprintf(&keystr, "FILE:%s", fname);
@@ -197,6 +200,18 @@ static void tsums_file(const char *fname)
 	data = tdb_fetch(tdb, key);
 	
 	if (data.dptr && memcmp(&sum, data.dptr, sizeof(sum)) != 0) {
+		if (do_quick) {
+			struct sum_struct old;
+			memcpy(&old, data.dptr, sizeof(old));
+			if (old.ctime == sum.ctime &&
+			    old.mtime == sum.mtime &&
+			    old.uid == sum.uid &&
+			    old.gid == sum.gid &&
+			    old.mode == sum.mode) {
+				free(keystr);
+				return;
+			}
+		}
 		report_difference(fname, &sum, (struct sum_struct *)data.dptr);
 		if (!do_update) {
 			free(keystr);
@@ -240,6 +255,7 @@ Usage: tsums [options] <files|dirs...>
 
 Options:
   -a          use all existing files
+  -q          quick mode (don't checksum)
   -h          this help
   -u          update sums
   -f <DB>     database name
@@ -278,13 +294,16 @@ int main(int argc, char *argv[])
 	int do_dump = 0;
 	int use_all = 0;
 
-	while ((c = getopt(argc, argv, "huf:ida")) != -1){
+	while ((c = getopt(argc, argv, "qhuf:ida")) != -1){
 		switch (c) {
 		case 'h':
 			usage();
 			break;
 		case 'a':
 			use_all = 1;
+			break;
+		case 'q':
+			do_quick = 1;
 			break;
 		case 'u':
 			do_update = 1;
