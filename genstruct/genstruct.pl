@@ -5,8 +5,6 @@
 # released under the GNU General Public License v2 or later
 
 use strict;
-use Getopt::Long;
-use Data::Dumper;
 
 my(%enum_done) = ();
 my(%struct_done) = ();
@@ -44,7 +42,7 @@ sub handle_general($$$$$$$$)
 		$tflags = "FLAG_NULLTERM";
 	}
 
-	print CFILE "{\"$element\", $ptr_count, $size, offsetof(struct $name, $element), $array_len, $dynamic_len, $tflags, $dump_fn, $parse_fn},\n";
+	print OFILE "{\"$element\", $ptr_count, $size, offsetof(struct $name, $element), $array_len, $dynamic_len, $tflags, $dump_fn, $parse_fn},\n";
 }
 
 
@@ -133,10 +131,10 @@ sub parse_elements($$)
 		print ", $name";
 	}
 
-	print CFILE "int gen_dump_struct_$name(struct parse_string *, const char *, unsigned);\n";
-	print CFILE "int gen_parse_struct_$name(char *, const char *);\n";
+	print OFILE "int gen_dump_struct_$name(struct parse_string *, const char *, unsigned);\n";
+	print OFILE "int gen_parse_struct_$name(char *, const char *);\n";
 
-	print CFILE "static const struct parse_struct pinfo_" . $name . "[] = {\n";
+	print OFILE "static const struct parse_struct pinfo_" . $name . "[] = {\n";
 
 	while ($elements =~ /.*^([a-z].*?);\s*?(\S*?)\s*?\n(.*)/si) {
 		my($element) = $1;
@@ -145,9 +143,9 @@ sub parse_elements($$)
 		parse_element($name, $element, $flags);
 	}
 
-	print CFILE "{NULL, 0, 0, 0, 0, NULL, 0, NULL, NULL}};\n";
+	print OFILE "{NULL, 0, 0, 0, 0, NULL, 0, NULL, NULL}};\n";
 
-	print CFILE "
+	print OFILE "
 int gen_dump_struct_$name(struct parse_string *p, const char *ptr, unsigned indent) {
 	return gen_dump_struct(pinfo_$name, p, ptr, indent);
 }
@@ -174,20 +172,20 @@ sub parse_enum_elements($$)
 		print ", $name";
 	}
 
-	print CFILE "static const struct enum_struct einfo_" . $name . "[] = {\n";
+	print OFILE "static const struct enum_struct einfo_" . $name . "[] = {\n";
 
 	my(@enums) = split(/,/s, $elements);
 	for (my($i)=0; $i <= $#{@enums}; $i++) {
 		my($enum) = $enums[$i];
 		if ($enum =~ /\s*(\w*)/) {
 			my($e) = $1;
-			print CFILE "{\"$e\", $e},\n";
+			print OFILE "{\"$e\", $e},\n";
 		}
 	}
 
-	print CFILE "{NULL, 0}};\n";
+	print OFILE "{NULL, 0}};\n";
 
-	print CFILE "
+	print OFILE "
 int gen_dump_enum_$name(struct parse_string *p, const char *ptr, unsigned indent) {
 	return gen_dump_enum(einfo_$name, p, ptr, indent);
 }
@@ -205,7 +203,7 @@ sub parse_enums($)
 {
 	my($data) = shift;
 
-	while ($data =~ /\nGENSTRUCT\senum (\w*?) {(.*?)};(.*)/s) {
+	while ($data =~ /^GENSTRUCT\s+enum\s+(\w*?)\s*{(.*?)}\s*;(.*)/ms) {
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
@@ -228,7 +226,7 @@ sub parse_structs($)
 	my($data) = shift;
 
 	# parse into structures 
-	while ($data =~ /\nGENSTRUCT\sstruct (\w*?)\s*{\s*(.*?)\s*}\s*;(.*)/s) {
+	while ($data =~ /^GENSTRUCT\s+struct\s+(\w+?)\s*{\s*(.*?)\s*}\s*;(.*)/ms) {
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
@@ -252,19 +250,16 @@ sub parse_data($)
 {
 	my($data) = shift;
 
-	# strip comments
-	$data =~ s/\/\*.*?\*\// /sg;
 	# collapse spaces 
 	$data =~ s/[\t ]+/ /sg;
 	$data =~ s/\s*\n\s+/\n/sg;
+	# strip debug lines
+	$data =~ s/^\#.*?\n//smg;
 
 	parse_enums($data);
 	parse_structs($data);
 }
 
-
-my($opt_ofile) = "";
-my($opt_help) = 0;
 
 #########################################
 # display help text
@@ -272,10 +267,10 @@ sub ShowHelp()
 {
     print "
 generator for C structure dumpers
-Copyright tridge\@samba.org
+Copyright Andrew Tridgell <genstruct\@tridgell.net>
 
 Sample usage:
-   genstruct -o output.h -- gcc -E -O2 -g test.h
+   genstruct -o output.h gcc -E -O2 -g test.h
 
 Options:
     --help                this help page
@@ -284,21 +279,18 @@ Options:
     exit(0);
 }
 
-
-#########################################
+########################################
 # main program
-#########################################
-GetOptions (
-	    'help|h|?' => \$opt_help, 
-	    'o=s' => \$opt_ofile,
-	    );
-
-if ($opt_help) {
-    ShowHelp();
+if ($ARGV[0] ne "-o" || $#ARGV < 2) {
+	ShowHelp();
 }
 
-open(CFILE, ">$opt_ofile") || die "can't open $opt_ofile";    
+shift;
+my($opt_ofile)=shift;
 
-print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
+open(OFILE, ">$opt_ofile") || die "can't open $opt_ofile";    
 
-parse_data(`@ARGV -DGENSTRUCT=GENSTRUCT`)
+print OFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
+
+parse_data(`@ARGV -DGENSTRUCT=GENSTRUCT`);
+exit(0);

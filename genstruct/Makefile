@@ -4,7 +4,7 @@ CC=gcc
 all: test
 
 parse_info.h: test.h
-	./genstruct.pl -o parse_info.h -- $(CC) -E $(CFLAGS) test.c
+	./genstruct.pl -o parse_info.h $(CC) -E $(CFLAGS) test.c
 
 test: parse_info.h test.o genparser.o 
 	$(CC) $(CFLAGS) -o test test.o genparser.o
