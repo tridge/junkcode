@@ -7,10 +7,12 @@
 # setup the default configuration
 MAIL_SSH="ssh"
 MAIL_DIR="Mail"
+MAIL_INBOX="$HOME/InBox"
 MAIL_RUNNER="mail.runner"
 SENDMAIL="/usr/lib/sendmail"
 SENDMAIL_OPTS=""
 MAIL_TIMEOUT=300
+
 VERSION="1.0"
 
 # sensible paths are often not setup when invoking commands remotely
@@ -114,8 +116,8 @@ mail_remote_deliver() {
 # a rsync wrapper function for fetching mail from the remote host
 mail_remote_send() {
     # atomically move mail from InBox to a temporary file
-    if test -s $HOME/InBox ; then
-	movemail $HOME/InBox $HOME/$MAIL_DIR/mail.in.$RANDOM.$$ > /dev/null
+    if test -s $MAIL_INBOX; then
+	movemail $MAIL_INBOX $HOME/$MAIL_DIR/mail.in.$RANDOM.$$ > /dev/null
     fi
 
     # by using an empty file we avoid error messages from rsync about not
@@ -208,6 +210,10 @@ Other options are:
     both the client and the server. This should be a relative path,
     relative to your home directory.  The default is "Mail".
 
+  MAIL_INBOX
+    This specifies the location of your mail inbox on your mail server.
+    The default is '\$HOME/InBox'
+
   MAIL_RUNNER 
     This specifies the location of the mail.runner script on the
     server, relative to your home directory. The default is "mail.runner".
@@ -232,7 +238,7 @@ Other options are:
 
   MAIL_PROCMAIL_TAIL
     If this is set to "1" then mail.runner will display the last 10
-    lines of your $MAIL_DIR/procmail.log after processing incoming
+    lines of your '\$MAIL_DIR/procmail.log' after processing incoming
     emails.
 
 
