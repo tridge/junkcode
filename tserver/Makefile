@@ -9,13 +9,17 @@ INCLUDES = includes.h cgi.h template.h
 	@echo Compiling $*.c
 	@$(CC) -c $(CPPFLAGS) $(CFLAGS) $*.c 
 
-all: tserver
+all: tserver template
 
 tserver: $(OBJS)
 	@echo Linking $@
 	@$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 	@strip $@
 
+template: template.o template_main.o util.o
+	@echo Linking $@
+	@$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+
 clean:
-	/bin/rm -f *.o tserver *~ files/*~
+	/bin/rm -f *.o tserver template *~ files/*~ 
 

@@ -250,6 +250,14 @@ static int process(struct template_state *tmpl, const char *filename)
 	remaining = size;
 	m = mp;
 
+	if (strncmp(m, "#!", 2) == 0) {
+		/* advance past shell script tag */
+		m = strchr(m, '\n');
+		if (!m) return 0;
+		m++;
+		remaining -= (m-mp);
+	}
+
 	/* tags look like {{ TAG }} 
 	   where TAG can be of several forms
 	*/
