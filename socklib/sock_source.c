@@ -103,6 +103,7 @@ static void listener(void)
 static void usage(void)
 {
 	printf("-p port\n-t socket options\n-b bufsize\n\n");
+	printf("Use -S to enable sendfile\n");
 }
 
 int main(int argc, char *argv[])
