@@ -5,9 +5,13 @@
 
   tridge@samba.org, March 2004
 */
+
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <time.h>
 #include <errno.h>
 #include <sys/socket.h>
@@ -115,12 +119,17 @@ static int open_serial(const char *device)
 {
 	struct termios tty;
 	int fd;
+	char *cmd;
 
 	fd = open(device, O_RDWR);
 	if (fd == -1) {
 		return -1;
 	}
 	
+	asprintf(&cmd, "stty 5:4:cbe:a30:3:1c:7f:15:4:0:1:0:11:13:1a:0:12:f:17:16:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0 < %s", device);
+	system(cmd);
+	free(cmd);
+
 	if (ioctl(fd,TCGETS,&tty) != 0) {
 		close(fd);
 		return -1;
@@ -148,12 +157,14 @@ int main(int argc, char *argv[])
 	const char *device;
 
 	if (argc < 3) {
-		printf("Usage: serialtcp <inport> <devicehost>\n");
+		printf("Usage: serialtcp <inport> <device>\n");
 		exit(1);
 	}
 
 	listen_port = atoi(argv[1]);
 	device = argv[2];
+
+	signal(SIGCHLD, SIG_IGN);
 
 	listen_fd = open_socket_in(listen_port);
 
