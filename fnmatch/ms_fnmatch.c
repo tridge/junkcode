@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <signal.h>
 #include <ctype.h>
 
 /*
@@ -130,11 +131,18 @@ static void randstring(char *s, int len, const char *chars)
 	*s = 0;
 }
 
+static void sig_alrm(int sig)
+{
+	printf("Too slow!!\n");
+	exit(0);
+}
 
 int main(void)
 {
 	int i;
 	srandom(time(NULL));
+
+	signal(SIGALRM, sig_alrm);
 
 	alarm(2);
 	fnmatch_test("********************************************.dat", "foobar.txt");
