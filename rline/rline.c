@@ -1,6 +1,7 @@
 /* add readline support to any command
+   Copyright 2002 Andrew Tridgell <tridge@samba.org>, June 2002
+
    released under the GNU General Public License version 2 or later
-   tridge@samba.org, June 2002
 */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -14,28 +15,37 @@
 static void usage(void)
 {
 	printf("
-readline [options] <command>
+readline COMMAND
 
 This add readline support to any command line driven program. 
+rline will load a completions file from $HOME/.rline/COMMAND
 
-Options:
-   -c FILE          load a list of command completions from FILE
-   -h               show this help
-   --               stop processing options (used to allow options to programs)
+If you specify a RLINE_DATA environment variable then rline will look
+in that directory instead.
 ");
 }
 
 /* list of command completions */
 static char **cmd_list;
 static int num_commands;
+static int cmd_offset;
 
-static void load_completions(const char *fname)
+static void load_completions(const char *command)
 {
-	FILE *f = fopen(fname, "r");
+	char *fname;
+	FILE *f;
 	char line[200];
+	char *p;
 
+	if ((p=getenv("RLINE_DATA"))) {
+		asprintf(&fname, "%s/%s", p, command);
+	} else {
+		asprintf(&fname, "%s/.rline/%s", getenv("HOME"), command);
+	}
+
+	f = fopen(fname, "r");
+	free(fname);
 	if (!f) {
-		perror(fname);
 		return;
 	}
 
@@ -58,6 +68,7 @@ static void load_completions(const char *fname)
 static char *command_generator(const char *line, int state)
 {
 	static int idx, len;
+	char *p;
 
 	if (!cmd_list) return NULL;
 
@@ -67,14 +78,28 @@ static char *command_generator(const char *line, int state)
 		len = strlen(line);
 	}
 
-	while (idx < num_commands &&
-	       strncmp(line, cmd_list[idx], len) != 0) {
-		idx++;
+	/* find the next command that matches both the line so far and
+	   the next part of the command */
+	for (;idx<num_commands;idx++) {
+		if (strncmp(rl_line_buffer, cmd_list[idx], cmd_offset) == 0 &&
+		    strncmp(line, cmd_list[idx] + cmd_offset, len) == 0) {
+			p = cmd_list[idx++] + cmd_offset;
+			p = strndup(p, strcspn(p, " "));
+			if (strcmp(p, "*") == 0) {
+				/* we want filename completion for this one. This must
+				   be the last completion */
+				free(p);
+				idx = num_commands;
+				return NULL;
+			}
+			return p;
+		}
 	}
 
-	if (idx == num_commands) return NULL;
+	/* we don't want the filename completer */
+	rl_attempted_completion_over = 1;
 
-	return strdup(cmd_list[idx++]);
+	return NULL;
 }
 
 
@@ -83,10 +108,7 @@ static char *command_generator(const char *line, int state)
  */
 static char **completion_function(const char *line, int start, int end)
 {
-	if (start != 0) {
-		/* they are trying to complete an argument */
-		return NULL;
-	}
+	cmd_offset = start;
 
 	return (char **)completion_matches(line, command_generator);
 }
@@ -107,31 +129,13 @@ int main(int argc, char *argv[])
 {
 	int fd1[2], fd2[2];
 	char *prompt;
-	int c;
-	extern int optind;
-	extern char *optarg;
 
-	while ((c = getopt(argc, argv, "c:h")) != -1) {
-		switch (c) {
-		case '-':
-			break;
-		case 'c':
-			load_completions(optarg);
-			break;
-		case 'h':
-		default:
-			usage();
-			exit(1);
-		}
-	}
-
-	argc -= optind;
-	argv += optind;
-
-	if (argc < 1) {
+	if (argc < 2) {
 		usage();
 		exit(1);
 	}
+
+	load_completions(argv[1]);
 
 	if (pipe(fd1) != 0 || pipe(fd2) != 0) {
 		perror("pipe");
@@ -145,7 +149,7 @@ int main(int argc, char *argv[])
 		close(1);
 		dup2(fd1[0], 0);
 		dup2(fd2[1], 1);
-		return execvp(argv[0], argv);
+		return execvp(argv[1], argv+1);
 	}
 
 	pipe_fd = fd1[1];
