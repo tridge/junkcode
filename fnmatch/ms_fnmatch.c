@@ -87,12 +87,11 @@ static int fnmatch_test2(const char *p, const char *n, const char **max_n)
 	int i;
 
 	while ((c = *p++)) {
-		if (*max_n && *max_n <= n) {
-			return null_match(p);
-		}
-
 		switch (c) {
 		case '*':
+			if (*max_n && *max_n <= n) {
+				return null_match(p);
+			}
 			for (i=0; n[i]; i++) {
 				if (fnmatch_test2(p, n+i, max_n+1) == 0) {
 					return 0;
@@ -102,6 +101,9 @@ static int fnmatch_test2(const char *p, const char *n, const char **max_n)
 			return null_match(p);
 
 		case '<':
+			if (*max_n && *max_n <= n) {
+				return null_match(p);
+			}
 			for (i=0; n[i]; i++) {
 				if (fnmatch_test2(p, n+i, max_n+1) == 0) return 0;
 				if (n[i] == '.' && !strchr(n+i+1,'.')) {
@@ -158,14 +160,22 @@ static int fnmatch_test2(const char *p, const char *n, const char **max_n)
 */
 static int fnmatch_test(const char *p, const char *n)
 {
-	int ret;
-	const char **max_n;
+	int ret, count, i;
+	const char **max_n = NULL;
 
-	max_n = calloc(sizeof(char *), strlen(p)+1);
+	for (count=i=0;p[i];i++) {
+		if (p[i] == '*' || p[i] == '<') count++;
+	}
+
+	if (count) {
+		max_n = calloc(sizeof(char *), count);
+	}
 
 	ret = fnmatch_test2(p, n, max_n);
 
-	free(max_n);
+	if (max_n) {
+		free(max_n);
+	}
 
 	return ret;
 }
