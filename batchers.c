@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 static void batchers_sort(int baseP,int N,void (*makesmaller)())
 {
   int	p, initq, q, r, d, x;
