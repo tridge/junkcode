@@ -226,36 +226,15 @@ sub parse_enums($)
 
 ####################################################
 # parse a header file, generating a dumper structure
-sub parse_header($)
+sub parse_data($)
 {
-	my($header) = shift;
-	my(%included);
-
-	print "Loading headers\n";
-
-	my($data) = IncludeLoad($header);
-
-	# handle includes
-	while ($data =~ /(.*?)\n\#include \"(.*?)\"(.*)/s) {
-		my($inc) = "";
-
-		if (!$included{$2}) {
-			$inc = IncludeLoad($2);
-			$included{$2} = 1;
-		}
-
-		if (!defined($inc)) {$inc = "";}
-
-		$data = $1 . $inc . $3;
-	}
+	my($data) = shift;
 
 	# strip comments
 	$data =~ s/\/\*.*?\*\// /sg;
 	# collapse spaces 
 	$data =~ s/[\t ]+/ /sg;
 	$data =~ s/\s*\n\s+/\n/sg;
-
-	print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
 
 	parse_enums($data);
 
@@ -266,6 +245,47 @@ sub parse_header($)
 		$data = $3;
 		parse_elements($name, $elements);
 	}
+}
+
+my(%included);
+
+sub parse_includes($);
+
+####################################################
+# parse a header file, generating a dumper structure
+sub parse_includes($)
+{
+	my($data) = shift;
+
+	# handle includes
+	if ($data =~ /(.*?)\n\#include \"([\w.]*?)\"(.*)/s) {
+		my($inc) = "";
+
+		if (!$included{$2}) {
+			$inc = IncludeLoad($2);
+			$included{$2} = 1;
+		}
+
+		if (!defined($inc)) {$inc = "";}
+
+		parse_data($1);
+		parse_includes($inc);
+		parse_includes($3);
+		return;
+	}
+
+	parse_data($data);
+}
+
+####################################################
+# parse a header file, generating a dumper structure
+sub parse_header($)
+{
+	my($header) = shift;
+
+	my($data) = IncludeLoad($header);
+
+	parse_includes($data);
 }
 
 
@@ -313,5 +333,7 @@ if (!$opt_cfile) {
 }
 
 open(CFILE, ">$opt_cfile") || die "can't open $opt_cfile";    
+
+print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
 
 parse_header($opt_header);
