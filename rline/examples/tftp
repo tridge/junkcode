@@ -1,0 +1,13 @@
+connect
+mode
+put [FILE]
+get
+quit
+verbose
+trace
+status
+binary
+ascii
+rexmt
+timeout
+?
