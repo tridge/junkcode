@@ -17,6 +17,8 @@ waiting for the lock file to be released before continuing.
 
 Note that after running the lockfile is left behind in the filesystem. This is 
 correct behaviour.
+
+The lock is inherited across exec but not fork
 ");
 }
 
