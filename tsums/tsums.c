@@ -172,7 +172,7 @@ static int is_ignored(const char *fname)
 {
 	struct ignore *ign;
 	for (ign=ignore_list; ign; ign=ign->next) {
-		if (fnmatch(ign->pattern, fname, FNM_PATHNAME) == 0) return 1;
+		if (fnmatch(ign->pattern, fname, 0) == 0) return 1;
 	}
 	return 0;
 }
