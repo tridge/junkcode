@@ -1,0 +1,37 @@
+This code is based on the AD.tgz sample code which is Copyright
+Microsoft Corporation and others. The original license is as follows:
+
+------------
+MICROSOFT BROAD SOURCE LICENSE 
+
+This License governs use of the accompanying Software.  Microsoft
+hopes you find this Software useful.
+
+You are licensed to do anything you want with the Software. 
+
+In return, we simply require that you agree:
+
+1. Not to remove any copyright notices from the Software.
+
+2. That the Software comes "as is", with no warranties.  None
+   whatsoever. This means no implied warranty of merchantability
+   or fitness for a particular purpose or any warranty of
+   non-infringement.  Also, you must pass this disclaimer
+   on whenever you distribute the Software.
+
+3. That we will not be liable for any of those types of damages
+   known as indirect, special, consequential, or incidental related
+   to the Software or this License. Also, you must pass this
+   limitation of liability on whenever you distribute the Software.
+
+4. That if you sue anyone over patents that you think may apply to
+   the Software, your license to the Software ends automatically
+   (this applies even when the rest of the License ends).
+
+5. That the patent rights Microsoft is licensing only apply to
+   the Software, not to any derivatives you make.
+
+6. That your rights under the License end automatically if you
+   breach this in any way.
+
+--------------
