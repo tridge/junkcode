@@ -558,8 +558,11 @@ static int gen_parse_one(const struct parse_struct *pinfo,
 			return -1;
 		}
 		if (len > 0) {
+			unsigned size;
 			struct parse_struct p2 = pinfo[i];
-			char *ptr = calloc(len, pinfo[i].size);
+			char *ptr;
+			size = pinfo[i].ptr_count>1?sizeof(void*):pinfo[i].size;
+			ptr = calloc(len, size);
 			if (!ptr) {
 				errno = ENOMEM;
 				return -1;
