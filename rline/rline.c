@@ -77,8 +77,6 @@ static char *command_generator(const char *line, int state)
 {
 	static int idx, len;
 
-	if (!cmd_list) return NULL;
-
 	if (!state) {
 		/* first call */
 		idx = 0;
