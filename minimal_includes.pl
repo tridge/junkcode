@@ -53,7 +53,7 @@ sub test_compile($)
 		return "NOT A C FILE";
 	}
 	unlink($obj);
-	my $ret = `make $obj 2>&1`;
+	my $ret = `make $obj 2>&1 && md5sum $obj`;
 	if (!stat("$obj")) {
 		return "COMPILE FAILED";
 	}
