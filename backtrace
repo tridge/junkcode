@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# we want everything on stderr, so the program is not disturbed
+exec 1>&2
+
+PID=$1
+TMPFILE=/tmp/backtrace.$$
+cat << EOF  > $TMPFILE
+set height 0
+up 8
+bt full
+quit
+EOF
+gdb -x $TMPFILE /proc/$PID/exe $PID
+/bin/rm -f $TMPFILE
