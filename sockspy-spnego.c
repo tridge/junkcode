@@ -56,7 +56,7 @@ static int open_socket_out(const char *host, int port)
 	} else {
 		hp = gethostbyname(host);
 		if (!hp) {
-			fprintf(stderr,"tseal: unknown host %s\n", host);
+			fprintf(stderr,"unknown host %s\n", host);
 			return -1;
 		}
 		memcpy(&sock_out.sin_addr, hp->h_addr, hp->h_length);
@@ -67,7 +67,7 @@ static int open_socket_out(const char *host, int port)
 
 	if (connect(res,(struct sockaddr *)&sock_out,sizeof(sock_out)) != 0) {
 		close(res);
-		fprintf(stderr,"tseal: failed to connect to %s (%s)\n", 
+		fprintf(stderr,"failed to connect to %s (%s)\n", 
 			host, strerror(errno));
 		return -1;
 	}
