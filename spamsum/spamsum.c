@@ -31,6 +31,10 @@
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
 
+#ifndef MAX
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#endif
+
 typedef unsigned u32;
 typedef unsigned char uchar;
 
@@ -91,13 +95,15 @@ static inline u32 sum_hash(uchar c, u32 h)
   take a message of length 'length' and return a string representing a hash of that message,
   prefixed by the selected blocksize
 */
-char *spamsum(const uchar *in, size_t length, u32 flags)
+char *spamsum(const uchar *in, size_t length, u32 flags, u32 bsize)
 {
 	const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 	char *ret, *p;
 	u32 total_chars;
-	u32 h, h2;
-	u32 block_size, j, n, i;
+	u32 h, h2, h3;
+	u32 j, n, i, k;
+	u32 block_size;
+	uchar ret2[SPAMSUM_LENGTH/2 + 1];
 
 	/* if we are ignoring email headers then skip past them now */
 	if (flags & FLAG_IGNORE_HEADERS) {
@@ -119,13 +125,17 @@ char *spamsum(const uchar *in, size_t length, u32 flags)
 		total_chars = length;
 	}
 
+	if (bsize == 0) {
 	/* guess a reasonable block size */
-	block_size = MIN_BLOCKSIZE;
-	while (block_size * SPAMSUM_LENGTH < total_chars) {
-		block_size = block_size * 2;
+		block_size = MIN_BLOCKSIZE;
+		while (block_size * SPAMSUM_LENGTH < total_chars) {
+			block_size = block_size * 2;
+		}
+	} else {
+		block_size = bsize;
 	}
 
-	ret = malloc(SPAMSUM_LENGTH + 20);
+	ret = malloc(SPAMSUM_LENGTH + SPAMSUM_LENGTH/2 + 20);
 	if (!ret) return NULL;
 
 again:
@@ -134,9 +144,10 @@ again:
 	p = ret + strlen(ret);
 
 	memset(p, 0, SPAMSUM_LENGTH+1);
+	memset(ret2, 0, sizeof(ret2));
 
-	j = 0;
-	h2 = HASH_INIT;
+	k = j = 0;
+	h3 = h2 = HASH_INIT;
 	h = roll_reset();
 
 	for (i=0; i<length; i++) {
@@ -151,6 +162,7 @@ again:
 		*/
 		h = roll_hash(in[i]);
 		h2 = sum_hash(in[i], h2);
+		h3 = sum_hash(in[i], h3);
 
 		if (h % block_size == (block_size-1)) {
 			/* we have hit a reset point. We now emit a
@@ -158,7 +170,6 @@ again:
 			   piece of the message between the last reset
 			   point and this one */
 			p[j] = b64[h2 % 64];
-			h = roll_reset();
 			if (j < SPAMSUM_LENGTH-1) {
 				/* we can have a problem with the tail
 				   overflowing. The easiest way to
@@ -172,17 +183,33 @@ again:
 				j++;
 			}
 		}
+
+		/* this produces a second signature with a block size
+		   of block_size*2. By producing dual signatures in
+		   this way the effect of small changes in the message
+		   size near a block size boundary is greatly reduced. */
+		if (h % (block_size*2) == ((block_size*2)-1)) {
+			ret2[k] = b64[h3 % 64];
+			if (k < SPAMSUM_LENGTH/2-1) {
+				h3 = HASH_INIT;
+				k++;
+			}
+		}
 	}
 
 	/* if we have anything left then add it to the end. This
-	 * ensures that the last part of the message is always
-	 * considered */
+	   ensures that the last part of the message is always
+	   considered */
 	if (h != 0) {
 		p[j] = b64[h2 % 64];
+		ret2[k] = b64[h3 % 64];
 	}
 
+	p[++j] = ':';
+	strcat(p+j, ret2);
+
 	/* our blocksize guess may have been way off - repeat if necessary */
-	if (block_size > MIN_BLOCKSIZE && j < SPAMSUM_LENGTH/2) {
+	if (bsize == 0 && block_size > MIN_BLOCKSIZE && j < SPAMSUM_LENGTH/2) {
 		block_size = block_size / 2;
 		goto again;
 	}
@@ -272,58 +299,34 @@ static char *eliminate_sequences(const char *str)
 }
 
 /*
-  given two spamsum strings return a value indicating the degree to which they match.
+  this is the low level string scoring algorithm. It takes two strings
+  and scores them on a scale of 0-100 where 0 is a terrible match and
+  100 is a great match. The block_size is used to cope with very small
+  messages.
 */
-u32 spamsum_match(const char *str1, const char *str2)
+static unsigned score_strings(const char *s1, const char *s2, u32 block_size)
 {
-	u32 block_size1, block_size2;
+	u32 score;
 	u32 len1, len2;
-	u32 score0, score = 0;
-	char *s1, *s2;
 	int edit_distn(const char *from, int from_len, const char *to, int to_len);
-
-	if (sscanf(str1, "%u:", &block_size1) != 1 ||
-	    sscanf(str2, "%u:", &block_size2) != 1 ||
-	    block_size1 != block_size2) {
-		/* if the blocksizes don't match then we are comparing
-		   apples to oranges ... */
-		return 0;
-	}
-
-	str1 = strchr(str1, ':') + 1;
-	str2 = strchr(str2, ':') + 1;
-
-	/* there is very little information content is sequences of
-	   the same character like 'LLLLL'. Eliminate any sequences
-	   longer than 3. This is especially important when combined
-	   with the has_common_substring() test below. */
-	s1 = eliminate_sequences(str1);
-	s2 = eliminate_sequences(str2);
-
-	if (!s1 || !s2) return 0;
 
 	len1 = strlen(s1);
 	len2 = strlen(s2);
 
 	if (len1 > SPAMSUM_LENGTH || len2 > SPAMSUM_LENGTH) {
 		/* not a real spamsum signature? */
-		free(s1); free(s2);
 		return 0;
 	}
 
 	/* the two strings must have a common substring of length
 	   ROLLING_WINDOW to be candidates */
 	if (has_common_substring(s1, s2) == 0) {
-		free(s1); free(s2);
 		return 0;
 	}
 
 	/* compute the edit distance between the two strings. The edit distance gives
 	   us a pretty good idea of how closely related the two strings are */
-	score0 = score = edit_distn(s1, len1, s2, len2);
-
-	/* we don't need these any more */
-	free(s1); free(s2);
+	score = edit_distn(s1, len1, s2, len2);
 
 	/* scale the edit distance by the lengths of the two
 	   strings. This changes the score to be a measure of the
@@ -348,9 +351,88 @@ u32 spamsum_match(const char *str1, const char *str2)
 	score = 100 - score;
 
 	/* when the blocksize is small we don't want to exaggerate the match size */
-	if (score > block_size1/MIN_BLOCKSIZE * MIN(len1, len2)) {
-		score = block_size1/MIN_BLOCKSIZE * MIN(len1, len2);
+	if (score > block_size/MIN_BLOCKSIZE * MIN(len1, len2)) {
+		score = block_size/MIN_BLOCKSIZE * MIN(len1, len2);
 	}
+
+	return score;
+}
+
+/*
+  given two spamsum strings return a value indicating the degree to which they match.
+*/
+u32 spamsum_match(const char *str1, const char *str2)
+{
+	u32 block_size1, block_size2;
+	u32 score = 0;
+	char *s1, *s2;
+	char *s1_1, *s1_2;
+	char *s2_1, *s2_2;
+
+	/* each spamsum is prefixed by its block size */
+	if (sscanf(str1, "%u:", &block_size1) != 1 ||
+	    sscanf(str2, "%u:", &block_size2) != 1) {
+		return 0;
+	}
+
+	/* if the blocksizes don't match then we are comparing
+	   apples to oranges ... */
+	if (block_size1 != block_size2 && 
+	    block_size1 != block_size2*2 &&
+	    block_size2 != block_size1*2) {
+		return 0;
+	}
+
+	/* move past the prefix */
+	str1 = strchr(str1, ':');
+	str2 = strchr(str2, ':');
+
+	if (!str1 || !str2) {
+		/* badly formed ... */
+		return 0;
+	}
+
+	/* there is very little information content is sequences of
+	   the same character like 'LLLLL'. Eliminate any sequences
+	   longer than 3. This is especially important when combined
+	   with the has_common_substring() test below. */
+	s1 = eliminate_sequences(str1+1);
+	s2 = eliminate_sequences(str2+1);
+
+	if (!s1 || !s2) return 0;
+
+	/* now break them into the two pieces */
+	s1_1 = s1;
+	s2_1 = s2;
+
+	s1_2 = strchr(s1, ':');
+	s2_2 = strchr(s2, ':');
+
+	if (!s1_2 || !s2_2) {
+		/* a signature is malformed - it doesn't have 2 parts */
+		free(s1); free(s2);
+		return 0;
+	}
+
+	*s1_2++ = 0;
+	*s2_2++ = 0;
+
+	/* each signature has a string for two block sizes. We now
+	   choose how to combine the two block sizes. We checked above
+	   that they have at least one block size in common */
+	if (block_size1 == block_size2) {
+		u32 score1, score2;
+		score1 = score_strings(s1_1, s2_1, block_size1);
+		score2 = score_strings(s1_2, s2_2, block_size2);
+		score = MAX(score1, score2);
+	} else if (block_size1 == block_size2*2) {
+		score = score_strings(s1_1, s2_2, block_size1);
+	} else {
+		score = score_strings(s1_2, s2_1, block_size2);
+	}
+
+	free(s1);
+	free(s2);
 
 	return score;
 }
@@ -388,7 +470,7 @@ u32 spamsum_match_db(const char *fname, const char *sum)
 /*
   return the spamsum on stdin
 */
-char *spamsum_stdin(u32 flags)
+static char *spamsum_stdin(u32 flags, u32 block_size)
 {
 	uchar buf[10*1024];
 	uchar *msg;
@@ -399,6 +481,7 @@ char *spamsum_stdin(u32 flags)
 	msg = malloc(sizeof(buf));
 	if (!msg) return NULL;
 
+	/* load the file, expanding the allocation as needed. */
 	while (1) {
 		n = read(0, buf, sizeof(buf));
 		if (n == -1 && errno == EINTR) continue;
@@ -411,7 +494,7 @@ char *spamsum_stdin(u32 flags)
 		length += n;
 	}
 	
-	sum = spamsum(msg, length, flags);
+	sum = spamsum(msg, length, flags, block_size);
 	
 	free(msg);
 
@@ -422,12 +505,16 @@ char *spamsum_stdin(u32 flags)
 /*
   return the spamsum on a file
 */
-char *spamsum_file(const char *fname, u32 flags)
+char *spamsum_file(const char *fname, u32 flags, u32 block_size)
 {
 	int fd;
 	char *sum;
 	struct stat st;
 	uchar *msg;
+
+	if (strcmp(fname, "-") == 0) {
+		return spamsum_stdin(flags, block_size);
+	} 
 
 	fd = open(fname, O_RDONLY);
 	if (fd == -1) {
@@ -447,7 +534,7 @@ char *spamsum_file(const char *fname, u32 flags)
 	}
 	close(fd);
 
-	sum = spamsum(msg, st.st_size, flags);
+	sum = spamsum(msg, st.st_size, flags, block_size);
 
 	munmap(msg, st.st_size);
 
@@ -466,6 +553,8 @@ Syntax:
    spamsum [options] <files> 
 or
    spamsum [options] -d sigs.txt -c SIG
+or
+   spamsum [options] -d sigs.txt -C file
 
 When called with a list of filenames spamsum will write out the signatures of each file
 on a separate line. You can specify the filename '-' for standard input.
@@ -475,9 +564,13 @@ for the given signature with the signatures in the given database. A
 score of 100 means a perfect match, and a score of 0 means a complete
 mismatch.
 
+The 3rd form is just like the second form, but you pass a file
+containing a message instead of a pre-computed signature.
+
 Options:
-   -W          ignore whitespace
-   -H          skip past mail headers
+   -W              ignore whitespace
+   -H              skip past mail headers
+   -B <bsize>      force a block size of bsize
 ");
 }
 
@@ -491,8 +584,9 @@ int main(int argc, char *argv[])
 	u32 score;
 	int i;
 	u32 flags = 0;
+	u32 block_size = 0;
 
-	while ((c = getopt(argc, argv, "WHd:c:h")) != -1) {
+	while ((c = getopt(argc, argv, "B:WHd:c:C:h")) != -1) {
 		switch (c) {
 		case 'W':
 			flags |= FLAG_IGNORE_WHITESPACE;
@@ -506,12 +600,27 @@ int main(int argc, char *argv[])
 			dbname = optarg;
 			break;
 
+		case 'B':
+			block_size = atoi(optarg);
+			break;
+
 		case 'c':
 			if (!dbname) {
 				show_help();
 				exit(1);
 			}
 			score = spamsum_match_db(dbname, optarg);
+			printf("%u\n", score);
+			exit(0);
+
+		case 'C':
+			if (!dbname) {
+				show_help();
+				exit(1);
+			}
+			score = spamsum_match_db(dbname, 
+						 spamsum_file(optarg, flags, 
+							      block_size));
 			printf("%u\n", score);
 			exit(0);
 
@@ -532,11 +641,7 @@ int main(int argc, char *argv[])
 
 	/* compute the spamsum on a list of files */
 	for (i=0;i<argc;i++) {
-		if (strcmp(argv[i], "-") == 0) {
-			sum = spamsum_stdin(flags);
-		} else {
-			sum = spamsum_file(argv[i], flags);
-		}
+		sum = spamsum_file(argv[i], flags, block_size);
 		printf("%s\n", sum);
 		free(sum);
 	}
