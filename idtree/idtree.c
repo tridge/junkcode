@@ -374,13 +374,12 @@ static int sub_remove(struct idr *idp, int shift, int id)
 int idr_remove(struct idr *idp, int id)
 {
 	struct idr_layer *p;
-	int ret = 0;
 
 	/* Mask off upper bits we don't use for the search. */
 	id &= MAX_ID_MASK;
 
 	if (sub_remove(idp, (idp->layers - 1) * IDR_BITS, id) == -1) {
-		ret = -1;
+		return -1;
 	}
 	if ( idp->top && idp->top->count == 1 && 
 	     (idp->layers > 1) &&
@@ -396,8 +395,7 @@ int idr_remove(struct idr *idp, int id)
 		p = alloc_layer(idp);
 		kmem_cache_free(idr_layer_cache, p);
 	}
-
-	return ret;
+	return 0;
 }
 EXPORT_SYMBOL(idr_remove);
 
