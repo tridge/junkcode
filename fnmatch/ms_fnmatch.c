@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <time.h>
 #include <signal.h>
 #include <ctype.h>
@@ -76,24 +77,6 @@ static int null_match(const char *p)
 	return 0;
 }
 
-static int min_p_chars(const char *p)
-{
-	int ret;
-	for (ret=0;*p;p++) {
-		switch (*p) {
-		case '*':
-		case '<':
-		case '>':
-		case '"':
-			break;
-		case '?':
-		default:
-			ret++;
-		}
-	} 	
-	return ret;
-}
-
 /*
   the original, recursive function. Needs replacing, but with exactly
   the same output
@@ -113,7 +96,7 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cac
 	while ((c = p[ofs++])) {
 		switch (c) {
 		case '*':
-			len = n;
+			len = strlen(n);
 			for (; *n; n++) {
 				if (cache[ofs] && cache[ofs] >= len) {
 					return null_match(p+ofs);
@@ -184,31 +167,11 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cac
 	return -1;
 }
 
-static char *compress_pattern(const char *pattern)
-{
-	char *p, *new;
-
-	p = new = strdup(pattern);
-	while (p[0] && p[1]) {
-		/*  ** => *  */
-		/*  *< => *  */
-		if (p[0] == '*' && (p[1] == '*' || p[1] == '<'))
-			memmove(p+1, p+2, strlen(p+1));
-		/* << => <* */
-		else if (p[0] == '<' && p[1] == '<')
-			p[1] = '*';
-		else
-			p++;
-	}
-	return new;
-}
-
 /*
   the new, hopefully better function. Fiddle this until it works and is fast
 */
 static int fnmatch_test(const char *p, const char *n)
 {
-	char *new = compress_pattern(p);
 	int ret;
 	unsigned *cache;
 
@@ -218,7 +181,6 @@ static int fnmatch_test(const char *p, const char *n)
 
 	free(cache);
 
-	free(new);
 	return ret;
 }
 
@@ -236,7 +198,6 @@ static const char *n_used;
 static void sig_alrm(int sig)
 {
 	printf("Too slow!!\np='%s'\ns='%s'\n", p_used, n_used);
-	printf("compresed: '%s'\n", compress_pattern(p_used));
 	exit(0);
 }
 
@@ -272,8 +233,8 @@ int main(void)
 //	exit(0);
 
 	for (i=0;i<100000;i++) {
-		int len1 = random() % 20;
-		int len2 = random() % 20;
+		int len1 = random() % 2000;
+		int len2 = random() % 2000;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
@@ -286,19 +247,17 @@ int main(void)
 
 		alarm(0);
 		start_timer();
-		ret1 = fnmatch_orig(p, n);
+//		ret1 = fnmatch_orig(p, n);
 		t1 += end_timer();
 		alarm(2);
 		start_timer();
-		ret2 = fnmatch_test(p, n);
+		ret1 = ret2 = fnmatch_test(p, n);
 		t2 += end_timer();
 		alarm(0);
 
 		if (ret1 != ret2) {
 			printf("mismatch: ret1=%d ret2=%d pattern='%s' string='%s'\n",
 			       ret1, ret2, p, n);
-			printf("Pattern actually used: '%s' => '%s'\n",
-			       p, compress_pattern(p));
 			free(p);
 			free(n);
 			exit(0);
@@ -306,7 +265,7 @@ int main(void)
 
 		free(p);
 		free(n);
-		printf("%d\r", i);
+		printf("%d t1=%.5f  t2=%.5f\r", i, t1, t2);
 		fflush(stdout);
 	}
 
