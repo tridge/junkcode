@@ -285,8 +285,6 @@ int main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc == 0) usage();
-
 	tdb = tdb_open(db_name, 1000, 0, O_CREAT|O_RDWR, 0600);
 	
 	if (!tdb) {
@@ -297,6 +295,8 @@ int main(int argc, char *argv[])
 		dump_ignored();
 		exit(0);
 	}
+
+	if (argc == 0) usage();
 
 	for (i=0;i<argc;i++) {
 		if (do_ignore) {
