@@ -15,6 +15,8 @@
 #include <krb5.h>
 #include <lber.h>
 #include <ldap.h>
+#include <sasl.h>
+#include "ads.h"
 
 #define VERSION "3.0 prealpha"
 
@@ -35,6 +37,9 @@ typedef struct {
 #define SAFE_FREE(x) do { if ((x) != NULL) {free(x); x=NULL;} } while(0)
 
 #define Realloc realloc
+#define xmalloc malloc
+
+#define DEBUG(level, p) printf p
 
 typedef char pstring[1024];
 typedef char fstring[128];

@@ -20,6 +20,8 @@ int main(int argc, char *argv[])
 	char *hostname;
 	char *realm;
 	char *principal;
+	ADS_STRUCT *ads;
+	int rc;
 
 	if (argc != 4) {
 		usage();
@@ -30,11 +32,10 @@ int main(int argc, char *argv[])
 	hostname = argv[2];
 	realm = argv[3];
 
-	asprintf(&principal, "HOST/%s@%s", hostname, realm);
+	ads = ads_init(realm, ldap_host, NULL);
 
-	ldap_add_machine_account(ldap_host, hostname, realm);
+	rc = ads_connect(ads);
 
-	krb5_set_principal_password(principal, ldap_host, hostname, realm);
-
+	rc = ads_join_realm(ads, hostname);
 	return 0;
 }
