@@ -1,23 +1,36 @@
 #!/bin/bash
 ###################
-# a simple mail delivery and transmissions system
+# a simple mail delivery and transmission system
 # Copyright Andrew Tridgell <tridge@samba.org> 1997-2002
+# released under the GNU General Public License version 2 or later
 
-#echo mail is on kul
-#exit 1
+# setup the default configuration
+MAIL_SSH="ssh"
+MAIL_DIR="Mail"
+MAIL_RUNNER="mail.runner"
+SENDMAIL="/usr/lib/sendmail"
+SENDMAIL_OPTS=""
+MAIL_TIMEOUT=300
+VERSION="1.0"
 
-export MAILHOST="samba.org"
-export MAIL_SSH="ssh"
-#export SENDMAIL_OPTS="-oi -f $USER -oem -t"
-export SENDMAIL_OPTS=""
-
+# sensible paths are often not setup when invoking commands remotely
 export PATH=$PATH:$HOME/bin:/usr/local/bin:/usr/bin:/bin
 
+# load the user specific config
+. $HOME/.mail.runner
 
-###################################################################################
+# make sure the necessary variables are defined
+if [ "$MAIL_HOST" = "" ]; then
+    echo "You must define a MAIL_HOST in $HOME/.mail.runner" 1>&2
+    echo "Use -h for more help" 1>&2
+    exit 1
+fi
+
+
+###############################################################################
 # send all pending mail, invoking mail.deliver at the other end
 mail_send() {
-    list=`echo ./mail.out.*`
+    list=`echo $HOME/$MAIL_DIR/mail.out.*.*`
     echo
     if [ "$list" = "" ]; then
 	echo "No messages to send";
@@ -25,52 +38,59 @@ mail_send() {
     fi
     echo "Sending `echo $list | wc -w` messages"
 
-    if rsync --rsync-path='bin/mail.runner remote_deliver' --timeout=200 -ze $MAIL_SSH $list $MAILHOST:Mail/; then
+    if rsync --rsync-path="$MAIL_RUNNER remote_deliver" \
+	--timeout=$MAIL_TIMEOUT -Pavze $MAIL_SSH \
+	$list $MAIL_HOST:$MAIL_DIR/; then
          rm -f $list
     fi
     return 0;
 }
 
-###################################################################################
+###############################################################################
 # fetch mail from the remote host and deliver it via procmail
 mail_fetch() {
-    if ! rsync --timeout=300 -Pavze $MAIL_SSH --rsync-path='bin/mail.runner remote_send' $MAILHOST:Mail/EMPTY_FILE ~/Mail/; then
+    if ! rsync --timeout=$MAIL_TIMEOUT -Pavze $MAIL_SSH \
+	    --rsync-path="$MAIL_RUNNER remote_send" \
+	    $MAIL_HOST:$MAIL_DIR/EMPTY_FILE $HOME/$MAIL_DIR/; then
 	echo transfer failed;
 	return 1;
     fi
 
-    if [ "`echo mail.in.*`" = "" ]; then 
+    if [ "`echo $HOME/$MAIL_DIR/mail.in.*.*`" = "" ]; then 
 	echo
 	echo "No mail to retrieve"
 	return 1
     fi
 
-    for f in mail.in.*; do
+    for f in $HOME/$MAIL_DIR/mail.in.*.*; do
 	if cat $f | formail -s procmail; then
 	    # it is useful seeing what mail is being processed
-	    frm $f
+	    if [ "$MAIL_FRM" = "1" ]; then
+		frm $f
+	    fi
 	    rm -f $f
 	fi
     done
 
     # this is useful for seeing where procmail has put things ...
-    echo ; echo ; tail ~/Mail/procmail.log
+    if [ "$MAIL_PROCMAIL_TAIL" = "1" ]; then
+	echo ; echo ; tail $HOME/$MAIL_DIR/procmail.log
+    fi
 
     return 0;
 }
 
 
-#################################################################################
-# a sendmail-like call
+###############################################################################
+# a sendmail-like call. This just places the mail in a known location for 
+# mail_send to find
 mail_sendmail() {
-    cd ~/Mail
-    FILE=mail.out.`date +%d:%m:%y:%T`.$$
-    cat > $FILE
+    cat > $HOME/$MAIL_DIR/mail.out.$RANDOM.$$
     exit 0
 }
 
 
-#################################################################################
+##############################################################################
 # a rsync wrapper function that delivers mail on the remote host
 mail_remote_deliver() {
     rsync $*
@@ -80,66 +100,181 @@ mail_remote_deliver() {
 	return $status;
     fi
 
-    cd ~/Mail
-    for f in mail.out.*; do
-	    if /usr/lib/sendmail $SENDMAIL_OPTS < $f; then
+    for f in $HOME/$MAIL_DIR/mail.out.*.*; do
+	    if $SENDMAIL $SENDMAIL_OPTS < $f; then
 		rm -f $f
 	    else
-		echo Mail of $f failed $status
+		echo Mail of $f failed $status 1>&2
 	    fi
     done
     return 0
 }
 
-##################################################################################
+###############################################################################
 # a rsync wrapper function for fetching mail from the remote host
 mail_remote_send() {
     # atomically move mail from InBox to a temporary file
-    if test -s InBox ; then
-	movemail InBox Mail/mail.in.$$ > /dev/null
+    if test -s $HOME/InBox ; then
+	movemail $HOME/InBox $HOME/$MAIL_DIR/mail.in.$RANDOM.$$ > /dev/null
     fi
 
-    if [ ! -f Mail/EMPTY_FILE ]; then
-	touch Mail/EMPTY_FILE
+    # by using an empty file we avoid error messages from rsync about not
+    # having any files to transfer
+    if [ ! -f $HOME/$MAIL_DIR/EMPTY_FILE ]; then
+	touch $HOME/$MAIL_DIR/EMPTY_FILE
     fi
 
-    rsync $* Mail/mail.in.*
+    rsync $* $HOME/$MAIL_DIR/mail.in.*.*
     status=$?
     if [ $status != 0 ]; then
 	return $status;
     fi
 
-    cd ~/Mail
-    rm -f mail.in.[0-9]*
+    rm -f $HOME/$MAIL_DIR/mail.in.*.*
     return 0
 }
 
 
-###################################################################################
+###############################################################################
+# display help text
+mail_help() {
+cat <<EOF
+mail.runner version $VERSION
+-----------------------
+
+mail.runner is a script for sending and receiving email. 
+
+FEATURES
+--------
+
+The main features of mail.runner are
+
+- good performance over very slow links
+- secure transfer via ssh
+- incremental transfer in case the link is lost
+- no mta installation needed on the client
+
+
+REQUIREMENTS
+------------
+
+To use mail.runner you need the following:
+
+- a working rsync and ssh installation
+- the 'bash' shell
+- the 'movemail' utility
+- the 'formail' utility
+- the Linux 'pidof' utility
+- a working procmail installation for mail delivery on the client
+- a working sendmail (or equivalent) installation on the server for sending 
+  email
+- optionally you may use the 'frm' utility
+
+
+INSTALLATION
+------------
+
+To install mail.runner you need to do the following:
+
+- install the mail.runner script on both the server and client 
+- create a .mail.runner configuration file on the server and client (see
+  the CONFIGURATION section of this help for details)
+
+
+CONFIGURATION
+-------------
+
+You should configure mail.runner using a file called .mail.runner in
+your home directory on both the client and the server. The minimal
+configuration would contain the single option MAIL_HOST like this:
+
+  MAIL_HOST="your.mail.server"
+
+Other options are:
+
+  MAIL_SSH
+    This specifies the remote shell to use for rsync. Defaults to "ssh"
+
+  MAIL_DIR
+    This specifies the name of the directory where you store mail on
+    both the client and the server. This should be a relative path,
+    relative to your home directory.  The default is "Mail".
+
+  MAIL_RUNNER 
+    This specifies the location of the mail.runner script on the
+    server, relative to your home directory. The default is "mail.runner".
+
+  MAIL_TIMEOUT
+    This specifies the number of seconds to wait for transfers. It is
+    passed as a timeout parameter to rsync. The default is 300.
+
+  SENDMAIL
+    This specifies the name of your sendmail program on the
+    server. This program should accept raw emails on stdin and send
+    them. The default is "/usr/lib/sendmail"
+
+  SENDMAIL_OPTS
+    This specifies additional command line options to be passed to
+    sendmail. The default is no additional options.
+
+  MAIL_FRM
+    If this is set to "1" then mail.runner will use the 'frm' utility
+    to display the subject and sender of incoming emails as they are
+    processed.
+
+  MAIL_PROCMAIL_TAIL
+    If this is set to "1" then mail.runner will display the last 10
+    lines of your $MAIL_DIR/procmail.log after processing incoming
+    emails.
+
+
+LICENSE
+-------
+
+mail.runner is released under the GNU General Public License, version
+2 or later. Please see http://www.gnu.org/ for a full copy of the license.
+
+
+AUTHOR
+------
+
+mail.runner was written by Andrew Tridgell <tridge@samba.org>
+
+EOF
+}
+
+
+###############################################################################
 # START OF MAIN SCRIPT
-###################################################################################
+###############################################################################
 
 # we rely on expansion to a null list
 shopt -s nullglob
 
 # try to make sure two copies of this script don't run at once
 if pidof -x -o $$ `basename $0` > /dev/null; then
-    echo `basename $0` is already running
+    echo "`basename $0` is already running" 1>&2
     exit 1
 fi  
 
 # when an argument is passed then call the corresponding mail_* function 
-# with the remaining arguments
+# with the remaining arguments. This is used to invoke the right function
+# remotely, but can also be used to do things like "mail.runner send" from
+# the command line
 if [ $# != 0 ]; then
+
+    # explicit check for -h or --help
+    if [ "$1" = "-h" -o "$1" = "--help" ]; then
+	mail_help
+	exit 0
+    fi
+
     cmd=$1
     shift
     mail_$cmd $*
     exit $?
 fi
 
-# we will do everything from the ~/Mail directory
-cd ~/Mail || exit 1
-
+# the default is to fetch then send
 mail_fetch
 mail_send
-
