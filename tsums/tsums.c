@@ -75,6 +75,20 @@ static void dump_ignored(void)
 	}
 }
 
+static void flush_ignored(void)
+{
+	struct ignore *ign;
+	for (ign=ignore_list; ign; ign=ign->next) {
+		char *keystr;
+		TDB_DATA key;
+		asprintf(&keystr, "IGNORE:%s", ign->pattern);
+		key.dptr = keystr;
+		key.dsize = strlen(keystr)+1;
+		tdb_delete(tdb, key);
+		free(keystr);
+	}
+}
+
 
 static void report_difference(const char *fname, 
 			      struct sum_struct *sum2, 
@@ -212,6 +226,8 @@ static void tsums_file(const char *fname)
 
 	if (memcmp(&sum, data.dptr, MIN(data.dsize,sizeof(sum))) == 0) {
 		/* data structure extended */
+		if (verbose) printf("old record size (%d/%d) - updating\n",
+				    data.dsize, sizeof(sum));
 		goto update;
 	}
 	
@@ -326,6 +342,7 @@ Options:
   -f <DB>     database name
   -i          add listed files to ignore list
   -d          dump the ignored list
+  -F          flush the ignored list
 ");
 	exit(1);
 }
@@ -339,8 +356,9 @@ int main(int argc, char *argv[])
 	int c;
 	int do_dump = 0;
 	int use_all = 0;
+	int do_flush_ignore=0;
 
-	while ((c = getopt(argc, argv, "qhuf:idav")) != -1){
+	while ((c = getopt(argc, argv, "qhuf:idavF")) != -1){
 		switch (c) {
 		case 'h':
 			usage();
@@ -366,6 +384,9 @@ int main(int argc, char *argv[])
 		case 'f':
 			db_name = optarg;
 			break;
+		case 'F':
+			do_flush_ignore = 1;
+			break;
 		default:
 			usage();
 			break;
@@ -386,6 +407,11 @@ int main(int argc, char *argv[])
 
 	if (do_dump) {
 		dump_ignored();
+		goto finish;
+	}
+
+	if (do_flush_ignore) {
+		flush_ignored();
 		goto finish;
 	}
 
