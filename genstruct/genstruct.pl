@@ -8,10 +8,8 @@ use strict;
 use Getopt::Long;
 use Data::Dumper;
 
-# search path for include files
-my($opt_include) = ".";
-my(%already_included) = ();
-
+my(%enum_done) = ();
+my(%struct_done) = ();
 
 ###################################################
 # general handler
@@ -153,29 +151,6 @@ int gen_parse_struct_$name(char *ptr, const char *str) {
 ";
 }
 
-
-#####################################################################
-# read a file into a string, handling the include path
-sub IncludeLoad($)
-{
-	my($filename) = shift;
-	my(@dirs) = split(/:/, $opt_include);
-
-	for (my($i)=0; $i <= $#{@dirs}; $i++) {
-		local(*INPUTFILE);
-		if (open(INPUTFILE, $dirs[$i] . "/" . $filename)) {
-			my($saved_delim) = $/;
-			undef $/;
-			my($data) = <INPUTFILE>;
-			close(INPUTFILE);
-			$/ = $saved_delim;
-			return $data;
-		}
-	}
-
-	die "Couldn't find include file $filename\n";
-}
-
 ####################################################
 # parse out the enum declarations
 sub parse_enum_elements($$)
@@ -220,7 +195,11 @@ sub parse_enums($)
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
-		parse_enum_elements($name, $elements);
+
+		if (!defined($enum_done{$name})) {
+			$enum_done{$name} = 1;
+			parse_enum_elements($name, $elements);
+		}
 	}
 }
 
@@ -244,47 +223,15 @@ sub parse_data($)
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
-		parse_elements($name, $elements);
-	}
-}
-
-####################################################
-# parse a header file, generating a dumper structure
-sub parse_includes($)
-{
-	my($data) = shift;
-
-	# handle includes
-	while (defined($data) && $data =~ /(.*?)^\#\s*include\s*\"([\w.]*?)\"(.*)/ms) {
-		my($p1) = $1;
-		my($p2) = $2;
-		my($p3) = $3;
-		parse_data($p1);
-
-		if (!defined($already_included{$p2})) {
-			$already_included{$p2} = 1;
-			parse_header($p2);
+		if (!defined($struct_done{$name})) {
+			$struct_done{$name} = 1;
+			parse_elements($name, $elements);
 		}
-
-		$data = $p3;
-	}
-	if (defined($data)) {
-		parse_data($data);
 	}
 }
 
-####################################################
-# parse a header file, generating a dumper structure
-sub parse_header($)
-{
-	my($header) = shift;
-	my($data) = IncludeLoad($header);
-	parse_includes($data);
-}
 
-
-my($opt_header) = "";
-my($opt_cfile) = "";
+my($opt_ofile) = "";
 my($opt_help) = 0;
 
 #########################################
@@ -295,10 +242,12 @@ sub ShowHelp()
 generator for C structure dumpers
 Copyright tridge\@samba.org
 
+Sample usage:
+   genstruct -o output.h -- gcc -E -O2 -g test.h
+
 Options:
     --help                this help page
-    --header=SOURCE       the header to parse
-    --cfile=DEST          the C file to produce
+    -o OUTPUT             place output in OUTPUT
 ";
     exit(0);
 }
@@ -309,25 +258,15 @@ Options:
 #########################################
 GetOptions (
 	    'help|h|?' => \$opt_help, 
-	    'header=s' => \$opt_header,
-	    'cfile=s' => \$opt_cfile,
-	    'include=s' => \$opt_include
+	    'o=s' => \$opt_ofile,
 	    );
 
 if ($opt_help) {
     ShowHelp();
 }
 
-if (!$opt_header) {
-	die "You must specify a header file to parse\n";
-}
-
-if (!$opt_cfile) {
-	die "You must specify a C file to output the parser info\n";
-}
-
-open(CFILE, ">$opt_cfile") || die "can't open $opt_cfile";    
+open(CFILE, ">$opt_ofile") || die "can't open $opt_ofile";    
 
 print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
 
-parse_header($opt_header);
+parse_data(`@ARGV -DGENSTRUCT=GENSTRUCT`)

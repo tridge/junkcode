@@ -17,9 +17,11 @@
 */
 
 /* these macros are needed for genstruct auto-parsers */
+#ifndef GENSTRUCT
 #define GENSTRUCT
 #define _LEN(x)
 #define _NULLTERM
+#endif
 
 /*
   automatic marshalling/unmarshalling system for C structures

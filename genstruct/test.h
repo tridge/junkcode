@@ -1,6 +1,3 @@
-#define _LEN(x)
-#define GENSTRUCT
-
 GENSTRUCT enum fruit {APPLE, ORANGE=2, PEAR,
 		      RASBERRY, PEACH};
 
