@@ -20,4 +20,6 @@ GENSTRUCT struct test1 {
 	int alen;
 	struct test2 *test2_array; _LEN(alen);
 	struct test2 *test2_fixed[2];
+	int plen;
+	struct test2 **test2_parray; _LEN(plen)
 };

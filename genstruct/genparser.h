@@ -16,6 +16,10 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+/* these macros are needed for genstruct auto-parsers */
+#define GENSTRUCT
+#define _LEN(x)
+
 /*
   automatic marshalling/unmarshalling system for C structures
 */

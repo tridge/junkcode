@@ -1,4 +1,4 @@
-CFLAGS=-Wall -g
+CFLAGS=-Wall -g -DSTANDALONE=1
 CC=gcc
 
 all: test

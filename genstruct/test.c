@@ -60,14 +60,18 @@ static void fill_test1(struct test1 *t)
 	t->foo2[1] = strdup("foo2 you");
 	t->foo2[2] = strdup("foo2 you 2");
 
-	t->xlen = 10;
-	t->iarray = malloc(t->xlen * sizeof(t->iarray[0]));
+	t->xlen = random() % 10;
+	if (t->xlen) {
+		t->iarray = malloc(t->xlen * sizeof(t->iarray[0]));
+	}
 	for (i=0;i<t->xlen;i++) {
 		t->iarray[i] = random() % 10;
 	}
 
-	t->slen = 5;
-	t->strings = malloc(t->slen * sizeof(char *));
+	t->slen = random() % 6;
+	if (t->slen) {
+		t->strings = malloc(t->slen * sizeof(char *));
+	}
 	for (i=0;i<t->slen;i++) {
 		asprintf(&t->strings[i], "test string %u", (unsigned)(random() % 100));
 	}
@@ -81,8 +85,10 @@ static void fill_test1(struct test1 *t)
 
 	fill_test2_p(&t->test2, 3);
 
-	t->alen = 2;
-	t->test2_array = calloc(t->alen, sizeof(struct test2));
+	t->alen = random() % 4;
+	if (t->alen) {
+		t->test2_array = calloc(t->alen, sizeof(struct test2));
+	}
 	for (i=0;i<t->alen;i++) {
 		fill_test2(&t->test2_array[i], 2);
 	}
@@ -90,12 +96,22 @@ static void fill_test1(struct test1 *t)
 	for (i=0;i<2;i++) {
 		fill_test2_p(&t->test2_fixed[i], 1);
 	}
+
+	t->plen = random() % 4;
+	if (t->plen) {
+		t->test2_parray = calloc(t->plen, sizeof(struct test2 *));
+	}
+	for (i=0;i<t->plen;i++) {
+		fill_test2_p(&t->test2_parray[i], 2+i);
+	}
 }
 
 int main(void)
 {
 	char *s, *s2;
 	struct test1 t, t2;
+
+	srandom(time(NULL));
 	
 	fill_test1(&t);
 

@@ -20,6 +20,7 @@
   automatic marshalling/unmarshalling system for C structures
 */
 
+#if STANDALONE
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,9 @@
 #include <stdarg.h>
 #include <errno.h>
 #include "genparser.h"
+#else
+#include "includes.h"
+#endif
 
 struct parse_string {
 	unsigned length;
@@ -305,7 +309,7 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 {
 	if (pinfo->ptr_count) {
 		struct parse_struct p2 = *pinfo;
-		*(void **)ptr = calloc(1, pinfo->ptr_count?sizeof(void *):pinfo->size);
+		*(void **)ptr = calloc(1, pinfo->ptr_count>1?sizeof(void *):pinfo->size);
 		if (! *(void **)ptr) {
 			return -1;
 		}
@@ -523,6 +527,7 @@ int gen_parse(const struct parse_struct *pinfo, char *data, const char *s)
 		while (p > str && isspace(*(p-1))) {
 			p--;
 		}
+
 		*p = 0;
 		name = str;
 
