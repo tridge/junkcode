@@ -31,6 +31,12 @@ struct sum_struct {
 	dev_t device;
 	dev_t rdev;
 	nlink_t nlink;
+	size_t size;
+};
+
+struct ignore {
+	struct ignore *next;
+	char *pattern;
 };
 
 static TDB_CONTEXT *tdb;
@@ -39,6 +45,7 @@ static int do_ignore;
 static int do_quick;
 static int verbose;
 static int recurse=1;
+static struct ignore *ignore_list;
 
 static void tsums_dir(const char *dname);
 
@@ -60,17 +67,12 @@ static void fatal(const char *format, ...)
 }
 
 
-static int dump_fn(TDB_CONTEXT *db, TDB_DATA key, TDB_DATA data, void *state)
-{
-	if (strncmp(key.dptr, "IGNORE:", 7) == 0) {
-		printf("%s\n", key.dptr);
-	}
-	return 0;
-}
-
 static void dump_ignored(void)
 {
-	tdb_traverse(tdb, dump_fn, NULL);
+	struct ignore *ign;
+	for (ign=ignore_list; ign; ign=ign->next) {
+		printf("Ignoring %s\n", ign->pattern);
+	}
 }
 
 
@@ -79,7 +81,7 @@ static void report_difference(const char *fname,
 			      struct sum_struct *sum1)
 {
 	
-	printf("(%c%c%c%c%c%c%c%c%c%c)\t%s\n", 
+	printf("(%c%c%c%c%c%c%c%c%c%c%c)\t%s\n", 
 	       sum1->ctime==sum2->ctime?' ':'c',
 	       sum1->mtime==sum2->mtime?' ':'m',
 	       sum1->mode==sum2->mode?' ':'p',
@@ -89,7 +91,8 @@ static void report_difference(const char *fname,
 	       sum1->device==sum2->device?' ':'d',
 	       sum1->rdev==sum2->rdev?' ':'r',
 	       sum1->nlink==sum2->nlink?' ':'l',
-	       memcmp(sum1->sum, sum2->sum, 16)==0?' ':'4',
+	       sum1->size==sum2->size?' ':'s',
+	       do_quick || memcmp(sum1->sum, sum2->sum, 16)==0?' ':'4',
 	       fname);
 }
 
@@ -153,24 +156,11 @@ static void ignore_file(const char *fname)
 
 static int is_ignored(const char *fname)
 {
-	TDB_DATA key, data;
-	char *keystr=NULL;
-	int ret;
-
-	asprintf(&keystr, "IGNORE:%s", fname);
-	key.dptr = keystr;
-	key.dsize = strlen(keystr)+1;
-	data.dptr = NULL;
-	data.dsize = 0;
-
-	data = tdb_fetch(tdb, key);
-
-	ret = (data.dptr != NULL);
-
-	free(keystr);
-	if (data.dptr) free(data.dptr);
-
-	return ret;
+	struct ignore *ign;
+	for (ign=ignore_list; ign; ign=ign->next) {
+		if (fnmatch(ign->pattern, fname, FNM_PATHNAME) == 0) return 1;
+	}
+	return 0;
 }
 
 
@@ -195,6 +185,7 @@ static void tsums_file(const char *fname)
 	sum.device = st.st_dev;
 	sum.inode = st.st_ino;
 	sum.nlink = st.st_nlink;
+	sum.size = st.st_size;
 	if (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode)) {
 		sum.rdev = st.st_rdev;
 	}
@@ -236,7 +227,8 @@ static void tsums_file(const char *fname)
 	    old.device == sum.device &&
 	    old.inode == sum.inode &&
 	    old.rdev == sum.rdev &&
-	    old.nlink == sum.nlink) {
+	    old.nlink == sum.nlink &&
+	    old.size == sum.size) {
 		/* quick properties are the same */
 		goto next;
 	}
@@ -281,26 +273,20 @@ static void tsums_dir(const char *dname)
 }
 
 
-static void usage(void)
+static int load_ignore(TDB_CONTEXT *db, TDB_DATA key, TDB_DATA data, 
+			void *state)
 {
-	printf("
-tsums maintains signatures of files on a system. Similar to tripwire.
-Copyright (C) Andrew Tridgell (tridge@samba.org)
+	struct ignore *ignore;
 
-Usage: tsums [options] <files|dirs...>
+	if (strncmp(key.dptr, "IGNORE:", 7) != 0) return 0;
 
-Options:
-  -a          use all existing files
-  -q          quick mode (don't checksum)
-  -h          this help
-  -u          update sums
-  -f <DB>     database name
-  -i          add listed files to ignore list
-  -d          dump the ignored list
-");
-	exit(1);
+	ignore = (struct ignore *)malloc(sizeof(*ignore));
+	if (!ignore) fatal("out of memory in load_ignore\n");
+	ignore->pattern = strdup(key.dptr+7);
+	ignore->next = ignore_list;
+	ignore_list = ignore;
+	return 0;
 }
-
 
 static void process_one(char *fname)
 {
@@ -321,6 +307,26 @@ static int process_fn(TDB_CONTEXT *db, TDB_DATA key, TDB_DATA data,
 
 	process_one(key.dptr + 5);
 	return 0;
+}
+
+static void usage(void)
+{
+	printf("
+tsums maintains signatures of files on a system. Similar to tripwire.
+Copyright (C) Andrew Tridgell (tridge@samba.org)
+
+Usage: tsums [options] <files|dirs...>
+
+Options:
+  -a          use all existing files
+  -q          quick mode (don't checksum)
+  -h          this help
+  -u          update sums
+  -f <DB>     database name
+  -i          add listed files to ignore list
+  -d          dump the ignored list
+");
+	exit(1);
 }
 
 int main(int argc, char *argv[])
@@ -374,6 +380,8 @@ int main(int argc, char *argv[])
 	if (!tdb) {
 		fatal("can't open tdb\n");
 	}
+
+	tdb_traverse(tdb, load_ignore, NULL);
 
 	if (do_dump) {
 		dump_ignored();

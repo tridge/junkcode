@@ -27,6 +27,7 @@
 #include <stdarg.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <fnmatch.h>
 
 typedef unsigned uint32;
 
