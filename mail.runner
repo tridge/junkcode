@@ -13,20 +13,15 @@ SENDMAIL="/usr/lib/sendmail"
 SENDMAIL_OPTS=""
 MAIL_TIMEOUT=300
 
-VERSION="1.0"
+VERSION="1.1"
 
 # sensible paths are often not setup when invoking commands remotely
-export PATH=$PATH:$HOME/bin:/usr/local/bin:/usr/bin:/bin
+export PATH=$PATH:$HOME/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
 
 # load the user specific config
 . $HOME/.mail.runner
 
-# make sure the necessary variables are defined
-if [ "$MAIL_HOST" = "" ]; then
-    echo "You must define a MAIL_HOST in $HOME/.mail.runner" 1>&2
-    echo "Use -h for more help" 1>&2
-    exit 1
-fi
+# processing now continues in MAIN SCRIPT section at bottom of file
 
 
 ###############################################################################
@@ -274,6 +269,12 @@ EOF
 # START OF MAIN SCRIPT
 ###############################################################################
 
+# See if user is just after help, if so display and exit
+if [ "$1" = "-h" -o "$1" = "--help" ]; then
+    mail_help
+    exit 0
+fi
+
 # we rely on expansion to a null list
 shopt -s nullglob
 
@@ -283,17 +284,18 @@ if pidof -x -o $$ `basename $0` > /dev/null; then
     exit 1
 fi  
 
+# make sure the necessary variables are defined
+if [ "$MAIL_HOST" = "" ]; then
+    echo "You must define a MAIL_HOST in $HOME/.mail.runner" 1>&2
+    echo "Use -h for more help" 1>&2
+    exit 1
+fi
+
 # when an argument is passed then call the corresponding mail_* function 
 # with the remaining arguments. This is used to invoke the right function
 # remotely, but can also be used to do things like "mail.runner send" from
 # the command line
 if [ $# != 0 ]; then
-
-    # explicit check for -h or --help
-    if [ "$1" = "-h" -o "$1" = "--help" ]; then
-	mail_help
-	exit 0
-    fi
 
     cmd=$1
     shift
