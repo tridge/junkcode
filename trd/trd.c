@@ -4,11 +4,9 @@
 */
 
 #define MAJOR_NR   240
-
 #define MAX_DEVS 32
 
 #define DEVICE_NAME "trd"
-#define DEVICE_REQUEST do_trd_request
 #define DEVICE_NR(device) (MINOR(device))
 
 #include <linux/major.h>
@@ -31,55 +29,65 @@ static unsigned trd_size = 4096;
 
 MODULE_PARM (trd_size, "1i");
 
-static void do_trd_request(request_queue_t * q)
+static int trd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
-	u_long start, ofs, len, len1;
+	u_long start, len;
+	char *b_addr;
 	void *addr;
-	int page, minor;
+	u_long minor, page, ofs, len1;
 
-	while (1) {
-		INIT_REQUEST;
+	start = bh->b_rsector << 9;
+	minor = MINOR(bh->b_rdev);
+	len = bh->b_size;
 
-		minor = MINOR(CURRENT->rq_dev);
-		start = CURRENT->sector << 9;
-		len  = CURRENT->current_nr_sectors << 9;
-		
-		if ((start + len) > TRD_SIZE) {
-			printk(KERN_ERR DEVICE_NAME ": bad access: block=%ld, count=%ld\n",
-			       CURRENT->sector,
-			       CURRENT->current_nr_sectors);
-			end_request(0);
-			continue;
-		}
-		
-		if ((CURRENT->cmd != READ) && (CURRENT->cmd != WRITE)) {
-			printk(KERN_ERR DEVICE_NAME ": bad command: %d\n", CURRENT->cmd);
-			end_request(0);
-			continue;
-		}
-
-		while (len) {
-			page = start / PAGE_SIZE;
-			ofs = start % PAGE_SIZE;
-			addr = (void *) (((char *)(trd_base[minor][page])) + ofs);
-
-			len1 = len;
-			if (ofs + len1 > PAGE_SIZE) {
-				len1 = PAGE_SIZE - ofs;
-			}
-
-			if (CURRENT->cmd == READ) {
-				memcpy(CURRENT->buffer, (char *)addr, len1);
-			} else {
-				memcpy((char *)addr, CURRENT->buffer, len1);
-			}
-
-			len -= len1;
-			start += len1;
-		}
-	    
-		end_request(1);
+	if (minor >= MAX_DEVS || !trd_base[minor]) {
+		printk(KERN_ERR DEVICE_NAME ": bad minor %ld\n", minor);
+		goto io_error;
 	}
+
+	if (start + bh->b_size > TRD_SIZE) {
+		printk(KERN_ERR DEVICE_NAME ": bad access: block=%ld, count=%d\n",
+			bh->b_rsector, bh->b_size);
+		goto io_error;
+	}
+
+	if (rw == READA) rw = READ;
+
+	if ((rw != READ) && (rw != WRITE)) {
+		printk(KERN_ERR DEVICE_NAME ": bad command: %d\n", rw);
+		goto io_error;
+	}
+
+	b_addr = bh_kmap(bh);
+
+	while (len) {
+		page = start / PAGE_SIZE;
+		ofs = start % PAGE_SIZE;
+		addr = (void *) (((char *)(trd_base[minor][page])) + ofs);
+		
+		len1 = len;
+		if (ofs + len1 > PAGE_SIZE) {
+			len1 = PAGE_SIZE - ofs;
+		}
+		
+		if (rw == READ) {
+			memcpy(b_addr, (char *)addr, len1);
+		} else {
+			memcpy((char *)addr, b_addr, len1);
+		}
+		
+		len -= len1;
+		start += len1;
+		b_addr += len1;
+	}
+
+	bh_kunmap(bh);
+	bh->b_end_io(bh,1);
+	return 0;
+
+io_error:
+	bh->b_end_io(bh,0);
+	return 0;
 }
 
 static int trd_allocate(int minor)
@@ -179,12 +187,12 @@ static int trd_init(void)
 		return -EBUSY;
 	}
 
+	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR), trd_make_request);
 	for (i=0;i<MAX_DEVS;i++) {
 		trd_blocksizes[i] = TRD_BLOCK_SIZE;
 		trd_blk_sizes[i] = trd_size;
 	}
 
-	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
 	blksize_size[MAJOR_NR] = trd_blocksizes;
 	blk_size[MAJOR_NR] = trd_blk_sizes;
 
