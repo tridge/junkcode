@@ -81,55 +81,42 @@ static int null_match(const char *p)
   the original, recursive function. Needs replacing, but with exactly
   the same output
 */
-static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cache)
+static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *max_p)
 {
 	char c;
-	int len, ldot;
-	char *d;
-
-	if (strlen(n) == 1) {
-//		printf("p=%s n=%s\n", p+ofs, n);
-	}
-
-//	printf("p=%s n=%s\n", p+ofs, n);
-			
+	int len;
 
 	while ((c = p[ofs++])) {
 		switch (c) {
 		case '*':
 			len = strlen(n);
-			if (cache[ofs] && cache[ofs] >= len) {
+			if (max_p[ofs] && max_p[ofs] >= len) {
 				return null_match(p+ofs);
 			}
 			for (; *n; n++) {
-				if (fnmatch_test2(p, ofs, n, cache) == 0) {
+				if (fnmatch_test2(p, ofs, n, max_p) == 0) {
 					return 0;
 				}
 			}
-			if (cache[ofs] < len) cache[ofs] = len;
+			if (max_p[ofs] < len) max_p[ofs] = len;
 			return null_match(p+ofs);
 
 		case '<':
 			len = strlen(n);
-			d = strrchr(n, '.');
-			if (d) {
-				ldot = strlen(d);
-			} else {
-				ldot = 0;
-			}
-			if (cache[ofs] && 
-			    cache[ofs] == len) {
-				goto next;
+			if (max_p[ofs] && max_p[ofs] >= len) {
+				n = strrchr(n, '.');
+				if (n) {
+					return fnmatch_test2(p, ofs, n+1, max_p);
+				}
+				return null_match(p+ofs);
 			}
 			for (; *n; n++) {
-				if (fnmatch_test2(p, ofs, n, cache) == 0) return 0;
+				if (fnmatch_test2(p, ofs, n, max_p) == 0) return 0;
 				if (*n == '.' && !strchr(n+1,'.')) {
-					n++;
-					break;
+					return fnmatch_test2(p, ofs, n+1, max_p);
 				}
 			}
-			if (cache[ofs] < len) cache[ofs] = len;
-		next:
+			if (max_p[ofs] < len) max_p[ofs] = len;
 			break;
 
 
@@ -184,13 +171,13 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cac
 static int fnmatch_test(const char *p, const char *n)
 {
 	int ret;
-	unsigned *cache;
+	unsigned *max_p;
 
-	cache = calloc(sizeof(unsigned), strlen(p)+1);
+	max_p = calloc(sizeof(unsigned), strlen(p)+1);
 
-	ret = fnmatch_test2(p, 0, n, cache);
+	ret = fnmatch_test2(p, 0, n, max_p);
 
-	free(cache);
+	free(max_p);
 
 	return ret;
 }
@@ -230,22 +217,13 @@ int main(void)
 {
 	int i;
 	double t1, w1=0, t2, w2=0;
-	srandom(1);
+	srandom(time(NULL));
 
 	signal(SIGALRM, sig_alrm);
 
-	start_timer();
-	alarm(0);
-	p_used ="*c*c*c";
-	n_used = "ccc.";
-	fnmatch_test(p_used, n_used);
-	alarm(0);
-	printf("took %.7f seconds\n", end_timer());
-//	exit(0);
-
-	for (i=0;i<20000;i++) {
-		int len1 = random() % 30;
-		int len2 = random() % 30;
+	for (i=0;i<200000;i++) {
+		int len1 = random() % 20;
+		int len2 = random() % 20;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
