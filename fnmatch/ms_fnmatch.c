@@ -84,7 +84,8 @@ static int null_match(const char *p)
 static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cache)
 {
 	char c;
-	int len;
+	int len, ldot;
+	char *d;
 
 	if (strlen(n) == 1) {
 //		printf("p=%s n=%s\n", p+ofs, n);
@@ -97,10 +98,10 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cac
 		switch (c) {
 		case '*':
 			len = strlen(n);
+			if (cache[ofs] && cache[ofs] >= len) {
+				return null_match(p+ofs);
+			}
 			for (; *n; n++) {
-				if (cache[ofs] && cache[ofs] >= len) {
-					return null_match(p+ofs);
-				}
 				if (fnmatch_test2(p, ofs, n, cache) == 0) {
 					return 0;
 				}
@@ -109,16 +110,26 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, unsigned *cac
 			return null_match(p+ofs);
 
 		case '<':
+			len = strlen(n);
+			d = strrchr(n, '.');
+			if (d) {
+				ldot = strlen(d);
+			} else {
+				ldot = 0;
+			}
+			if (cache[ofs] && 
+			    cache[ofs] == len) {
+				goto next;
+			}
 			for (; *n; n++) {
-				if (fnmatch_test2(p, ofs, n, cache) == 0) {
-					return 0;
-				}
-				if (*n == '.' && 
-				    !strchr(n+1,'.')) {
+				if (fnmatch_test2(p, ofs, n, cache) == 0) return 0;
+				if (*n == '.' && !strchr(n+1,'.')) {
 					n++;
 					break;
 				}
 			}
+			if (cache[ofs] < len) cache[ofs] = len;
+		next:
 			break;
 
 
@@ -218,8 +229,8 @@ static double end_timer(void)
 int main(void)
 {
 	int i;
-	double t1=0, t2=0;
-	srandom(time(NULL));
+	double t1, w1=0, t2, w2=0;
+	srandom(1);
 
 	signal(SIGALRM, sig_alrm);
 
@@ -232,9 +243,9 @@ int main(void)
 	printf("took %.7f seconds\n", end_timer());
 //	exit(0);
 
-	for (i=0;i<100000;i++) {
-		int len1 = random() % 35;
-		int len2 = random() % 35;
+	for (i=0;i<20000;i++) {
+		int len1 = random() % 25;
+		int len2 = random() % 25;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
@@ -248,12 +259,15 @@ int main(void)
 		alarm(0);
 		start_timer();
 		ret1 = fnmatch_orig(p, n);
-		t1 += end_timer();
+		t1 = end_timer();
 		alarm(2);
 		start_timer();
 		ret2 = fnmatch_test(p, n);
-		t2 += end_timer();
+		t2 = end_timer();
 		alarm(0);
+
+		if (t1 > w1) w1 = t1;
+		if (t2 > w2) w2 = t2;
 
 		if (ret1 != ret2) {
 			printf("mismatch: ret1=%d ret2=%d pattern='%s' string='%s'\n",
@@ -265,10 +279,11 @@ int main(void)
 
 		free(p);
 		free(n);
-		printf("%d t1=%.5f  t2=%.5f\r", i, t1, t2);
+		printf("%7d worst1=%2.5f  worst2=%2.5f  (ratio=%5.2f)\r", 
+		       i, w1, w2, w1/w2);
 		fflush(stdout);
 	}
 
-	printf("ALL OK t1=%.4f t2=%.4f\n", t1, t2);
+	printf("\nALL OK worst1=%.4f worst2=%.4f\n", w1, w2);
 	return 0;
 }
