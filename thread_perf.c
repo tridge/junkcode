@@ -139,6 +139,9 @@ static void run_threads(int nthreads, void *(*fn)(int ))
 			exit(1);
 		}
 	}
+
+	close(fd[0]);
+	close(fd[1]);
 }
 
 /* run a function under a set of processes */
@@ -185,6 +188,9 @@ static void run_processes(int nprocs, void *(*fn)(int ))
 			exit(1);
 		}
 	}
+
+	close(fd[0]);
+	close(fd[1]);
 }
 
 
