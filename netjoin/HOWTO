@@ -75,7 +75,8 @@ Step 3: Create the computer account
 
   Do a "kinit" as a user that has authority to change arbitrary
   passwords on the KDC ("Administrator" is a good choice). Then as a
-  user that has write permission on /etc/krb5.keytab run:
+  user that has write permission on the Samba private directory
+  (usually root) run:
 
      net ads join
 
