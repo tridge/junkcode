@@ -20,6 +20,8 @@ typedef void kmem_cache_t;
 #define unlikely(x) x
 #define likely(x) x
 
+#define TEST_OUTSIDE_TREE 1
+
 /*
  * linux/kernel/id.c
  *
@@ -372,12 +374,13 @@ static int sub_remove(struct idr *idp, int shift, int id)
 int idr_remove(struct idr *idp, int id)
 {
 	struct idr_layer *p;
+	int ret = 0;
 
 	/* Mask off upper bits we don't use for the search. */
 	id &= MAX_ID_MASK;
 
 	if (sub_remove(idp, (idp->layers - 1) * IDR_BITS, id) == -1) {
-		return -1;
+		ret = -1;
 	}
 	if ( idp->top && idp->top->count == 1 && 
 	     (idp->layers > 1) &&
@@ -394,7 +397,7 @@ int idr_remove(struct idr *idp, int id)
 		kmem_cache_free(idr_layer_cache, p);
 	}
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(idr_remove);
 
@@ -405,7 +408,7 @@ void *idr_find(struct idr *idp, int id)
 
 	n = idp->layers * IDR_BITS;
 	p = idp->top;
-#if 0
+#if TEST_OUTSIDE_TREE
 	/*
 	 * This tests to see if bits outside the current tree are
 	 * present.  If so, tain't one of ours!
@@ -476,6 +479,7 @@ static void idr_test(int n)
 					       i, ids[ii]);
 				}
 				present[ii] = 0;
+				ids[ii] = -1;
 			}
 		} else {
 			if (p != NULL) {
@@ -511,6 +515,12 @@ static void idr_test(int n)
 	}
 
 	printf("cleaned up\n");
+
+	/* free final memory so valgrind can detect leaks fully */
+	while (idr.id_free_cnt > 0) {
+		void *p = alloc_layer(&idr);
+		kmem_cache_free(idr_layer_cache, p);
+	}
 }
 
 

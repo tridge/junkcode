@@ -1,4 +1,4 @@
-CFLAGS=-Wall -g -I/usr/src/linux/include
+CFLAGS=-Wall -O2 -g -I/usr/src/linux/include
 
 all: idtree
 
