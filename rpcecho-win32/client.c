@@ -82,7 +82,7 @@ void main(int argc, char **argv)
 		printf("\tsourcedata size\tReceive an array of size bytes\n");
 		printf("\ttest\trun testcall\n");
 		printf("\noptions:\n");
-		printf("\t-u username -d domain -p password\n");
+		printf("\t-u username -d domain -p password -e endpoint\n");
 		printf("\t--sign --seal\n");
 		exit(0);
 	}

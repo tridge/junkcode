@@ -108,24 +108,43 @@ long TestCall2(short level, echo_Info **info)
 void main(int argc, char **argv)
 {
 	RPC_STATUS status;
+	RPC_BINDING_VECTOR *pBindingVector;
 
 	if (argc != 1) {
 		printf("Usage: rpcechosrv\n");
 		exit(0);
 	}
 
-	status = RpcServerUseProtseqEp(
-		"ncacn_np", RPC_MAX_CALLS, RPC_ENDPOINT,
-		NULL);
-
-	if (status)
+	status = RpcServerUseProtseqEp("ncacn_np", RPC_MAX_CALLS, "\\pipe\\rpcecho", NULL);
+	if (status) {
+		printf("Failed to register ncacn_np endpoint\n");
 		exit(status);
+	}
 
-	status = RpcServerRegisterIf(
-		rpcecho_v1_0_s_ifspec, NULL, NULL);
-
-	if (status)
+	status = RpcServerUseProtseqEp("ncacn_ip_tcp", RPC_MAX_CALLS, "1234", NULL);
+	if (status) {
+		printf("Failed to register ncacn_ip_tcp endpoint\n");
 		exit(status);
+	}
+
+	status = RpcServerInqBindings(&pBindingVector);
+	if (status) {
+		printf("Failed RpcServerInqBindings\n");
+		exit(status);
+	}
+
+	status = RpcEpRegister(rpcecho_v1_0_s_ifspec, pBindingVector, NULL, "rpcecho server");
+	if (status) {
+		printf("Failed RpcEpRegister\n");
+		exit(status);
+	}
+
+	status = RpcServerRegisterIf(rpcecho_v1_0_s_ifspec, NULL, NULL);
+
+	if (status) {
+		printf("Failed to register interface\n");
+		exit(status);
+	}
 
 	status = RpcServerListen(RPC_MIN_CALLS, RPC_MAX_CALLS, FALSE);
 
