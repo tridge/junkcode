@@ -140,6 +140,11 @@ int main(int argc, char *argv[])
 {
 	char *dev;
 
+	if (argc < 2) {
+		fprintf(stderr,"usage: disktest <device>\n");
+		exit(1);
+	}
+
 	dev = argv[1];
 
 	disk_test(dev);
