@@ -90,7 +90,7 @@ static void disk_test(char *dev)
 	unsigned *seeds;
 	unsigned *buf;
 
-	fd = open(dev, O_RDWR);
+	fd = open(dev, O_RDWR|O_LARGEFILE);
 	if (fd == -1) {
 		perror(dev);
 		return;
