@@ -47,9 +47,11 @@ static void write_file(char *fname)
 		total += n;
 		thisrun += n;
 		if (end_timer() >= 1.0) {
-			printf("%d MB    %g MB/sec\n", 
+			time_t t = time(NULL);
+			printf("%6d MB    %.3f MB/sec  %s", 
 			       (int)(total/1.0e6),
-			       (thisrun*1.0e-6)/end_timer());
+			       (thisrun*1.0e-6)/end_timer(),
+			       ctime(&t));
 			start_timer();
 			thisrun = 0;
 		}
