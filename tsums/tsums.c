@@ -165,7 +165,7 @@ static int is_ignored(const char *fname)
 static void tsums_file(const char *fname)
 {
 	struct stat st;
-	struct sum_struct sum, old;
+	struct sum_struct sum;
 	TDB_DATA key, data;
 	char *keystr=NULL;
 
