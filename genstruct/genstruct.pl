@@ -1,8 +1,13 @@
 #!/usr/bin/perl -w
-
+# a simple system for generating C parse info
+# this can be used to write generic C structer load/save routines
+# Copyright 2002 Andrew Tridgell <tridge@samba.org>
+# released under the GNU General Public License v2 or later
 
 use strict;
 use Getopt::Long;
+
+my($opt_parsers) = 0;
 
 ###################################################
 # general handler
@@ -21,7 +26,7 @@ sub handle_general($$$$$$)
 		$array_len = $2;
 	}
 
-	print "{\"$element\", $type, $flags, $size, offsetof(struct $name, $element), $array_len, $handler},\n";
+	print CFILE "{\"$element\", $type, $flags, $size, offsetof(struct $name, $element), $array_len, $handler},\n";
 }
 
 
@@ -79,7 +84,8 @@ sub parse_one($$$)
 
 	# might be an unknown type
 	if ($tstr eq "") {
-		die "Unknown type '$type'\n";
+		print "skipping unknown type '$type'\n";
+		return;
 	}
 	handle_general($name, $tstr, $flags, $size, $element, $handler);
 }
@@ -123,7 +129,9 @@ sub parse_elements($$)
 	my($name) = shift;
 	my($elements) = shift;
 
-	print "static struct parse_struct pinfo_" . $name . "[] = {\n";
+	print "Parsing $name\n";
+
+	print CFILE "static struct parse_struct pinfo_" . $name . "[] = {\n";
 
 	while ($elements =~ /.*^([a-z].*?);.*?\n(.*)/si) {
 		my($element) = $1;
@@ -131,10 +139,11 @@ sub parse_elements($$)
 		parse_element($name, $element);
 	}
 
-	print "{NULL, 0, 0, 0, 0, 0, NULL}};\n";
+	print CFILE "{NULL, 0, 0, 0, 0, 0, NULL}};\n\n";
 
-	# now the dump function
-	print "
+	if ($opt_parsers) {
+		# now the dump function
+		print CFILE "
 /* dump a $name structure */
 char *dump_$name(const struct $name *$name) 
 {
@@ -142,6 +151,7 @@ char *dump_$name(const struct $name *$name)
 }
 
 ";
+}
 }
 
 
@@ -168,15 +178,18 @@ sub parse_header($)
 	my($header) = shift;
 
 	my($data) = FileLoad($header);
-	
+
 	# handle includes
 	while ($data =~ /(.*?)\n\#include \"(.*?)\"(.*)/s) {
-		$data = $1 . FileLoad($2) . $3;
+		my($inc) = FileLoad($2);
+
+		if (!defined($inc)) {$inc = "";}
+
+		$data = $1 . $inc . $3;
 	}
 
 	# strip comments
 	while ($data =~ /(.*?)\/\*(.*?)\*\/(.*)/s) {
-		# print "comment=$2";
 		$data = $1 . $3;
 	}
 
@@ -184,8 +197,10 @@ sub parse_header($)
 	while ($data =~ s/[\t ][\t ]/ /s) {}
 	while ($data =~ s/\n[\n\t ]/\n/s) {}
 
+	print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
+
 	# parse into structures 
-	while ($data =~ /\nstruct (.*?) {\n(.*?)};(.*)/s) {
+	while ($data =~ /\nGENSTRUCT struct (\w*?) {\n(.*?)};(.*)/s) {
 		my($name) = $1;
 		my($elements) = $2;
 		$data = $3;
@@ -209,6 +224,8 @@ Copyright tridge\@samba.org
 Options:
     --help                this help page
     --header=SOURCE       the header to parse
+    --cfile=DEST          the C file to produce
+    --parsers             enable producing parser fns
 ";
     exit(0);
 }
@@ -220,7 +237,8 @@ Options:
 GetOptions (
 	    'help|h|?' => \$opt_help, 
 	    'header=s' => \$opt_header,
-	    'cfile=s' => \$opt_cfile
+	    'cfile=s' => \$opt_cfile,
+	    'parsers' => \$opt_parsers
 	    );
 
 if ($opt_help) {
@@ -230,5 +248,11 @@ if ($opt_help) {
 if (!$opt_header) {
 	die "You must specify a header file to parse\n";
 }
+
+if (!$opt_cfile) {
+	die "You must specify a C file to output the parser info\n";
+}
+
+open(CFILE, ">$opt_cfile") || die "can't open $opt_cfile";    
 
 parse_header($opt_header);
