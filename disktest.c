@@ -114,7 +114,7 @@ static void disk_test(char *dev)
 	while (1) {
 		i = ((unsigned)random()) % blocks;
 
-		if (seeds[i] == 0 || (random() & 1 == 1)) {
+		if (seeds[i] == 0 || (random() & 2)) {
 			seeds[i] = random();
 			init_buf(buf, seeds[i]);
 			write_block(fd, buf, i);
@@ -128,6 +128,7 @@ static void disk_test(char *dev)
 		if (count % 500 == 0) {
 			printf("%d blocks (%d reads, %d writes)\n", 
 			       count, num_reads, num_writes);
+			srandom(random() | time(NULL));
 		}
 	}
 
