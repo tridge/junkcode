@@ -168,8 +168,13 @@ static void parent_main(int pfd)
 int main(int argc, char *argv[])
 {
 	int pfd[2];
+	struct flock fl;
 
 	socketpair(AF_UNIX, SOCK_STREAM, 0, pfd);
+
+        printf("sizeof(off_t) : %d\n", sizeof(off_t));
+        printf("sizeof(size_t) : %d\n", sizeof(size_t));
+        printf("sizeof(l_start) : %d\n", sizeof(fl.l_start));
 
 	if ((child_pid=fork()) == 0) {
 		close(pfd[0]);
