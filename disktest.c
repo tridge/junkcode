@@ -11,44 +11,26 @@
 #include <sys/mount.h>
 #include <sys/time.h>
 
-_syscall5(int , _llseek, 
-	  int, fd, 
-	  unsigned long , offset_high,
-	  unsigned long , offset_low,
-	  loff_t *, result,
-	  unsigned int, origin)
-
-typedef unsigned long long uint64;
-
 static int blocks;
 static int block_size = 1024;
 static unsigned read_prob = 50;
 static unsigned num_reads, num_writes, num_fails;
 static unsigned rep_time = 10;
 
-void bit_set(unsigned char *bm, uint64 i)
+void bit_set(unsigned char *bm, off_t i)
 {
 	bm[i/8] |= (1<<(i%8));
 }
 
-unsigned bit_query(unsigned char *bm, uint64 i)
+unsigned bit_query(unsigned char *bm, off_t i)
 {
 	return  (bm[i/8] & (1<<(i%8))) ? 1 : 0;
 }
 
-static void do_seek(int fd, uint64 ofs)
+static void do_seek(int fd, off_t ofs)
 {
-	int ret;
-	unsigned offset1, offset2;
-	uint64 result = 0;
-
-	offset1 = ofs>>32;
-	offset2 = ofs&0xFFFFFFFF;
-
-	ret = _llseek(fd, offset1, offset2, &result, SEEK_SET);
-
-	if (result != ((((long long)offset1) << 32) | offset2)) {
-		printf("llseek failed %d\n", ret);
+	if (lseek(fd, ofs, SEEK_SET) != ofs) {
+		perror("lseek");
 		exit(1);
 	}
 }
@@ -61,20 +43,20 @@ static void init_buf(unsigned *buf, unsigned bnum)
 	for (i=1;i<block_size/4;i++) buf[i] = random();
 }
 
-static void write_block(int fd, unsigned *buf, uint64 i)
+static void write_block(int fd, unsigned *buf, off_t i)
 {
-	do_seek(fd, i*(uint64)block_size);
+	do_seek(fd, i*(off_t)block_size);
 	if (write(fd, buf, block_size) != block_size) {
 		fprintf(stderr,"write failed on block %u\n", (unsigned)i);
 		exit(1);
 	}
 }
 
-static void check_block(int fd, unsigned *buf, uint64 i)
+static void check_block(int fd, unsigned *buf, off_t i)
 {
 	unsigned buf2[block_size/4];
 
-	do_seek(fd, i*(uint64)block_size);
+	do_seek(fd, i*(off_t)block_size);
 	if (read(fd, buf2, block_size) != block_size) {
 		fprintf(stderr,"read failed on block %u\n", (unsigned)i);
 		exit(1);
@@ -102,7 +84,7 @@ static void check_block(int fd, unsigned *buf, uint64 i)
 }
 
 
-static void try_block(int fd, uint64 i, unsigned char *bitmap)
+static void try_block(int fd, off_t i, unsigned char *bitmap)
 {
 	unsigned *buf;
 	buf = (unsigned *)memalign(block_size, block_size);
@@ -127,7 +109,7 @@ static void disk_test(char *dev)
 	int fd;
 	int count=0, count2;
 	unsigned char *bitmap;
-	uint64 i, j;
+	off_t i, j;
 	time_t t1, t2;
 	unsigned blk;
 
@@ -192,15 +174,15 @@ static void disk_test(char *dev)
 static void usage(void)
 {
 	fprintf(stderr,
-"
-usage: disktest [options] <device>
-
-options: 
-         -B <blocks>           set block count
-         -s <blk_size>         set block size
-         -R <value>            set read probability (1-100)
-         -t <value>            set report time in seconds
-");
+"\n" \
+"usage: disktest [options] <device>\n" \
+"\n" \
+"options: \n" \
+"         -B <blocks>           set block count\n" \
+"         -s <blk_size>         set block size\n" \
+"         -R <value>            set read probability (1-100)\n" \
+"         -t <value>            set report time in seconds\n" \
+"\n");
 	exit(1);
 }
 
