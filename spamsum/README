@@ -91,6 +91,20 @@ The score is weighted so that a value of 50 is a reasonable threshold
 to use for a 'good match'. 
 
 
+Dual hashes
+-----------
+
+A significant problem with the above algorithm is the sensitivity to
+the chosen hash strength of the rolling hash. The initial
+implementation used a single hash strength chosen based on the file
+size and rounded to a power of 2. This works, but it means that if the
+two files being compared cross over a boundary then they will not be
+able to be compared. To reduce this problem the current implementation
+chooses two different hash strengths and generates two hashes for each
+file. This means that the two files will have to have very different
+lengths for their respected spamsum signatures not to share a common
+hash strength.
+
 Running spamsum
 ---------------
 
