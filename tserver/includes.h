@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <getopt.h>
 #include <time.h>
 #include <string.h>
 #include <netdb.h>
@@ -31,18 +32,15 @@ typedef unsigned BOOL;
 #define True 1
 #define False 0
 
-#define TSERVER_PORT 8003
-#define TSERVER_LOGFILE "tserver.log"
+#define TSERVER_PORT 80
 
 #define MMAP_FAILED ((void *)-1)
 
 /* prototypes */
-void tcp_listener(int port, const char *logfile, void (*fn)(void));
+void tcp_listener(int port, void (*fn)(void));
 
 void *map_file(const char *fname, size_t *size);
 void unmap_file(void *p, size_t size);
 void *x_malloc(size_t size);
-
-
-
+void trim_tail(char *s, char *trim_chars);
 

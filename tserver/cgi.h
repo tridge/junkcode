@@ -21,6 +21,8 @@ struct cgi_var {
 	struct cgi_var *next;
 	char *name;
 	char *value;
+	char *content;
+	unsigned content_len;
 };
 
 struct cgi_state {
@@ -30,7 +32,7 @@ struct cgi_state {
 	enum MIME_TYPE (*http_header)(struct cgi_state *, const char *);
 	void (*load_variables)(struct cgi_state *);
 	const char *(*get)(struct cgi_state *, const char *);
-	void (*setvar)(struct cgi_state *, const char *);
+	const char *(*get_content)(struct cgi_state *, const char *, unsigned *size);
 	void (*http_error)(struct cgi_state *cgi, 
 			   const char *err, const char *header, const char *info);
 	void (*download)(struct cgi_state *cgi, const char *path);
@@ -38,6 +40,7 @@ struct cgi_state {
 	/* data */
 	struct cgi_var *variables;
 	struct template_state *tmpl;
+	char *content_type;
 	int content_length;
 	int request_post;
 	char *query_string;

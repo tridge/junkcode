@@ -1,70 +1,59 @@
 #include "includes.h"
 
-/* they have pressed "Install" */
-static void do_install(struct cgi_state *cgi)
+static struct cgi_state *cgi;
+
+/* this is a helper function for file upload. The scripts can call 
+  @save_file(cgi_variablename, filename) to save the contents of 
+  an uploaded file to disk
+*/
+static void save_file(struct template_state *tmpl, 
+		      const char *name, const char *value,
+		      int argc, char **argv)
 {
-	struct template_state *tmpl = cgi->tmpl;
+	char *var_name, *file_name;
+	int fd;
+	const char *content;
+	unsigned size, ret;
 
-	tmpl->put(tmpl, "install_script", "./installroot.sh");
+	if (argc != 2) {
+		printf("Invalid arguments to function %s (%d)\n", name, argc);
+		return;
+	}
+	var_name = argv[0];
+	file_name = argv[1];
 
-	cgi->setvar(cgi, "archive_location");
-	cgi->setvar(cgi, "proxy_server");
-
-	cgi->download(cgi, "install.html");
-}
-
-/* they have pressed "Upgrade" */
-static void do_upgrade(struct cgi_state *cgi)
-{
-	struct template_state *tmpl = cgi->tmpl;
-
-	tmpl->put(tmpl, "install_script", "./upgraderoot.sh");
-
-	cgi->setvar(cgi, "archive_location");
-	cgi->setvar(cgi, "proxy_server");
-
-	cgi->download(cgi, "install.html");
-}
-
-/* they have pressed "Diagnostics" */
-static void do_diagnostics(struct cgi_state *cgi)
-{
-	cgi->download(cgi, "diagnostics.html");
-}
-
-/* they have pressed "Diagnostics" */
-static void do_main_page(struct cgi_state *cgi)
-{
-	cgi->download(cgi, "index.html");
+	content = cgi->get_content(cgi, var_name, &size);
+	if (!content) {
+		printf("No content for variable %s?\n", var_name);
+		return;
+	}
+	fd = open(file_name, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+	if (fd == -1) {
+		printf("Failed to open %s (%s)\n", file_name, strerror(errno));
+		return;
+	}
+	ret = write(fd, content, size);
+	if (ret != size) {
+		printf("out of space writing %s (wrote %u)\n", file_name, ret);
+	}
+	close(fd);
 }
 
 /* the main webserver process, called with stdin and stdout setup
  */
 static void run_webserver(void)
 {
-	struct cgi_state *cgi;
-	const char *action;
 	struct stat st;
-	int i;
-	struct {
-		char *name;
-		void (*fn)(struct cgi_state *);
-	} actions[] = {
-		{"Install", do_install},
-		{"Upgrade", do_upgrade},
-		{"Diagnostics", do_diagnostics},
-		{NULL, do_main_page}
-	};
 
-	if (chdir("files") != 0) {
-		fprintf(stderr,"Can't find files directory?\n");
+	if (chdir("html") != 0) {
+		fprintf(stderr,"Can't find html directory?\n");
 		exit(1);
 	}
 
 	cgi = cgi_init();
-
 	cgi->setup(cgi);
 	cgi->load_variables(cgi);
+	cgi->tmpl->put(cgi->tmpl, "save_file", "", save_file);
 
 	/* handle a direct file download */
 	if (!strstr(cgi->pathinfo, "..") && *cgi->pathinfo != '/' &&
@@ -74,15 +63,7 @@ static void run_webserver(void)
 		return;
 	}
 
-	action = cgi->get(cgi, "action");
-
-	for (i=0; actions[i].name; i++) {
-		if (action && fnmatch(actions[i].name, action, 0) == 0) break;
-	}
-	
-	/* call the action handler */
-	actions[i].fn(cgi);
-
+	cgi->download(cgi, "index.html");
 	cgi->destroy(cgi);
 }
 
@@ -90,7 +71,19 @@ static void run_webserver(void)
 /* main program, just start listening and answering queries */
 int main(int argc, char *argv[])
 {
-	tcp_listener(TSERVER_PORT, TSERVER_LOGFILE, run_webserver);
+	int port = TSERVER_PORT;
+	extern char *optarg;
+	int opt;
+
+	while ((opt=getopt(argc, argv, "p:")) != -1) {
+		switch (opt) {
+		case 'p':
+			port = atoi(optarg);
+			break;
+		}
+	}	
+
+	tcp_listener(port, run_webserver);
 	return 0;
 }
 

@@ -17,16 +17,21 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+typedef void (*template_fn)(struct template_state *, const char *, const char *,
+			    int, char **);
+
 struct template_var {
 	struct template_var *next;
 	char *name;
 	char *value;
+	template_fn function;
 };
+
 
 struct template_state {
 	/* methods */
 	int (*process)(struct template_state *, const char *);
-	void (*put)(struct template_state *, const char *, const char *);
+	void (*put)(struct template_state *, const char *, const char *, template_fn fn);
 	const char *(*get)(struct template_state *, const char *name);
 	void (*destroy)(struct template_state *);
 

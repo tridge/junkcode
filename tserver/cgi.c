@@ -20,6 +20,11 @@
 
 #include "includes.h"
 
+#define CONTENT_DISPOSITION "Content-Disposition:"
+#define CONTENT_TYPE "Content-Type:"
+#define MULTIPART_FORM_DATA "multipart/form-data"
+#define CRLF "\r\n"
+
 /* 
    inplace handling of + and % escapes in http variables 
 */
@@ -41,22 +46,19 @@ static void unescape(char *p)
   read one line from a file, allocating space as need be
   adjust length on return
 */
-static char *grab_line(FILE *f, int *length)
+static char *grab_line(FILE *f, const char *terminator, int *length)
 {
-	char *ret = NULL;
+	int len = 1024;
+	char *ret = malloc(len);
 	int i = 0;
-	int len = 0;
+	int tlen = strlen(terminator);
 
 	while (*length) {
 		int c;
 	
 		if (i == len) {
-			char *ret2;
-			if (len == 0) len = 1024;
-			else len *= 2;
-			ret2 = (char *)realloc(ret, len);
-			if (!ret2) return ret;
-			ret = ret2;
+			len *= 2;
+			ret = realloc(ret, len);
 		}
 	
 		c = fgetc(f);
@@ -67,17 +69,18 @@ static char *grab_line(FILE *f, int *length)
 			break;
 		}
 		
-		if (c == '\r') continue;
-
-		if (strchr("\n&", c)) break;
-
 		ret[i++] = c;
+
+		if (memcmp(terminator, &ret[i-tlen], tlen) == 0) {
+			i -= tlen;
+			break;
+		}
 	}
-	
 
 	ret[i] = 0;
 	return ret;
 }
+
 
 /*
   add a name/value pair to the list of cgi variables 
@@ -86,11 +89,14 @@ static void put(struct cgi_state *cgi, const char *name, const char *value)
 {
 	struct cgi_var *var;
 	int len;
+	char *cgi_name, *p;
 
 	if (!name || !value) return;
+
 	var = malloc(sizeof(*var));
+	memset(var, 0, sizeof(*var));
 	var->next = cgi->variables;
-	
+
 	/* trim leading spaces */
 	while (*name && (*name == '+' || *name == ' ')) name++;
 
@@ -106,9 +112,148 @@ static void put(struct cgi_state *cgi, const char *name, const char *value)
 		len--;
 	}
 
+	for (p=var->name; *p; p++) {
+		if (!isalnum(*p) && !strchr("_-", *p)) {
+			*p = '_';
+		}
+	}
+
 	cgi->variables = var;
+	asprintf(&cgi_name, "CGI_%s", var->name);
+	cgi->tmpl->put(cgi->tmpl, cgi_name, var->value, NULL);
+	free(cgi_name);
 }
 
+
+/*
+  parse a url encoded form
+*/
+static void load_urlencoded(struct cgi_state *cgi)
+{
+	int len = cgi->content_length;
+	char *line;
+	char *p;
+	FILE *f = stdin;
+
+	while (len && (line=grab_line(f, "&", &len))) {
+		p = strchr(line,'=');
+		if (p) {
+			*p = 0;
+			put(cgi, line, p+1);
+		}
+		free(line);
+	}
+}
+
+/*
+  parse a single element of a multipart encoded form
+  It's rather more complex than I would like :(
+*/
+static int load_one_part(struct cgi_state *cgi, FILE *f, int *len, char *boundary)
+{
+	char *line;
+	char *name=NULL;
+	char *content;
+	char *filename=NULL;
+	unsigned content_len=0, content_alloc=1024;
+	unsigned boundary_len = strlen(boundary);
+	int c;
+	int raw_data = 0;
+
+	while (*len && (line=grab_line(f, CRLF, len))) {
+		if (*line == 0) break;
+		if (strcmp(line,"--") == 0) return 1;
+		if (strncasecmp(line, CONTENT_TYPE, 
+				strlen(CONTENT_TYPE)) == 0) {
+			raw_data = 1;
+		}
+		if (strncasecmp(line, CONTENT_DISPOSITION, 
+				strlen(CONTENT_DISPOSITION)) == 0) {
+			char *p = strstr(line,"; name=");
+			if (!p) continue;
+			p += 7;
+			if (*p == '"') p++;
+			name = strndup(p, strcspn(p, "\";"));
+			p = strstr(line,"; filename=\"");
+			if (p) {
+				p += 12;
+				filename = strndup(p, strcspn(p, "\";"));
+			}
+		}
+	}
+	
+	content = malloc(content_alloc);
+	
+	while (*len && (c = fgetc(f)) != EOF) {
+		(*len)--;
+		if (content_len >= (content_alloc-1)) {
+			content_alloc *= 2;
+			content = realloc(content, content_alloc);
+		}
+		content[content_len++] = c;
+		/* we keep grabbing content until we hit a boundary */
+		if (memcmp(boundary, &content[content_len-boundary_len], 
+			   boundary_len) == 0 &&
+		    memcmp("--", &content[content_len-boundary_len-2], 2) == 0) {
+			content_len -= boundary_len+4;
+			if (name) {
+				if (raw_data) {
+					put(cgi, name, filename?filename:"");
+					cgi->variables->content = content;
+					cgi->variables->content_len = content_len;
+				} else {
+					content[content_len] = 0;
+					put(cgi, name, content);
+					free(name);
+					free(content);
+				}
+			} else {
+				free(content);
+			}
+			fgetc(f); fgetc(f);
+			(*len) -= 2;
+			return 0;
+		}
+	}
+
+	if (filename) free(filename);
+
+	return 1;
+}
+
+/*
+  parse a multipart encoded form (for file upload)
+  see rfc1867
+*/
+static void load_multipart(struct cgi_state *cgi)
+{
+	char *boundary;
+	FILE *f = stdin;
+	int len = cgi->content_length;
+	char *line;
+
+	if (!cgi->content_type) return;
+	boundary = strstr(cgi->content_type, "boundary=");
+	if (!boundary) return;
+	boundary += 9;
+	trim_tail(boundary, CRLF);
+	line = grab_line(f, CRLF, &len);
+	if (strncmp(line,"--", 2) != 0 || 
+	    strncmp(line+2,boundary,strlen(boundary)) != 0) {
+		fprintf(stderr,"Malformed multipart?\n");
+		free(line);
+		return;
+	}
+
+	if (strcmp(line+2+strlen(boundary), "--") == 0) {
+		/* the end is only the beginning ... */
+		free(line);
+		return;
+	}
+
+	free(line);
+	while (load_one_part(cgi, f, &len, boundary) == 0) ;
+}
 
 /*
   load all the variables passed to the CGI program. May have multiple variables
@@ -116,21 +261,14 @@ static void put(struct cgi_state *cgi, const char *name, const char *value)
 */
 static void load_variables(struct cgi_state *cgi)
 {
-	char *line;
 	char *p, *s, *tok;
-	int len;
-	FILE *f = stdin;
 
-	len = cgi->content_length;
-
-	if (len > 0 && cgi->request_post) {
-		while (len && (line=grab_line(f, &len))) {
-			p = strchr(line,'=');
-			if (p) {
-				*p = 0;
-				put(cgi, line, p+1);
-			}
-			free(line);
+	if (cgi->content_length > 0 && cgi->request_post) {
+		if (strncmp(cgi->content_type, MULTIPART_FORM_DATA, 
+			    strlen(MULTIPART_FORM_DATA)) == 0) {
+			load_multipart(cgi);
+		} else {
+			load_urlencoded(cgi);
 		}
 	}
 
@@ -166,12 +304,21 @@ static const char *get(struct cgi_state *cgi, const char *name)
 	return NULL;
 }
 
-/* set a variable in the cgi template from a cgi variable */
-static void setvar(struct cgi_state *cgi, const char *name)
+/*
+   return the content of a binary cgi variable (for file upload)
+*/
+static const char *get_content(struct cgi_state *cgi, const char *name, unsigned *size)
 {
-	cgi->tmpl->put(cgi->tmpl, name, cgi->get(cgi, name));
-}
+	struct cgi_var *var;
 
+	for (var = cgi->variables; var; var = var->next) {
+		if (strcmp(var->name, name) == 0) {
+			*size = var->content_len;
+			return var->content;
+		}
+	}
+	return NULL;
+}
 
 /*
   tell a browser about a fatal error in the http processing
@@ -256,7 +403,8 @@ static int setup(struct cgi_state *cgi)
 
 	/* we are a mini-web server. We need to read the request from stdin */
 	while (fgets(line, sizeof(line)-1, stdin)) {
-		if (line[0] == '\r' || line[0] == '\n') break;
+		trim_tail(line, CRLF);
+		if (line[0] == 0) break;
 		if (strncasecmp(line,"GET ", 4)==0) {
 			cgi->got_request = 1;
 			url = strdup(&line[4]);
@@ -271,6 +419,8 @@ static int setup(struct cgi_state *cgi)
 			return -1;
 		} else if (strncasecmp(line,"Content-Length: ", 16)==0) {
 			cgi->content_length = atoi(&line[16]);
+		} else if (strncasecmp(line,"Content-Type: ", 14)==0) {
+			cgi->content_type = strdup(&line[14]);
 		}
 		/* ignore all other requests! */
 	}
@@ -283,9 +433,6 @@ static int setup(struct cgi_state *cgi)
 	/* trim the URL */
 	if ((p = strchr(url,' ')) || (p=strchr(url,'\t'))) {
 		*p = 0;
-	}
-	while (*url && strchr("\r\n",url[strlen(url)-1])) {
-		url[strlen(url)-1] = 0;
 	}
 
 	/* anything following a ? in the URL is part of the query string */
@@ -330,7 +477,7 @@ static struct cgi_state cgi_base = {
 	http_header,
 	load_variables,
 	get,
-	setvar,
+	get_content,
 	http_error,
 	download,
 	

@@ -4,7 +4,7 @@
 listen on a tcp port then call fn() for each new connection with stdin and stdout
 set to the socket and stderr pointing at logfile
 ****************************************************************************/
-void tcp_listener(int port, const char *logfile, void (*fn)(void))
+void tcp_listener(int port, void (*fn)(void))
 {
 	struct sockaddr_in sock;
 	int res;
@@ -29,6 +29,8 @@ void tcp_listener(int port, const char *logfile, void (*fn)(void))
 		if (fork() == 0) {
 			close(res);
 			/* setup stdin and stdout */
+			fflush(stdout);
+			fflush(stderr);
 			dup2(fd, 0);
 			dup2(fd, 1);
 			close(fd);
@@ -84,4 +86,15 @@ void *x_malloc(size_t size)
 		_exit(1);
 	}
 	return ret;
+}
+
+
+/* 
+   trim the tail of a string
+*/
+void trim_tail(char *s, char *trim_chars)
+{
+	int len = strlen(s);
+	while (len > 0 && strchr(trim_chars, s[len-1])) len--;
+	s[len] = 0;
 }
