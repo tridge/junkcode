@@ -511,6 +511,10 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+#ifndef NO_THREADS
+	printf("NOTE! for accurate process results please compile with -DNO_THREADS and don't link to -lpthread\n\n");
+#endif
+
 	for (i=0;i<nprocs;i++) {
 		char s[30];
 		sprintf(s, "testd_%d", i);
