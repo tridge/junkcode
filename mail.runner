@@ -74,11 +74,10 @@ error_msg() {
 # try to make sure two copies of this script don't run at once
 exit_if_running() {
     if [ "$MAIL_NO_PIDOF" == 1 ]; then
-	debug_msg 2 "Warning: skipping pidof";
 	return;
     fi
     if pidof -x -o $$ mail.runner > /dev/null; then
-	debug_msg 1 "mail.runner is already running"
+	error_msg "mail.runner is already running"
 	exit 1
     fi  
 }
