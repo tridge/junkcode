@@ -152,7 +152,7 @@ FEATURES
 The main features of mail.runner are
 
 - good performance over very slow links
-- secure transfer via ssh
+- secure mail transfer via rsync and ssh
 - incremental transfer in case the link is lost
 - no mta installation needed on the client
 
@@ -162,13 +162,13 @@ REQUIREMENTS
 
 To use mail.runner you need the following:
 
-- a working rsync and ssh installation
+- a working 'rsync' and 'ssh' installation
 - the 'bash' shell
 - the 'movemail' utility
 - the 'formail' utility
 - the Linux 'pidof' utility
-- a working procmail installation for mail delivery on the client
-- a working sendmail (or equivalent) installation on the server for sending 
+- a working 'procmail' installation for mail delivery on the client
+- a working 'sendmail' (or equivalent) installation on the server for sending 
   email
 - optionally you may use the 'frm' utility
 
@@ -187,9 +187,21 @@ To install mail.runner you need to do the following:
 How you do the last step depends on your email program. I use RMAIL in
 emacs to read and send email, so I used the following in my .emacs:
   (setq sendmail-program "~/bin/mail.sendmail")
-and then I created a one line script called 'mail.sendmail' that ran
+and then I created a one line script called 'mail.sendmail' that runs
 'mail.runner sendmail'.
 
+
+RUNNING
+-------
+
+Once installed, you should just run 'mail.runner' to fetch any
+outstanding emails from the server and send any pending messages. You
+can also ask mail.runner to just send or fetch by using:
+    mail.runner send
+or
+    mail.runner fetch
+
+Any diagnostics messages should be self explanatory.
 
 CONFIGURATION
 -------------
