@@ -104,6 +104,8 @@ static int fnmatch_test2(const char *p, const char *n)
 
 	if (min_p_chars(p) > strlen(n)) return -1;
 
+//	printf("p=%s   n=%s\n", p, n);
+
 	while ((c = *p++)) {
 		switch (c) {
 		case '?':
@@ -130,7 +132,8 @@ static int fnmatch_test2(const char *p, const char *n)
 					return 0;
 				}
 			}
-			break;
+			if (! *n) return null_match(p);
+			return -1;
 
 		case '<':
 			for (; *n; n++) {
@@ -229,12 +232,14 @@ int main(void)
 	signal(SIGALRM, sig_alrm);
 
 	alarm(2);
-	fnmatch_test("*?*?*", "foobar.txt");
+	p_used = "*c*c*cc*c*c*c*c*cc*cc*cc*c*c*c*cc*c*cc*c*c*cc*cc*ccc*c*c*cc*c*c";
+	n_used = "c.cccccccccccccccccccccccccccc";
+	fnmatch_test(p_used, n_used);
 	alarm(0);
 
 	for (i=0;i<100000;i++) {
-		int len1 = random() % 100;
-		int len2 = random() % 100;
+		int len1 = random() % 20;
+		int len2 = random() % 20;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
@@ -246,9 +251,9 @@ int main(void)
 		n_used = n;
 
 		alarm(0);
-//		ret1 = fnmatch_orig(p, n);
+		ret1 = fnmatch_orig(p, n);
 		alarm(2);
-		ret1 = ret2 = fnmatch_test(p, n);
+		ret2 = fnmatch_test(p, n);
 		alarm(0);
 
 		if (ret1 != ret2) {
