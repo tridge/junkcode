@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cd $HOME/tsums || exit 1
-PATHS="/sbin /lib /etc /bin /usr/bin /usr/sbin /usr/lib"
+PATHS="/dev /sbin /lib /etc /bin /usr/bin /usr/sbin /usr/lib"
 NOTIFY="tridge@samba.org tridge@valinux.com"
 
 export PATH=/bin:/sbin:/usr/bin:$PATH

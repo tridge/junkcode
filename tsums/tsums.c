@@ -27,6 +27,10 @@ struct sum_struct {
 	uid_t uid;
 	gid_t gid;
 	char sum[16];
+	ino_t inode;
+	dev_t device;
+	dev_t rdev;
+	nlink_t nlink;
 };
 
 static TDB_CONTEXT *tdb;
@@ -34,6 +38,7 @@ static int do_update;
 static int do_ignore;
 static int do_quick;
 static int verbose;
+static int recurse=1;
 
 static void tsums_dir(const char *dname);
 
@@ -74,12 +79,16 @@ static void report_difference(const char *fname,
 			      struct sum_struct *sum1)
 {
 	
-	printf("(%c%c%c%c%c%c)\t%s\n", 
+	printf("(%c%c%c%c%c%c%c%c%c%c)\t%s\n", 
 	       sum1->ctime==sum2->ctime?' ':'c',
 	       sum1->mtime==sum2->mtime?' ':'m',
 	       sum1->mode==sum2->mode?' ':'p',
 	       sum1->uid==sum2->uid?' ':'u',
 	       sum1->gid==sum2->gid?' ':'g',
+	       sum1->inode==sum2->inode?' ':'i',
+	       sum1->device==sum2->device?' ':'d',
+	       sum1->rdev==sum2->rdev?' ':'r',
+	       sum1->nlink==sum2->nlink?' ':'l',
 	       memcmp(sum1->sum, sum2->sum, 16)==0?' ':'4',
 	       fname);
 }
@@ -146,6 +155,7 @@ static int is_ignored(const char *fname)
 {
 	TDB_DATA key, data;
 	char *keystr=NULL;
+	int ret;
 
 	asprintf(&keystr, "IGNORE:%s", fname);
 	key.dptr = keystr;
@@ -155,11 +165,12 @@ static int is_ignored(const char *fname)
 
 	data = tdb_fetch(tdb, key);
 
+	ret = (data.dptr != NULL);
+
 	free(keystr);
+	if (data.dptr) free(data.dptr);
 
-	if (data.dptr) return 1;
-
-	return 0;
+	return ret;
 }
 
 
@@ -167,6 +178,7 @@ static void tsums_file(const char *fname)
 {
 	struct stat st;
 	struct sum_struct sum;
+	struct sum_struct old;
 	TDB_DATA key, data;
 	char *keystr=NULL;
 
@@ -174,24 +186,21 @@ static void tsums_file(const char *fname)
 
 	if (lstat(fname, &st) != 0) return;
 
-	if (S_ISDIR(st.st_mode)) {
-		tsums_dir(fname);
-		return;
-	}
-
 	bzero(&sum, sizeof(sum));
 	sum.mtime = st.st_mtime;
 	sum.ctime = st.st_ctime;
 	sum.mode = st.st_mode;
 	sum.uid = st.st_uid;
 	sum.gid = st.st_gid;
+	sum.device = st.st_dev;
+	sum.inode = st.st_ino;
+	sum.nlink = st.st_nlink;
+	sum.rdev = st.st_rdev;
 
 	if (S_ISLNK(st.st_mode)) {
 		link_checksum(fname, &sum.sum[0]);
-	} else {
-		if (!do_quick) {
-			file_checksum(fname, &sum.sum[0]);
-		}
+	} else if (S_ISREG(st.st_mode) && !do_quick) {
+		file_checksum(fname, &sum.sum[0]);
 	}
 
 	asprintf(&keystr, "FILE:%s", fname);
@@ -200,34 +209,54 @@ static void tsums_file(const char *fname)
 	key.dsize = strlen(keystr)+1;
 	data = tdb_fetch(tdb, key);
 
-	if (data.dptr && memcmp(&sum, data.dptr, sizeof(sum)) == 0) {
-		return;
-	}
+	if (!data.dptr) goto update;
 	
-	if (data.dptr && memcmp(&sum, data.dptr, sizeof(sum)) != 0) {
-		if (do_quick) {
-			struct sum_struct old;
-			memcpy(&old, data.dptr, sizeof(old));
-			if (old.ctime == sum.ctime &&
-			    old.mtime == sum.mtime &&
-			    old.uid == sum.uid &&
-			    old.gid == sum.gid &&
-			    old.mode == sum.mode) {
-				free(keystr);
-				return;
-			}
-		}
-		report_difference(fname, &sum, (struct sum_struct *)data.dptr);
-		if (!do_update) {
-			free(keystr);
-			return;
-		}
+	if (data.dsize==sizeof(sum) &&
+	    memcmp(&sum, data.dptr, sizeof(sum)) == 0) {
+		/* nothings changed */
+		goto next;
 	}
 
+	if (memcmp(&sum, data.dptr, MIN(data.dsize,sizeof(sum))) == 0) {
+		/* data structure extended */
+		goto update;
+	}
+	
+	bzero(&old, sizeof(old));
+	memcpy(&old, data.dptr, MIN(sizeof(old), data.dsize));
+
+	if (do_quick &&
+	    old.ctime == sum.ctime &&
+	    old.mtime == sum.mtime &&
+	    old.uid == sum.uid &&
+	    old.gid == sum.gid &&
+	    old.mode == sum.mode &&
+	    old.device == sum.device &&
+	    old.inode == sum.inode &&
+	    old.rdev == sum.rdev &&
+	    old.nlink == sum.nlink) {
+		/* quick properties are the same */
+		goto next;
+	}
+
+	report_difference(fname, &sum, &old);
+
+	if (!do_update) {
+		goto next;
+	}
+
+update:
+	if (data.dptr) free(data.dptr);
 	data.dptr = (void *)&sum;
 	data.dsize = sizeof(sum);
 	tdb_store(tdb, key, data, TDB_REPLACE);
+
+next:
 	free(keystr);
+
+	if (recurse && S_ISDIR(st.st_mode)) {
+		tsums_dir(fname);
+	}
 }
 
 static void tsums_dir(const char *dname)
@@ -350,6 +379,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (use_all) {
+		recurse = 0;
 		tdb_traverse(tdb, process_fn, NULL);
 		goto finish;
 	} 

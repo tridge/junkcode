@@ -42,3 +42,7 @@ typedef unsigned uint32;
 
 int vasprintf(char **ptr, const char *format, va_list ap);
 int asprintf(char **,const char *, ...) PRINTF_ATTRIBUTE(2,3);
+
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
