@@ -6,9 +6,12 @@
 
 use strict;
 use Getopt::Long;
+use Data::Dumper;
 
 # search path for include files
 my($opt_include) = ".";
+my(%already_included) = ();
+
 
 ###################################################
 # general handler
@@ -169,10 +172,10 @@ sub parse_elements($$)
 sub IncludeLoad($)
 {
 	my($filename) = shift;
-	local(*INPUTFILE);
 	my(@dirs) = split(/:/, $opt_include);
 
 	for (my($i)=0; $i <= $#{@dirs}; $i++) {
+		local(*INPUTFILE);
 		if (open(INPUTFILE, $dirs[$i] . "/" . $filename)) {
 			my($saved_delim) = $/;
 			undef $/;
@@ -247,10 +250,6 @@ sub parse_data($)
 	}
 }
 
-my(%included);
-
-sub parse_includes($);
-
 ####################################################
 # parse a header file, generating a dumper structure
 sub parse_includes($)
@@ -258,23 +257,22 @@ sub parse_includes($)
 	my($data) = shift;
 
 	# handle includes
-	if ($data =~ /(.*?)\n\#include \"([\w.]*?)\"(.*)/s) {
-		my($inc) = "";
+	while (defined($data) && $data =~ /(.*?)^\#\s*include\s*\"([\w.]*?)\"(.*)/ms) {
+		my($p1) = $1;
+		my($p2) = $2;
+		my($p3) = $3;
+		parse_data($p1);
 
-		if (!$included{$2}) {
-			$inc = IncludeLoad($2);
-			$included{$2} = 1;
+		if (!defined($already_included{$p2})) {
+			$already_included{$p2} = 1;
+			parse_header($p2);
 		}
 
-		if (!defined($inc)) {$inc = "";}
-
-		parse_data($1);
-		parse_includes($inc);
-		parse_includes($3);
-		return;
+		$data = $p3;
 	}
-
-	parse_data($data);
+	if (defined($data)) {
+		parse_data($data);
+	}
 }
 
 ####################################################
@@ -282,9 +280,7 @@ sub parse_includes($)
 sub parse_header($)
 {
 	my($header) = shift;
-
 	my($data) = IncludeLoad($header);
-
 	parse_includes($data);
 }
 
