@@ -76,10 +76,15 @@ exit_if_running() {
     if [ "$MAIL_NO_PIDOF" == 1 ]; then
 	return;
     fi
-    if pidof -x -o $$ mail.runner > /dev/null; then
-	error_msg "mail.runner is already running"
-	exit 1
-    fi  
+    pids=`pidof -x -o $$ mail.runner`;
+    myid=`id -u`;
+    for p in $pids; do
+	pid_owner=`stat -c"%u" /proc/$p/stat`
+	if [ x$pid_owner = x$myid ]; then
+	    echo "mail.runner is already running - pid $p"
+	    exit 1
+        fi
+    done
 }
 
 
@@ -339,7 +344,7 @@ Other options are:
   MAIL_NO_PIDOF
     If this is set to "1" no "pidof" checking is done.  You should set
     this to "1" if you don't have pidof or your pidof is broken in 
-    one way.
+    some way.
 
 
 LICENSE
