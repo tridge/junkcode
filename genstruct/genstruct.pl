@@ -9,7 +9,7 @@ use Getopt::Long;
 
 ###################################################
 # general handler
-sub handle_general($$$$$$$)
+sub handle_general($$$$$$$$)
 {
 	my($name) = shift;
 	my($type) = shift;
@@ -18,8 +18,10 @@ sub handle_general($$$$$$$)
 	my($element) = shift;
 	my($handler) = shift;
 	my($flags) = shift;
+	my($einfo) = shift;
 	my($array_len) = 0;
 	my($dynamic_len) = "NULL";
+	my($tflags) = "0";
 
 	# handle arrays, currently treat multidimensional arrays as 1 dimensional
 	while ($element =~ /(.*)\[(.*?)\]$/) {
@@ -35,7 +37,11 @@ sub handle_general($$$$$$$)
 		$dynamic_len = "\"$1\"";
 	}
 
-	print CFILE "{\"$element\", $type, $ptr_count, $size, offsetof(struct $name, $element), $array_len, $handler, $dynamic_len},\n";
+	if ($flags =~ /_NULLTERM/) {
+		$tflags = "FLAG_NULLTERM";
+	}
+
+	print CFILE "{\"$element\", $type, $ptr_count, $size, offsetof(struct $name, $element), $array_len, $handler, $einfo, $dynamic_len, $tflags},\n";
 }
 
 
@@ -50,6 +56,7 @@ sub parse_one($$$$)
 	my($tstr) = "";
 	my($ptr_count) = 0;
 	my($handler) = "NULL";
+	my($einfo) = "NULL";
 	my(%typemap) = (
 		       "double" => "T_DOUBLE",
 		       "float" => "T_FLOAT",
@@ -80,8 +87,9 @@ sub parse_one($$$$)
 
 	if ($typemap{$type}) {
 		$tstr = $typemap{$type};
-	} elsif ($type =~ /^enum/) {
+	} elsif ($type =~ /^enum (.*)/) {
 		$tstr = "T_ENUM";
+		$einfo = "einfo_$1";
 	} elsif ($type =~ /struct (.*)/) {
 		$tstr = "T_STRUCT";
 		$handler = "pinfo_$1";
@@ -92,7 +100,7 @@ sub parse_one($$$$)
 		print "skipping unknown type '$type'\n";
 		return;
 	}
-	handle_general($name, $tstr, $ptr_count, $size, $element, $handler, $flags);
+	handle_general($name, $tstr, $ptr_count, $size, $element, $handler, $flags, $einfo);
 }
 
 ####################################################
@@ -140,7 +148,7 @@ sub parse_elements($$)
 
 	print "Parsing struct $name\n";
 
-	print CFILE "static struct parse_struct pinfo_" . $name . "[] = {\n";
+	print CFILE "static const struct parse_struct pinfo_" . $name . "[] = {\n";
 
 	while ($elements =~ /.*^([a-z].*?);\s*?(\S*?)\s*?\n(.*)/si) {
 		my($element) = $1;
@@ -166,6 +174,41 @@ sub FileLoad($)
 	close(INPUTFILE);
 	$/ = $saved_delim;
 	return $data;
+}
+
+####################################################
+# parse out the enum declarations
+sub parse_enum_elements($$)
+{
+	my($name) = shift;
+	my($elements) = shift;
+	
+	print CFILE "static const struct enum_struct einfo_" . $name . "[] = {\n";
+
+	my(@enums) = split(/,/s, $elements);
+	for (my($i)=0; $i <= $#{@enums}; $i++) {
+		my($enum) = $enums[$i];
+		if ($enum =~ /\s*(\w*)/) {
+			my($e) = $1;
+			print CFILE "{\"$e\", $e},\n";
+		}
+	}
+
+	print CFILE "{NULL, 0}};\n\n";
+}
+
+####################################################
+# parse out the enum declarations
+sub parse_enums($)
+{
+	my($data) = shift;
+
+	while ($data =~ /\nGENSTRUCT enum (\w*?) {(.*?)};(.*)/s) {
+		my($name) = $1;
+		my($elements) = $2;
+		$data = $3;
+		parse_enum_elements($name, $elements);
+	}
 }
 
 
@@ -196,6 +239,8 @@ sub parse_header($)
 	while ($data =~ s/\n[\n\t ]/\n/s) {}
 
 	print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
+
+	parse_enums($data);
 
 	# parse into structures 
 	while ($data =~ /\nGENSTRUCT struct (\w*?) {\n(.*?)};(.*)/s) {

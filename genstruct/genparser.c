@@ -152,8 +152,6 @@ static int gen_dump_base(struct parse_string *p,
 		return addstr(p, "%u", *(time_t *)(ptr));
 	case T_UNSIGNED:
 		return addstr(p, "%u", *(unsigned *)(ptr));
-	case T_ENUM:
-		return addstr(p, "%u", *(unsigned *)(ptr));
 	case T_DOUBLE:
 		return addstr(p, "%lg", *(double *)(ptr));
 	case T_INT:
@@ -167,9 +165,27 @@ static int gen_dump_base(struct parse_string *p,
 	case T_FLOAT:
 		return addstr(p, "%g", *(float *)(ptr));
 	case T_STRUCT:
+	case T_ENUM:
+		/* handled elsewhere */
 		return -1;
 	}
 	return 0;
+}
+
+static int gen_dump_enum(struct parse_string *p, 
+			 const struct enum_struct *einfo,
+			 const char *ptr)
+{
+	unsigned v = *(unsigned *)ptr;
+	int i;
+	for (i=0;einfo[i].name;i++) {
+		if (v == einfo[i].value) {
+			addstr(p, "%s", einfo[i].name);
+			return 0;
+		}
+	}
+	/* hmm, maybe we should just fail? */
+	return addstr(p, "%u", v);
 }
 
 static int gen_dump_one(struct parse_string *p, 
@@ -194,6 +210,10 @@ static int gen_dump_one(struct parse_string *p,
 		ret = addstr(p, "{%s}", s);
 		free(s);
 		return ret;
+	}
+
+	if (pinfo->type == T_ENUM) {
+		return gen_dump_enum(p, pinfo->einfo, ptr);
 	}
 
 	return gen_dump_base(p, pinfo->type, ptr);
@@ -229,7 +249,9 @@ static int gen_dump_array(struct parse_string *p,
 			size = sizeof(void *);
 		}
 		
-		if ((count || pinfo->ptr_count) && all_zero(ptr, size)) {
+		if ((count || pinfo->ptr_count) && 
+		    pinfo->type != T_ENUM && 
+		    all_zero(ptr, size)) {
 			ptr += size;
 			continue;
 		}
@@ -314,8 +336,19 @@ char *gen_dump(const struct parse_struct *pinfo,
 		}
 
 		if (pinfo[i].array_len) {
+			unsigned len = pinfo[i].array_len;
+			if (pinfo[i].flags & FLAG_NULLTERM) {
+				if (size == 1) {
+					len = strnlen(ptr, pinfo[i].array_len) + 1;
+				} else {
+					for (len=0;len<pinfo[i].array_len;len++) {
+						if (all_zero(ptr+len*size, size)) break;
+					}
+					len++;
+				}
+			}
 			if (gen_dump_array(&p, &pinfo[i], ptr, 
-					   pinfo[i].array_len, indent)) {
+					   len, indent)) {
 				goto failed;
 			}
 			continue;
@@ -338,7 +371,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 			continue;
 		}
 
-		if (all_zero(ptr, size)) continue;
+		if (pinfo[i].type != T_ENUM && all_zero(ptr, size)) continue;
 
 		/* generic pointer dereference */
 		if (pinfo[i].ptr_count) {
@@ -379,6 +412,33 @@ static char *match_braces(char *s, char c)
 	return s;
 }
 
+static int gen_parse_enum(const struct enum_struct *einfo, 
+			  char *ptr, 
+			  const char *str)
+{
+	unsigned v;
+	int i;
+
+	if (isdigit(*str)) {
+		if (sscanf(str, "%u", &v) != 1) {
+			errno = EINVAL;
+			return -1;
+		}
+		*(unsigned *)ptr = v;
+		return 0;
+	}
+
+	for (i=0;einfo[i].name;i++) {
+		if (strcmp(einfo[i].name, str) == 0) {
+			*(unsigned *)ptr = einfo[i].value;
+			return 0;
+		}
+	}
+
+	/* unknown enum value?? */
+	return -1;
+}
+
 static int gen_parse_base(const struct parse_struct *pinfo, 
 			  char *ptr, 
 			  const char *str)
@@ -413,8 +473,10 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 		*(time_t *)ptr = v;
 		break;
 	}
-	case T_UNSIGNED:
 	case T_ENUM:
+		return gen_parse_enum(pinfo->einfo, ptr, str);
+
+	case T_UNSIGNED:
 	{
 		unsigned v = 0;
 		if (sscanf(str, "%u", &v) != 1) {

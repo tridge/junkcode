@@ -1,11 +1,16 @@
 #define _LEN(x)
 #define GENSTRUCT
 
+GENSTRUCT enum fruit {APPLE, ORANGE=2, PEAR,
+		      RASBERRY, PEACH};
+
 GENSTRUCT struct test2 {
 	int x1;
 	char *foo;
+	char fstring[20]; _NULLTERM
 	int dlen;
 	char *dfoo; _LEN(dlen)
+	enum fruit fvalue;
 	struct test2 *next;
 };
 

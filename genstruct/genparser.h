@@ -19,6 +19,7 @@
 /* these macros are needed for genstruct auto-parsers */
 #define GENSTRUCT
 #define _LEN(x)
+#define _NULLTERM
 
 /*
   automatic marshalling/unmarshalling system for C structures
@@ -28,6 +29,13 @@ enum parse_type {T_INT, T_UNSIGNED, T_CHAR,
 		 T_FLOAT, T_DOUBLE, T_ENUM, T_STRUCT,
 		 T_TIME_T, T_LONG, T_ULONG};
 
+#define FLAG_NULLTERM 1
+
+struct enum_struct {
+	const char *name;
+	unsigned value;
+};
+
 struct parse_struct {
 	const char *name;
 	enum parse_type type;
@@ -35,8 +43,10 @@ struct parse_struct {
 	unsigned size;
 	unsigned offset;
 	unsigned array_len;
-	struct parse_struct *pinfo;
+	const struct parse_struct *pinfo;
+	const struct enum_struct *einfo;
 	const char *dynamic_len;
+	unsigned flags;
 };
 
 char *gen_dump(const struct parse_struct *pinfo, 

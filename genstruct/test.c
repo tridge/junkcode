@@ -42,6 +42,9 @@ static void fill_test2(struct test2 *t2, int count)
 	t2->x1 = 7 - count;
 	t2->foo = strdup("hello { there");
 
+	strcpy(t2->fstring, "blah 1");
+	t2->fstring[9] = 3;
+
 	t2->dlen = random() % 30;
 	if (t2->dlen) {
 		int i;
@@ -50,6 +53,8 @@ static void fill_test2(struct test2 *t2, int count)
 			t2->dfoo[i] = random();
 		}
 	}
+
+	t2->fvalue = 0;
 	
 	if (count) fill_test2_p(&t2->next, count-1);
 }
