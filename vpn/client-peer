@@ -1,0 +1,6 @@
+noauth
+persist
+lcp-echo-interval 30
+lcp-echo-failure 3
+pty 'ssh -1 your.vpn.server.com /usr/sbin/pppd nodetach notty'
+netmask 255.255.0.0

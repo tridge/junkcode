@@ -1,0 +1,12 @@
+lock
+
+# allow and auto-assign IPs in the given range to clients.
+# this allows us to get away without authentication
+allow-ip 192.168.100.0/24+
+
+# force our local IP address to make routing easy
+10.33.1.227:
+
+# detect failed links
+lcp-echo-failure 3
+lcp-echo-interval 60

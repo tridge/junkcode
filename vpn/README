@@ -1,0 +1,23 @@
+This is a simple ppp over ssh setup. To use it do this:
+
+- all users need to be able to ssh to the VPN server without a
+  password. You do this by setting up a authorized_keys for each user
+  and using ssh-agent.
+
+- on the VPN server put 'server-options' in /etc/ppp/options
+
+- on the clients put client-peer in /etc/ppp/peers/YOURNAME where
+  YOURNAME is the name you want to use to invoke the connection.
+
+- adjust the peers script to replace your.vpn.server.com with the DNS
+  name or IP address of your VPN server
+
+- to establish the connection run 'pppd call YOURNAME' on a
+  client. When first setting it up you may wish to see debug messages,
+  in which case use 'pppd call YOURNAME debug nodetach'
+
+- you may wish to add routing commands to /etc/ppp/ip-up (or
+  /etc/ppp/ip-up.local on some systems) so that you route to your
+  entire company network. For example, you might use this:
+    /sbin/route add -net 10.33.0.0 netmask 255.255.0.0 dev $1
+
