@@ -5,10 +5,14 @@ Usage:
 	mknod /dev/trd b 240 0
 	insmod trd.o trd_size=SIZE
 
-where SIZE is in k.
+where SIZE is in k. You can also use any minor device numbers as
+separate ram disks. eg:
+
+	mknod /dev/trd5 b 240 5
 	
-then use /dev/trd in the usual way.
+then use /dev/trd* in the usual way as block devices.
 
 Limitations:
-	- only one ramdisk can be loaded at a time
-	- memory is allocated on insmod, not when used
+	- memory is allocated when the device is first opened
+	- there is no way to release the memory of just one minor
+	device at a time
