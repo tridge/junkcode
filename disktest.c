@@ -100,7 +100,7 @@ static void disk_test(char *dev)
 	while (1) {
 		i = random() % blocks;
 
-		if (seeds[i] == 0 || (random() % 2 == 1)) {
+		if (seeds[i] == 0 || (random() & 1 == 1)) {
 			seeds[i] = random();
 			init_buf(buf, seeds[i]);
 			write_block(fd, buf, i);
