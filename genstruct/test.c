@@ -180,7 +180,7 @@ int main(void)
 
 #if TIMING
 	for (i=0;i<5000;i++) {
-		gen_parse(pinfo_test1, (char *)&t2, s);
+		free(gen_dump(pinfo_test1, (char *)&t2, 0));
 	}
 #endif
 

@@ -18,16 +18,15 @@ my(%already_included) = ();
 sub handle_general($$$$$$$$)
 {
 	my($name) = shift;
-	my($type) = shift;
 	my($ptr_count) = shift;
 	my($size) = shift;
 	my($element) = shift;
-	my($handler) = shift;
 	my($flags) = shift;
-	my($einfo) = shift;
+	my($dump_fn) = shift;
+	my($parse_fn) = shift;
+	my($tflags) = shift;
 	my($array_len) = 0;
 	my($dynamic_len) = "NULL";
-	my($tflags) = "0";
 
 	# handle arrays, currently treat multidimensional arrays as 1 dimensional
 	while ($element =~ /(.*)\[(.*?)\]$/) {
@@ -47,7 +46,7 @@ sub handle_general($$$$$$$$)
 		$tflags = "FLAG_NULLTERM";
 	}
 
-	print CFILE "{\"$element\", $type, $ptr_count, $size, offsetof(struct $name, $element), $array_len, $handler, $einfo, $dynamic_len, $tflags},\n";
+	print CFILE "{\"$element\", $ptr_count, $size, offsetof(struct $name, $element), $array_len, $dynamic_len, $tflags, $dump_fn, $parse_fn},\n";
 }
 
 
@@ -59,54 +58,29 @@ sub parse_one($$$$)
 	my($type) = shift;
 	my($element) = shift;
 	my($flags) = shift;
-	my($tstr) = "";
 	my($ptr_count) = 0;
-	my($handler) = "NULL";
-	my($einfo) = "NULL";
-	my(%typemap) = (
-		       "double" => "T_DOUBLE",
-		       "float" => "T_FLOAT",
-		       "int" => "T_INT",
-		       "unsigned int" => "T_UNSIGNED",
-		       "unsigned" => "T_UNSIGNED",
-		       "long" => "T_LONG",
-		       "unsigned long" => "T_ULONG",
-		       "char" => "T_CHAR",
-		       "byte_t" => "T_CHAR",
-		       "unsigned char" => "T_CHAR",
-		       "time_t" => "T_TIME_T"
-		       );
-
 	my($size) = "sizeof($type)";
+	my($tflags) = "0";
 	
+	# enums get the FLAG_ALWAYS flag
+	if ($type =~ /^enum /) {
+		$tflags = "FLAG_ALWAYS";
+	}
+
+
 	# make the pointer part of the base type 
 	while ($element =~ /^\*(.*)/) {
-		$type = "$type*";
+		$ptr_count++;
 		$element = $1;
 	}
 
-	# look for pointers 
-	while ($type =~ /(.*)\*/) {
-		$ptr_count++;
-		$type = $1;
-	}
+	# convert spaces to _
+	$type =~ s/ /_/g;
 
-	if ($typemap{$type}) {
-		$tstr = $typemap{$type};
-	} elsif ($type =~ /^enum (.*)/) {
-		$tstr = "T_ENUM";
-		$einfo = "einfo_$1";
-	} elsif ($type =~ /struct (.*)/) {
-		$tstr = "T_STRUCT";
-		$handler = "pinfo_$1";
-	}
+	my($dump_fn) = "gen_dump_$type";
+	my($parse_fn) = "gen_parse_$type";
 
-	# might be an unknown type
-	if ($tstr eq "") {
-		print "skipping unknown type '$type'\n";
-		return;
-	}
-	handle_general($name, $tstr, $ptr_count, $size, $element, $handler, $flags, $einfo);
+	handle_general($name, $ptr_count, $size, $element, $flags, $dump_fn, $parse_fn, $tflags);
 }
 
 ####################################################
@@ -154,6 +128,9 @@ sub parse_elements($$)
 
 	print "Parsing struct $name\n";
 
+	print CFILE "int gen_dump_struct_$name(struct parse_string *, const char *, unsigned);\n";
+	print CFILE "int gen_parse_struct_$name(char *, const char *);\n";
+
 	print CFILE "static const struct parse_struct pinfo_" . $name . "[] = {\n";
 
 	while ($elements =~ /.*^([a-z].*?);\s*?(\S*?)\s*?\n(.*)/si) {
@@ -163,7 +140,17 @@ sub parse_elements($$)
 		parse_element($name, $element, $flags);
 	}
 
-	print CFILE "{NULL, 0, 0, 0, 0, 0, NULL}};\n\n";
+	print CFILE "{NULL, 0, 0, 0, 0, NULL, 0, NULL, NULL}};\n";
+
+	print CFILE "
+int gen_dump_struct_$name(struct parse_string *p, const char *ptr, unsigned indent) {
+	return gen_dump_struct(pinfo_$name, p, ptr, indent);
+}
+int gen_parse_struct_$name(char *ptr, const char *str) {
+	return gen_parse_struct(pinfo_$name, ptr, str);
+}
+
+";
 }
 
 
@@ -209,7 +196,18 @@ sub parse_enum_elements($$)
 		}
 	}
 
-	print CFILE "{NULL, 0}};\n\n";
+	print CFILE "{NULL, 0}};\n";
+
+	print CFILE "
+int gen_dump_enum_$name(struct parse_string *p, const char *ptr, unsigned indent) {
+	return gen_dump_enum(einfo_$name, p, ptr, indent);
+}
+
+int gen_parse_enum_$name(char *ptr, const char *str) {
+	return gen_parse_enum(einfo_$name, ptr, str);
+}
+
+";
 }
 
 ####################################################

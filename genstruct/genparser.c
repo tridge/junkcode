@@ -35,13 +35,6 @@
 #include "includes.h"
 #endif
 
-/* intermediate dumps are stored in one of these */
-struct parse_string {
-	unsigned allocated;
-	unsigned length;
-	char *s;
-};
-
 /* see if a range of memory is all zero. Used to prevent dumping of zero elements */
 static int all_zero(const char *ptr, unsigned size)
 {
@@ -167,7 +160,7 @@ static int addtabbed(struct parse_string *p, const char *s, unsigned indent)
 }
 
 /* note! this can only be used for results up to 60 chars wide! */
-static int addgen(struct parse_string *p, const char *fmt, ...)
+static int addshort(struct parse_string *p, const char *fmt, ...)
 {
 	char buf[60];
 	int n;
@@ -186,40 +179,36 @@ static int addgen(struct parse_string *p, const char *fmt, ...)
 	return 0;
 }
 
-/* the base dump function for all base types */
-static int gen_dump_base(struct parse_string *p, 
-			  enum parse_type type, 
-			  const char *ptr)
+/* 
+   this is here to make it easier for people to write dump functions 
+   for their own types
+ */
+int gen_addgen(struct parse_string *p, const char *fmt, ...)
 {
-	switch (type) {
-	case T_TIME_T:
-		return addgen(p, "%u", *(time_t *)(ptr));
-	case T_UNSIGNED:
-		return addgen(p, "%u", *(unsigned *)(ptr));
-	case T_DOUBLE:
-		return addgen(p, "%lg", *(double *)(ptr));
-	case T_INT:
-		return addgen(p, "%d", *(int *)(ptr));
-	case T_LONG:
-		return addgen(p, "%ld", *(long *)(ptr));
-	case T_ULONG:
-		return addgen(p, "%lu", *(unsigned long *)(ptr));
-	case T_CHAR:
-		return addgen(p, "%u", *(unsigned char *)(ptr));
-	case T_FLOAT:
-		return addgen(p, "%g", *(float *)(ptr));
-	case T_STRUCT:
-	case T_ENUM:
-		/* handled elsewhere */
+	char *buf = NULL;
+	int n;
+	va_list ap;
+	va_start(ap, fmt);
+	n = vasprintf(&buf, fmt, ap);
+	va_end(ap);
+	if (addgen_alloc(p, n + 1) != 0) {
+		if (buf) free(buf);
 		return -1;
 	}
+	if (n != 0) {
+		memcpy(p->s + p->length, buf, n);
+	}
+	p->length += n;
+	p->s[p->length] = 0;
+	if (buf) free(buf);
 	return 0;
 }
 
 /* dump a enumerated type */
-static int gen_dump_enum(struct parse_string *p, 
-			 const struct enum_struct *einfo,
-			 const char *ptr)
+int gen_dump_enum(const struct enum_struct *einfo,
+		  struct parse_string *p, 
+		  const char *ptr,
+		  unsigned indent)
 {
 	unsigned v = *(unsigned *)ptr;
 	int i;
@@ -230,7 +219,7 @@ static int gen_dump_enum(struct parse_string *p,
 		}
 	}
 	/* hmm, maybe we should just fail? */
-	return addgen(p, "%u", v);
+	return gen_dump_unsigned(p, ptr, indent);
 }
 
 /* dump a single non-array element, hanlding struct and enum */
@@ -239,35 +228,18 @@ static int gen_dump_one(struct parse_string *p,
 			 const char *ptr,
 			 unsigned indent)
 {
-	if (pinfo->type == T_STRUCT) {
-		char *s = gen_dump(pinfo->pinfo, ptr, indent+1);
-		if (!s) return -1;
-		if (addstr(p, "{\n") || 
-		    addstr(p,s) || 
-		    addtabbed(p,"}", indent)) {
-			free(s);
-			return -1;
-		}
-		free(s);
-		return 0;
-	}
-
-	if (pinfo->type == T_CHAR && pinfo->ptr_count == 1) {
+	if (pinfo->dump_fn == gen_dump_char && pinfo->ptr_count == 1) {
 		char *s = encode_bytes(ptr, strlen(ptr));
-		if (addchar(p,'{') || 
+		if (addchar(p,'{') ||
 		    addstr(p, s) ||
-		    addchar(p,'}')) {
+		    addstr(p, "}")) {
 			free(s);
 			return -1;
 		}
 		return 0;
 	}
 
-	if (pinfo->type == T_ENUM) {
-		return gen_dump_enum(p, pinfo->einfo, ptr);
-	}
-
-	return gen_dump_base(p, pinfo->type, ptr);
+	return pinfo->dump_fn(p, ptr, indent);
 }
 
 /* handle dumping of an array of arbitrary type */
@@ -282,7 +254,7 @@ static int gen_dump_array(struct parse_string *p,
 	/* special handling of fixed length strings */
 	if (array_len != 0 && 
 	    pinfo->ptr_count == 0 &&
-	    pinfo->type == T_CHAR) {
+	    pinfo->dump_fn == gen_dump_char) {
 		char *s = encode_bytes(ptr, array_len);
 		if (!s) return -1;
 		if (addtabbed(p, pinfo->name, indent) ||
@@ -292,6 +264,7 @@ static int gen_dump_array(struct parse_string *p,
 			free(s);
 			return -1;
 		}
+		free(s);
 		return 0;
 	}
 
@@ -306,18 +279,18 @@ static int gen_dump_array(struct parse_string *p,
 		}
 		
 		if ((count || pinfo->ptr_count) && 
-		    pinfo->type != T_ENUM && 
+		    /* pinfo->type != T_ENUM &&  */
 		    all_zero(ptr, size)) {
 			ptr += size;
 			continue;
 		}
 		if (count == 0) {
 			if (addtabbed(p, pinfo->name, indent) ||
-			    addgen(p, " = %u:", i)) {
+			    addshort(p, " = %u:", i)) {
 				return -1;
 			}
 		} else {
-			if (addgen(p, ", %u:", i) != 0) {
+			if (addshort(p, ", %u:", i) != 0) {
 				return -1;
 			}
 		}
@@ -354,20 +327,52 @@ static int find_var(const struct parse_struct *pinfo,
 
 	ptr = data + pinfo[i].offset;
 
-	switch (pinfo[i].type) {
-	case T_UNSIGNED:
-	case T_INT:
+	switch (pinfo[i].size) {
+	case sizeof(int):
 		return *(int *)ptr;
-	case T_LONG:
-	case T_ULONG:
-		return *(long *)ptr;
-	case T_CHAR:
+	case sizeof(char):
 		return *(char *)ptr;
-	default:
-		return -1;
 	}
+
 	return -1;
 }
+
+
+int gen_dump_struct(const struct parse_struct *pinfo,
+		    struct parse_string *p, 
+		    const char *ptr, 
+		    unsigned indent)
+{
+	char *s = gen_dump(pinfo, ptr, indent+1);
+	if (!s) return -1;
+	if (addstr(p, "{\n") || 
+	    addstr(p,s) || 
+	    addtabbed(p,"}", indent)) {
+		free(s);
+		return -1;
+	}
+	free(s);
+	return 0;
+}
+
+static int gen_dump_string(struct parse_string *p,
+			   const struct parse_struct *pinfo, 
+			   const char *data, 
+			   unsigned indent)
+{
+	const char *ptr = *(char **)data;
+	char *s = encode_bytes(ptr, strlen(ptr));
+	if (addtabbed(p, pinfo->name, indent) ||
+	    addstr(p, " = ") ||
+	    addchar(p,'{') ||
+	    addstr(p, s) ||
+	    addstr(p, "}\n")) {
+		free(s);
+		return -1;
+	}
+	return 0;
+}
+
 
 /* the generic dump routine. Scans the parse information for this structure
    and processes it recursively */
@@ -433,7 +438,16 @@ char *gen_dump(const struct parse_struct *pinfo,
 		}
 
 		/* don't dump zero elements */
-		if (pinfo[i].type != T_ENUM && all_zero(ptr, size)) continue;
+		if (!(pinfo[i].flags & FLAG_ALWAYS) && all_zero(ptr, size)) continue;
+
+		/* assume char* is a null terminated string */
+		if (pinfo[i].size == 1 && pinfo[i].ptr_count == 1 &&
+		    pinfo[i].dump_fn == gen_dump_char) {
+			if (gen_dump_string(&p, &pinfo[i], ptr, indent) != 0) {
+				goto failed;
+			}
+			continue;
+		}
 
 		/* generic pointer dereference */
 		if (pinfo[i].ptr_count) {
@@ -477,9 +491,9 @@ static char *match_braces(char *s, char c)
 }
 
 /* parse routine for enumerated types */
-static int gen_parse_enum(const struct enum_struct *einfo, 
-			  char *ptr, 
-			  const char *str)
+int gen_parse_enum(const struct enum_struct *einfo, 
+		   char *ptr, 
+		   const char *str)
 {
 	unsigned v;
 	int i;
@@ -504,12 +518,13 @@ static int gen_parse_enum(const struct enum_struct *einfo,
 	return -1;
 }
 
+
 /* parse all base types */
 static int gen_parse_base(const struct parse_struct *pinfo, 
 			  char *ptr, 
 			  const char *str)
 {
-	if (pinfo->type == T_CHAR && pinfo->ptr_count==1) {
+	if (pinfo->parse_fn == gen_parse_char && pinfo->ptr_count==1) {
 		unsigned len;
 		char *s = decode_bytes(str, &len);
 		if (!s) return -1;
@@ -528,94 +543,7 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 		return gen_parse_base(&p2, ptr, str);
 	}
 
-	switch (pinfo->type) {
-	case T_TIME_T:
-	{
-		unsigned v = 0;
-		if (sscanf(str, "%u", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(time_t *)ptr = v;
-		break;
-	}
-	case T_ENUM:
-		return gen_parse_enum(pinfo->einfo, ptr, str);
-
-	case T_UNSIGNED:
-	{
-		unsigned v = 0;
-		if (sscanf(str, "%u", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(unsigned *)ptr = v;
-		break;
-	}
-	case T_INT:
-	{
-		int v = 0;
-		if (sscanf(str, "%d", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(int *)ptr = v;
-		break;
-	}
-	case T_LONG:
-	{
-		long v = 0;
-		if (sscanf(str, "%ld", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(long *)ptr = v;
-		break;
-	}
-	case T_ULONG:
-	{
-		unsigned long v = 0;
-		if (sscanf(str, "%lu", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(unsigned long *)ptr = v;
-		break;
-	}
-	case T_CHAR:
-	{
-		unsigned v = 0;
-		if (sscanf(str, "%u", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(unsigned char *)ptr = v;
-		break;
-	}
-	case T_FLOAT:
-	{
-		float v = 0;
-		if (sscanf(str, "%g", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(float *)ptr = v;
-		break;
-	}
-	case T_DOUBLE:
-	{
-		double v = 0;
-		if (sscanf(str, "%lg", &v) != 1) {
-			errno = EINVAL;
-			return -1;
-		}
-		*(double *)ptr = v;
-		break;
-	}
-	case T_STRUCT:
-		return gen_parse(pinfo->pinfo, ptr, str);
-	}
-	return 0;
+	return pinfo->parse_fn(ptr, str);
 }
 
 /* parse a generic array */
@@ -630,7 +558,7 @@ static int gen_parse_array(const struct parse_struct *pinfo,
 	/* special handling of fixed length strings */
 	if (array_len != 0 && 
 	    pinfo->ptr_count == 0 &&
-	    pinfo->type == T_CHAR) {
+	    pinfo->dump_fn == gen_dump_char) {
 		unsigned len = 0;
 		char *s = decode_bytes(str, &len);
 		if (!s) return -1;
@@ -720,6 +648,11 @@ static int gen_parse_one(const struct parse_struct *pinfo,
 	return gen_parse_base(&pinfo[i], data + pinfo[i].offset, str);
 }
 
+int gen_parse_struct(const struct parse_struct *pinfo, char *ptr, const char *str)
+{
+	return gen_parse(pinfo, ptr, str);
+}
+
 /* the main parse routine */
 int gen_parse(const struct parse_struct *pinfo, char *data, const char *s)
 {
@@ -765,4 +698,74 @@ int gen_parse(const struct parse_struct *pinfo, char *data, const char *s)
 
 	free(s0);
 	return 0;
+}
+
+
+
+/* for convenience supply some standard dumpers and parsers here */
+
+int gen_parse_char(char *ptr, const char *str)
+{
+	*(unsigned char *)ptr = atoi(str);
+	return 0;
+}
+
+int gen_parse_int(char *ptr, const char *str)
+{
+	*(int *)ptr = atoi(str);
+	return 0;
+}
+
+int gen_parse_unsigned(char *ptr, const char *str)
+{
+	*(unsigned *)ptr = atoi(str);
+	return 0;
+}
+
+int gen_parse_time_t(char *ptr, const char *str)
+{
+	*(time_t *)ptr = atoi(str);
+	return 0;
+}
+
+int gen_parse_double(char *ptr, const char *str)
+{
+	*(double *)ptr = atof(str);
+	return 0;
+}
+
+int gen_parse_float(char *ptr, const char *str)
+{
+	*(float *)ptr = atof(str);
+	return 0;
+}
+
+int gen_dump_char(struct parse_string *p, const char *ptr, unsigned indent)
+{
+	return addshort(p, "%u", *(unsigned char *)(ptr));
+}
+
+int gen_dump_int(struct parse_string *p, const char *ptr, unsigned indent)
+{
+	return addshort(p, "%d", *(int *)(ptr));
+}
+
+int gen_dump_unsigned(struct parse_string *p, const char *ptr, unsigned indent)
+{
+	return addshort(p, "%u", *(unsigned *)(ptr));
+}
+
+int gen_dump_time_t(struct parse_string *p, const char *ptr, unsigned indent)
+{
+	return addshort(p, "%u", *(time_t *)(ptr));
+}
+
+int gen_dump_double(struct parse_string *p, const char *ptr, unsigned indent)
+{
+	return addshort(p, "%lg", *(double *)(ptr));
+}
+
+int gen_dump_float(struct parse_string *p, const char *ptr, unsigned indent)
+{
+	return addshort(p, "%g", *(float *)(ptr));
 }
