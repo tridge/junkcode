@@ -31,6 +31,7 @@ struct sum_struct {
 
 static TDB_CONTEXT *tdb;
 static int do_update;
+static int do_ignore;
 
 static void tsums_dir(const char *dname);
 
@@ -238,6 +239,7 @@ Copyright (C) Andrew Tridgell (tridge@samba.org)
 Usage: tsums [options] <files|dirs...>
 
 Options:
+  -a          use all existing files
   -h          this help
   -u          update sums
   -f <DB>     database name
@@ -248,6 +250,24 @@ Options:
 }
 
 
+static void process_one(char *fname)
+{
+	if (do_ignore) {
+		ignore_file(fname);
+	} else {
+		tsums_file(fname);
+	}
+}
+
+static int process_fn(TDB_CONTEXT *db, TDB_DATA key, TDB_DATA data, 
+		      void *state)
+{
+	if (strncmp(key.dptr, "FILE:", 5) != 0) return 0;
+
+	process_one(key.dptr + 5);
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int i;
@@ -255,13 +275,16 @@ int main(int argc, char *argv[])
 	extern char *optarg;
 	extern int optind;
 	int c;
-	int do_ignore = 0;
 	int do_dump = 0;
+	int use_all = 0;
 
-	while ((c = getopt(argc, argv, "huf:id")) != -1){
+	while ((c = getopt(argc, argv, "huf:ida")) != -1){
 		switch (c) {
 		case 'h':
 			usage();
+			break;
+		case 'a':
+			use_all = 1;
 			break;
 		case 'u':
 			do_update = 1;
@@ -293,19 +316,21 @@ int main(int argc, char *argv[])
 
 	if (do_dump) {
 		dump_ignored();
-		exit(0);
+		goto finish;
 	}
+
+	if (use_all) {
+		tdb_traverse(tdb, process_fn, NULL);
+		goto finish;
+	} 
 
 	if (argc == 0) usage();
 
 	for (i=0;i<argc;i++) {
-		if (do_ignore) {
-			ignore_file(argv[i]);
-		} else {
-			tsums_file(argv[i]);
-		}
+		process_one(argv[i]);
 	}
 
+finish:
 	tdb_close(tdb);
 
 	return 0;
