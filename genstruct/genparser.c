@@ -735,13 +735,13 @@ int gen_parse_int(char *ptr, const char *str)
 
 int gen_parse_unsigned(char *ptr, const char *str)
 {
-	*(unsigned *)ptr = atoi(str);
+	*(unsigned *)ptr = strtoul(str, NULL, 10);
 	return 0;
 }
 
 int gen_parse_time_t(char *ptr, const char *str)
 {
-	*(time_t *)ptr = atoi(str);
+	*(time_t *)ptr = strtoul(str, NULL, 10);
 	return 0;
 }
 
