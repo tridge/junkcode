@@ -224,6 +224,20 @@ static void sig_alrm(int sig)
 	exit(0);
 }
 
+static struct timeval tp1,tp2;
+
+static void start_timer(void)
+{
+	gettimeofday(&tp1,NULL);
+}
+
+static double end_timer(void)
+{
+	gettimeofday(&tp2,NULL);
+	return((tp2.tv_sec - tp1.tv_sec) + 
+	       (tp2.tv_usec - tp1.tv_usec)*1.0e-6);
+}
+
 int main(void)
 {
 	int i;
@@ -231,11 +245,13 @@ int main(void)
 
 	signal(SIGALRM, sig_alrm);
 
+	start_timer();
 	alarm(2);
 	p_used = "*c*c*cc*c*c*c*c*cc*cc*cc*c*c*c*cc*c*cc*c*c*cc*cc*ccc*c*c*cc*c*c";
 	n_used = "c.cccccccccccccccccccccccccccc";
 	fnmatch_test(p_used, n_used);
 	alarm(0);
+	printf("took %.7f seconds\n", end_timer());
 
 	for (i=0;i<100000;i++) {
 		int len1 = random() % 20;
