@@ -251,11 +251,11 @@ static void tsums_file(const char *fname)
 
 	report_difference(fname, &sum, &old);
 
+update:
 	if (!do_update) {
 		goto next;
 	}
 
-update:
 	if (do_quick) file_checksum(fname, &sum.sum[0]);
 	if (data.dptr) free(data.dptr);
 	data.dptr = (void *)&sum;
