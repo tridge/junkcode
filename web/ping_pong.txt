@@ -1,0 +1,5 @@
+This measures the ping-pong lock latency for any shared filesystem
+that supports fcntl byte range locking. I use it to demonstrate the
+futility of trying to do a high performance distributed SMB server.<p>
+
+{{! echo "$C_SOURCE" }}

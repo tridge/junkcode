@@ -1,0 +1,6 @@
+spamsum is a fuzzy hash specifically designed for hashing email
+messages to detect if they are SPAM. The spamsum utility includes the
+ability to generate the spamsum hash and check a new message against a
+existing set of hashes to find a match.<p>
+
+Source and some documentation is available <a href="{{$JUNKCODE}}/spamsum">here</a>

@@ -1,0 +1,3 @@
+Exploit a old pipe() bug on linux
+
+{{! echo "$C_SOURCE" }}

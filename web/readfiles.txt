@@ -1,0 +1,8 @@
+readfiles and writefiles are very simple utilities for measuring bulk
+read and write throughput to files or devices. The current througput
+in MB/sec is shown once a second while the utilities loop over each
+specified file or device.<p>
+
+Download and compile 
+<a href="{{$JUNKCODE}}/readfiles.c">readfiles.c</a> and
+<a href="{{$JUNKCODE}}/writefiles.c">writefiles.c</a>

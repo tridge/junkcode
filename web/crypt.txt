@@ -1,0 +1,3 @@
+A useful utility for running unix crypt on a password
+
+{{! echo "$C_SOURCE" }}

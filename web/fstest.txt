@@ -1,0 +1,4 @@
+A tool for stress testing a filesystem, testing particularly that it
+stores the correct data in files under high load. <p>
+
+{{! echo "$C_SOURCE" }}

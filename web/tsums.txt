@@ -1,0 +1,3 @@
+tsums is a simple 'tripwire' like tool
+
+{{! echo "$DIR_SOURCE" }}

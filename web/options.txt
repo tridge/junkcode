@@ -1,0 +1,4 @@
+A options analysis and simulation package. This used to be a
+commercial product many years ago.
+
+{{! echo "$DIR_SOURCE" }}

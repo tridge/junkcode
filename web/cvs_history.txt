@@ -1,0 +1,3 @@
+A perl script for showing recent cvs commits
+
+{{! echo "$DIR_SOURCE" }}

@@ -1,0 +1,5 @@
+tserver is a tiny web server and templating system. It uses bash for
+server side scripting. These web pages are generated using the
+templating system.
+
+{{! echo "$DIR_SOURCE" }}

@@ -1,0 +1,3 @@
+Demo code in C for dealing with unix domain sockets
+
+{{! echo "$DIR_SOURCE" }}

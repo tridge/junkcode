@@ -1,0 +1,5 @@
+trd is a 'trivial ramdisk'. It is a ramdisk module for Linux that is
+surprisingly useful. It also includes 'dummy_disk', a write-only
+block device that is sometimes useful for developers.
+
+{{! echo "$DIR_SOURCE" }}

@@ -1,0 +1,6 @@
+a surprisingly useful little utility for printing numbers in hex,
+octal and ascii.<p>
+
+{{! echo "$C_SOURCE" }}
+
+Run "i --help" and think about the output

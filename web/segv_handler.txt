@@ -1,0 +1,6 @@
+This is a useful utility for installing a system-wide segv handler
+that produces a backtrace on any program that gets a SEGV signal. It
+is installed as a preload, so you don't need to modify the target
+programs.
+
+{{! echo "$DIR_SOURCE" }}

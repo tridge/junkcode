@@ -1,0 +1,5 @@
+Detect is a plagiarism detector, it detects the common sort of
+plagiarism that undergraduate students tend to be guilty of in
+computer science courses.
+
+{{! echo "$C_SOURCE" }}

@@ -1,0 +1,3 @@
+a command-line syslog interface
+
+{{! echo "$DIR_SOURCE" }}

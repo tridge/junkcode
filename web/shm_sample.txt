@@ -1,0 +1,3 @@
+Demo how to use inheritable shared memory in various ways from C on unix systems
+
+{{! echo "$C_SOURCE" }}

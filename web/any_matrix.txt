@@ -1,0 +1,4 @@
+A useful C function for creating a multi-dimensional array that can be
+freed with a single free(). <p>
+
+{{! echo "$C_SOURCE" }}

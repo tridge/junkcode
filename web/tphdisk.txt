@@ -1,0 +1,5 @@
+A Linux replacement for phdisk.exe that allows you to create a
+save2dsk.bin hibernation file for phoenix notebios laptops. Run
+tphdisk -h for instructions.
+
+{{! echo "$C_SOURCE" }}

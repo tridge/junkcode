@@ -1,0 +1,4 @@
+A general compression program for very large files. See my thesis for
+details on the algorithm.
+
+{{! echo "$TOP_SOURCE" }}

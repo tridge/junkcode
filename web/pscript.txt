@@ -1,0 +1,3 @@
+a lousy postscript driver in C
+
+{{! echo "$C_SOURCE" }}

@@ -1,0 +1,3 @@
+A cvs log script that produces cvs links
+
+{{! echo "$DIR_SOURCE" }}

@@ -1,0 +1,4 @@
+A multi-alternate digram based string search function. Highly
+efficient for searching for a bunch of possible strings in a file.
+
+{{! echo "$C_SOURCE" }}

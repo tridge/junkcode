@@ -1,0 +1,4 @@
+Code for controlling the camera in a VAIO picturebook. Also includes
+code that manipulates the jog dial on a VAIO
+
+{{! echo "$TOP_SOURCE" }}

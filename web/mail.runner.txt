@@ -1,0 +1,13 @@
+mail.runner is a script for sending and receiving email.<p>
+
+The main features of mail.runner are
+<ul>
+<li>good performance over very slow links
+<li>secure mail transfer via rsync and ssh
+<li>incremental transfer in case the link is lost
+<li>no mta installation needed on the client
+</ul>
+
+To use mailrunner just download <a href="{{$JUNKCODE}}/mail.runner">mail.runner</a>
+and run it with the -h option. It will display installation and usage
+instructions.

@@ -1,0 +1,3 @@
+Solve the 'goats' conundrum
+
+{{! echo "$C_SOURCE" }}
