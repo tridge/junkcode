@@ -267,7 +267,7 @@ static int find_var(const struct parse_struct *pinfo,
 
 	ptr = data + pinfo[i].offset;
 
-	switch (pinfo->type) {
+	switch (pinfo[i].type) {
 	case T_UNSIGNED:
 	case T_INT:
 		return *(int *)ptr;
