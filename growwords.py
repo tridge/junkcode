@@ -55,6 +55,12 @@
 # size.  So instead we read the words into buckets by length, then
 # join them up.
 
+# The bucket thing may be a bit more than O(n), because of the
+# possible cost of copying things as we join the buckets.  But it is
+# not very expensive compared to the actual search.  There are a
+# fairly small number of buckets anyhow -- just proportional to the
+# longest word.
+
 # Solution:
 
 # Seed is given as the command line argument; words are read from
