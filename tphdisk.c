@@ -5,6 +5,10 @@
 
   Copyright 2002 Andrew Tridgell <tridge@samba.org> 
   released under the GNU General Public License version 2 or later
+
+  Updated usage string to compile with gcc and to give better advice
+  Ian Hutchinson, 2005.
+
 */
 
 /*
@@ -73,30 +77,30 @@ int main(int argc, char *argv[])
 	int size;
 
 	if (argc < 2) {
-		fprintf(stderr,"\n \
-Usage: tphdisk <size in MB>\n \
-\n \
-written by Andrew Tridgell <tridge@samba.org>\n \
-\n \
-\n \
-This program writes a 'save2dsk.bin' hibernation file to stdout. To\n \
-use it you should do something like this:\n \
-\n \
-1) create a type 16 (Hidden FAT16) partition on your laptop\n \
-2) format the partition with 'mkdosfs'\n \
-3) mount the partition as VFAT\n \
-4) create the 'save2dsk.bin' file on the partition using something like\n \
-      tphdisk 280 > save2dsk.bin\n \
-5) Do a full reboot\n \
-\n \
-The only parameter is the size in megabytes of the save file. This\n \
-needs to be at least as big as your main memory + video memory, but you\n \
-can make it larger if you want to.\n \
-\n \
-You should also be able to use this to create a hibernation partition\n \
-by directing the output to the right device (eg. /dev/hdaX) and\n \
-setting the partition type to A0.  I haven't tried this as my thinkpad\n \
-doesn't seem to support hibernation partitions.\n \
+		fprintf(stderr,"\n\
+Usage: tphdisk <size in MB>\n\
+\n\
+written by Andrew Tridgell <tridge@samba.org>\n\
+\n\
+\n\
+This program writes a 'save2dsk.bin' hibernation file to stdout. To\n\
+use it you should do something like this:\n\
+\n\
+1) create a type c (FAT32) partition on your laptop\n\
+2) format the partition with 'mkdosfs'\n\
+3) mount the partition as VFAT\n\
+4) create the 'save2dsk.bin' file on the partition using something like\n\
+      tphdisk 280 > save2dsk.bin\n\
+5) Do a full reboot\n\
+\n\
+The only parameter is the size in megabytes of the save file. This\n\
+needs to be at least as big as your main memory + video memory +2MB, but you\n\
+can make it larger if you want to.\n\
+\n\
+You should also be able to use this to create a hibernation partition\n\
+by directing the output to the right device (eg. /dev/hdaX) and\n\
+setting the partition type to A0.  I haven't tried this as my thinkpad\n\
+doesn't seem to support hibernation partitions.\n\
 ");
 		exit(1);
 	}
