@@ -36,6 +36,7 @@ void main(int argc, char **argv)
 		printf("\techodata size\tSend an array of size bytes and receive it back\n");
 		printf("\tsinkdata size\tSend an array of size bytes\n");
 		printf("\tsourcedata size\tReceive an array of size bytes\n");
+		printf("\ttest\trun testcall\n");
 		exit(0);
 	}
 
@@ -177,6 +178,11 @@ void main(int argc, char **argv)
 				}
 			}
 
+			goto done;
+		}
+
+		if (strcmp(argv[0], "test") == 0) {
+			printf("no TestCall\n");
 			goto done;
 		}
 

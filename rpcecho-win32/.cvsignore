@@ -1,3 +1,5 @@
 Debug
 rpcecho.h
-rpcecho.ncb
+*.ncb
+*_c.c
+*_s.c

@@ -45,4 +45,27 @@ interface rpcecho
 		[in] int len,
 		[out] [size_is(len)] char out_data[]
 	);
+
+
+	typedef struct {
+		int *count;
+	} dfs_Enum1;
+
+	typedef struct {
+		int *count;
+	} dfs_Enum3;
+
+	typedef union {
+		[case(1)] dfs_Enum1 enum1;
+		[case(3)] dfs_Enum3 enum3;
+	} dfs_EnumInfo;
+
+	typedef struct {
+		int level;
+		[switch_is(level)] dfs_EnumInfo e;
+	} Struct1;
+	
+	void TestCall (
+		[out]        Struct1 **s1
+		);
 }

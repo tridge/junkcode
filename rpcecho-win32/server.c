@@ -36,12 +36,9 @@ void AddOne(int in_data, __RPC_FAR int *out_data)
 void EchoData(int len, unsigned char __RPC_FAR in_data[],
 	unsigned char __RPC_FAR out_data[])
 {
-	int i;
-
 	printf("EchoData: got len = %d\n", len);
 	
-	for (i = 0; i < len; i++)
-		out_data[i] = i & 0xff;
+	memcpy(out_data, in_data, len);
 }
 
 void SinkData(int len, unsigned char __RPC_FAR in_data[  ])
@@ -57,6 +54,15 @@ void SourceData(int len, unsigned char __RPC_FAR out_data[  ])
 
 	for (i = 0; i < len; i++)
 		out_data[i] = i & 0xff;
+}
+
+void TestCall(Struct1 **s1)
+{
+	static int x = 7;
+	(*s1) = malloc(1000);
+	printf("TestCall\n");
+	(*s1)->level = 3;
+	(*s1)->e.enum3.count = &x;	
 }
 
 void main(int argc, char **argv)
