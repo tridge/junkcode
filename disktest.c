@@ -61,7 +61,19 @@ static void check_block(int fd, unsigned *buf, int i)
 		exit(1);
 	}
 	if (memcmp(buf, buf2, 1024) != 0) {
-		printf("compare failed on block %d\n", i);
+		int j, count=0;
+		for (j=0; j<1024/4; j++) {
+			if (buf[j] != buf2[j]) count++;
+		}
+		printf("compare failed on block %d (%d words differ)\n", i, count);
+		fd = open("buf1.dat", O_WRONLY|O_CREAT|O_TRUNC, 0644);
+		write(fd, buf, 1024);
+		close(fd);
+		fd = open("buf2.dat", O_WRONLY|O_CREAT|O_TRUNC, 0644);
+		write(fd, buf2, 1024);
+		close(fd);
+		printf("Wrote good data to buf1.dat\n");
+		printf("Wrote bad data to buf2.dat\n");
 		exit(1);
 	}
 }
@@ -73,7 +85,7 @@ static void disk_test(char *dev)
 	int num_reads = 0;
 	int num_writes = 0;
 	unsigned *seeds;
-	unsigned buf[1024/4];
+	unsigned *buf;
 
 	fd = open(dev, O_RDWR);
 	if (fd == -1) {
@@ -95,10 +107,12 @@ static void disk_test(char *dev)
 		exit(1);
 	}
 
+	buf = (unsigned *)memalign(1024, 1024);
+
 	srandom(time(NULL));
 
 	while (1) {
-		i = random() % blocks;
+		i = ((unsigned)random()) % blocks;
 
 		if (seeds[i] == 0 || (random() & 1 == 1)) {
 			seeds[i] = random();
@@ -111,7 +125,7 @@ static void disk_test(char *dev)
 			num_reads++;
 		}
 		count++;
-		if (count % 100 == 0) {
+		if (count % 500 == 0) {
 			printf("%d blocks (%d reads, %d writes)\n", 
 			       count, num_reads, num_writes);
 		}
