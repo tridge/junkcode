@@ -15,6 +15,8 @@
   method user getgrent() which could take 20 minutes on a really big
   network with hundeds of thousands of groups and users. The new method
   takes a couple of seconds. (tridge@samba.org)
+
+  unfortunately it only works if we are root!
   */
 int
 getgrouplist(uname, agroup, groups, grpcnt)
@@ -35,7 +37,7 @@ getgrouplist(uname, agroup, groups, grpcnt)
 		return -1;
 	}
 
-	ret = getgroups(NGROUPS_MAX, groups);
+	ret = getgroups(*grpcnt, groups);
 	if (ret >= 0) {
 		*grpcnt = ret;
 	}
@@ -58,13 +60,17 @@ int main(int argc, char *argv[])
 
 	pwd = getpwnam(user);
 
+	count = NGROUPS_MAX;
+
 	ret = getgrouplist(user, pwd->pw_gid, gids, &count);
 
 	printf("Got %d groups\n", ret);
-	for (i=0;i<count;i++) {
-		printf("%u ", (unsigned)gids[i]);
+	if (ret != -1) {
+		for (i=0;i<count;i++) {
+			printf("%u ", (unsigned)gids[i]);
+		}
+		printf("\n");
 	}
-	printf("\n");
 	
 	return 0;
 }
