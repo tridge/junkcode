@@ -7,6 +7,9 @@
 use strict;
 use Getopt::Long;
 
+# search path for include files
+my($opt_include) = ".";
+
 ###################################################
 # general handler
 sub handle_general($$$$$$$$)
@@ -162,18 +165,25 @@ sub parse_elements($$)
 
 
 #####################################################################
-# read a file into a string
-sub FileLoad($)
+# read a file into a string, handling the include path
+sub IncludeLoad($)
 {
 	my($filename) = shift;
 	local(*INPUTFILE);
-	open(INPUTFILE, $filename) || die "can't open $filename";    
-	my($saved_delim) = $/;
-	undef $/;
-	my($data) = <INPUTFILE>;
-	close(INPUTFILE);
-	$/ = $saved_delim;
-	return $data;
+	my(@dirs) = split(/:/, $opt_include);
+
+	for (my($i)=0; $i <= $#{@dirs}; $i++) {
+		if (open(INPUTFILE, $dirs[$i] . "/" . $filename)) {
+			my($saved_delim) = $/;
+			undef $/;
+			my($data) = <INPUTFILE>;
+			close(INPUTFILE);
+			$/ = $saved_delim;
+			return $data;
+		}
+	}
+
+	die "Couldn't find include file $filename\n";
 }
 
 ####################################################
@@ -219,12 +229,20 @@ sub parse_enums($)
 sub parse_header($)
 {
 	my($header) = shift;
+	my(%included);
 
-	my($data) = FileLoad($header);
+	print "Loading headers\n";
+
+	my($data) = IncludeLoad($header);
 
 	# handle includes
 	while ($data =~ /(.*?)\n\#include \"(.*?)\"(.*)/s) {
-		my($inc) = FileLoad($2);
+		my($inc) = "";
+
+		if (!$included{$2}) {
+			$inc = IncludeLoad($2);
+			$included{$2} = 1;
+		}
 
 		if (!defined($inc)) {$inc = "";}
 
@@ -232,13 +250,10 @@ sub parse_header($)
 	}
 
 	# strip comments
-	while ($data =~ /(.*?)\/\*(.*?)\*\/(.*)/s) {
-		$data = $1 . $3;
-	}
-
+	$data =~ s/\/\*.*?\*\// /sg;
 	# collapse spaces 
-	while ($data =~ s/[\t ][\t ]/ /s) {}
-	while ($data =~ s/\n[\n\t ]/\n/s) {}
+	$data =~ s/[\t ]+/ /sg;
+	$data =~ s/\s*\n\s+/\n/sg;
 
 	print CFILE "/* This is an automatically generated file - DO NOT EDIT! */\n\n";
 
@@ -281,7 +296,8 @@ Options:
 GetOptions (
 	    'help|h|?' => \$opt_help, 
 	    'header=s' => \$opt_header,
-	    'cfile=s' => \$opt_cfile
+	    'cfile=s' => \$opt_cfile,
+	    'include=s' => \$opt_include
 	    );
 
 if ($opt_help) {
