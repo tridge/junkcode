@@ -186,9 +186,9 @@ static void tsums_file(const char *fname)
 	TDB_DATA key, data;
 	char *keystr=NULL;
 
-	if (is_ignored(fname)) return;
-
 	if (lstat(fname, &st) != 0) return;
+
+	if (is_ignored(fname)) goto next;
 
 	bzero(&sum, sizeof(sum));
 	sum.mtime = st.st_mtime;
@@ -263,7 +263,7 @@ update:
 	tdb_store(tdb, key, data, TDB_REPLACE);
 
 next:
-	free(keystr);
+	if (keystr) free(keystr);
 
 	if (recurse && S_ISDIR(st.st_mode)) {
 		tsums_dir(fname);
