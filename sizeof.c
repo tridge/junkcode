@@ -1,0 +1,15 @@
+#include <stdio.h>
+#include <sys/types.h>
+
+main()
+{
+        printf("char  : %d\n", sizeof(char));
+        printf("short : %d\n", sizeof(short));
+        printf("int   : %d\n", sizeof(int));
+        printf("long   : %d\n", sizeof(long));
+        printf("long long  : %d\n", sizeof(long long));
+        printf("int * : %d\n", sizeof(int *));
+        printf("time_t : %d\n", sizeof(time_t));
+        printf("off_t : %d\n", sizeof(off_t));
+        printf("uid_t : %d\n", sizeof(uid_t));
+}
