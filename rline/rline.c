@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
 	int fd1[2], fd2[2];
 	char *prompt;
 
-	if (argc < 2) {
+	if (argc < 2 || argv[1][0] == '-') {
 		usage();
 		exit(1);
 	}
