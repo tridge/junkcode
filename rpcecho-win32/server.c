@@ -146,6 +146,11 @@ void main(int argc, char **argv)
 		exit(status);
 	}
 
+	status = RpcServerRegisterAuthInfo(NULL, RPC_C_AUTHN_WINNT, NULL, NULL);
+	if (status) {
+		printf("Failed to setup auth info\n");
+	}
+		
 	status = RpcServerListen(RPC_MIN_CALLS, RPC_MAX_CALLS, FALSE);
 
 	if (status) {
