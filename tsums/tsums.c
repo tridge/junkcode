@@ -108,6 +108,14 @@ static void report_difference(const char *fname,
 	       sum1->size==sum2->size?' ':'s',
 	       do_quick || memcmp(sum1->sum, sum2->sum, 16)==0?' ':'4',
 	       fname);
+	if (verbose && !do_quick && memcmp(sum1->sum, sum2->sum, 16)) {
+		int i;
+		printf("\t");
+		for (i=0;i<16;i++) printf("%02x", sum1->sum[i]);
+		printf("\t");
+		for (i=0;i<16;i++) printf("%02x", sum2->sum[i]);
+		printf("\n");
+	}
 }
 
 
@@ -307,7 +315,7 @@ static int load_ignore(TDB_CONTEXT *db, TDB_DATA key, TDB_DATA data,
 
 static void process_one(char *fname)
 {
-	if (verbose) {
+	if (verbose>1) {
 		printf("%s\n", fname);
 	}
 	if (do_ignore) {
