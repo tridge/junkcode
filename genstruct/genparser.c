@@ -279,7 +279,7 @@ static int gen_dump_array(struct parse_string *p,
 		}
 		
 		if ((count || pinfo->ptr_count) && 
-		    /* pinfo->type != T_ENUM &&  */
+		    !(pinfo->flags & FLAG_ALWAYS) &&
 		    all_zero(ptr, size)) {
 			ptr += size;
 			continue;
@@ -373,6 +373,26 @@ static int gen_dump_string(struct parse_string *p,
 	return 0;
 }
 
+/* 
+   find the length of a nullterm array
+*/
+static int len_nullterm(const char *ptr, int size, int array_len)
+{
+	int len;
+
+	if (size == 1) {
+		len = strnlen(ptr, array_len);
+	} else {
+		for (len=0;len<array_len;len++) {
+			if (all_zero(ptr+len*size, size)) break;
+		}
+	}
+
+	if (len == 0) len = 1;
+
+	return len;
+}
+
 
 /* the generic dump routine. Scans the parse information for this structure
    and processes it recursively */
@@ -403,14 +423,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 		if (pinfo[i].array_len) {
 			unsigned len = pinfo[i].array_len;
 			if (pinfo[i].flags & FLAG_NULLTERM) {
-				if (size == 1) {
-					len = strnlen(ptr, pinfo[i].array_len) + 1;
-				} else {
-					for (len=0;len<pinfo[i].array_len;len++) {
-						if (all_zero(ptr+len*size, size)) break;
-					}
-					len++;
-				}
+				len = len_nullterm(ptr, size, len);
 			}
 			if (gen_dump_array(&p, &pinfo[i], ptr, 
 					   len, indent)) {
@@ -427,6 +440,10 @@ char *gen_dump(const struct parse_struct *pinfo,
 				goto failed;
 			}
 			if (len > 0) {
+				if (pinfo[i].flags & FLAG_NULLTERM) {
+					len = len_nullterm(*(char **)ptr, 
+							   pinfo[i].size, len);
+				}
 				p2.ptr_count--;
 				p2.dynamic_len = NULL;
 				if (gen_dump_array(&p, &p2, *(char **)ptr, 
