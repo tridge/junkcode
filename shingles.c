@@ -25,6 +25,8 @@
 
 #define FLAG_IGNORE_HEADERS 1
 
+#define ROLLING_WINDOW 20
+
 typedef unsigned u32;
 typedef unsigned char uchar;
 
@@ -175,16 +177,62 @@ static inline u32 sum_hash(uchar c, u32 h)
 	return h;
 }
 
+static struct {
+	uchar window[ROLLING_WINDOW];
+	u32 h1, h2, h3;
+	u32 n;
+} roll_state;
+
+/*
+  a rolling hash, based on the Adler checksum. By using a rolling hash
+  we can perform auto resynchronisation after inserts/deletes
+
+  internally, h1 is the sum of the bytes in the window and h2
+  is the sum of the bytes times the index
+
+  h3 is a shift/xor based rolling hash, and is mostly needed to ensure that
+  we can cope with large blocksize values
+*/
+static inline u32 roll_hash(uchar c)
+{
+	roll_state.h2 -= roll_state.h1;
+	roll_state.h2 += ROLLING_WINDOW * c;
+
+	roll_state.h1 += c;
+	roll_state.h1 -= roll_state.window[roll_state.n % ROLLING_WINDOW];
+
+	roll_state.window[roll_state.n % ROLLING_WINDOW] = c;
+	roll_state.n++;
+
+	roll_state.h3 = (roll_state.h3 << 5) & 0xFFFFFFFF;
+	roll_state.h3 ^= c;
+
+	return roll_state.h1 + roll_state.h2 + roll_state.h3;
+}
+
+/*
+  reset the state of the rolling hash and return the initial rolling hash value
+*/
+static u32 roll_reset(void)
+{	
+	memset(&roll_state, 0, sizeof(roll_state));
+	return 0;
+}
+
 static uchar *advance(uchar *in, unsigned w, uchar *limit)
 {
 	in++;
 	while (w--) {
 		int i;
 		for (i=0;i<MAX_WORD_SIZE;i++) {
+			roll_hash(in[i]);
 			if (in >= limit || !isalnum(in[i])) break;
 		}
 		in += i;
-		while (in < limit && !isalnum(in[0])) in++;
+		while (in < limit && !isalnum(in[0])) {
+			in++;
+			roll_hash(in[i]);
+		}
 	}
 	return in;
 }
@@ -252,6 +300,8 @@ static uchar *shingle_sketch(uchar *in_0, size_t size, u32 flags)
 	sketch  = calloc(sizeof(struct el), SKETCH_SIZE + size+1);
 	sketch2 = calloc(sizeof(struct el), SKETCH_SIZE + size+1);
 	ret = calloc(SKETCH_SIZE+1, 4);
+
+	roll_reset();
 
 	p = advance(in, W_SHINGLES, in_0 + size);
 
