@@ -359,6 +359,7 @@ Options:
   -i          add listed files to ignore list
   -d          dump the ignored list
   -F          flush the ignored list
+  -C <DB>     compare with contents of DB
 ");
 	exit(1);
 }
@@ -367,6 +368,7 @@ int main(int argc, char *argv[])
 {
 	int i;
 	char *db_name = "tsums.tdb";
+	char *cmp_db_name = NULL;
 	extern char *optarg;
 	extern int optind;
 	int c;
@@ -374,7 +376,7 @@ int main(int argc, char *argv[])
 	int use_all = 0;
 	int do_flush_ignore=0;
 
-	while ((c = getopt(argc, argv, "qhuf:idavF")) != -1){
+	while ((c = getopt(argc, argv, "qhuf:idavFC:")) != -1){
 		switch (c) {
 		case 'h':
 			usage();
@@ -399,6 +401,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'f':
 			db_name = optarg;
+			break;
+		case 'C':
+			cmp_db_name = optarg;
 			break;
 		case 'F':
 			do_flush_ignore = 1;
@@ -434,6 +439,12 @@ int main(int argc, char *argv[])
 	if (use_all) {
 		recurse = 0;
 		tdb_traverse(tdb, process_fn, NULL);
+		goto finish;
+	} 
+
+	if (cmp_db_name) {
+		printf("not implemented\n");
+		exit(1);
 		goto finish;
 	} 
 
