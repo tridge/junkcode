@@ -15,7 +15,7 @@ int main(int argc,char *argv[])
 	int i;
 	for (i=1;i<argc;i++) {
 		unsigned char *p;
-		unsigned long long v = strtoll(argv[i], (char **)&p, 0);
+		unsigned long long v = strtoull(argv[i], (char **)&p, 0);
 		if (p == (unsigned char *)argv[i]) for (; *p ; p++) print_one(*p);
 		else print_one(v);
 	}
