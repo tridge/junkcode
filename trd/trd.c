@@ -17,7 +17,6 @@
 #include <linux/blk.h>
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/bootmem.h>
 #include <asm/setup.h>
 #include <asm/uaccess.h>
 
