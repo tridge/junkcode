@@ -1,0 +1,36 @@
+#!/bin/sh
+
+mkdir -p $HOME/photos/s40
+
+cd $HOME/photos/s40 || exit 1
+
+LIST=`gphoto2 --port usb -L 2> /dev/null | grep '^#' | awk '{print $2}'`
+
+if [ -z "$LIST" ]; then
+    echo no photos
+    exit 1
+fi
+
+n1=1
+n2=0
+for f in $LIST; do
+    n2=`expr $n2 + 1`;
+    if [ ! -f $f ]; then
+	echo $f
+    else
+	echo Already have $f
+	if [ $n2 -eq $n1 ]; then
+	    n1=`expr $n2 + 1`
+	fi
+    fi
+done
+
+if [ $n2 -ge $n1 ]; then
+  gphoto2 --port usb -p $n1-$n2
+fi
+
+echo -n 'delete photos? [y/N] '
+read ans
+if [ "$ans" = y ]; then
+    gphoto2 --port usb -D
+fi
