@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -20,6 +21,7 @@ static int loop_count = 100;
 static int num_files = 1;
 static int file_size = 1024*1024;
 static char *base_dir = ".";
+static int use_mmap = 0;
 
 typedef unsigned char uchar;
 
@@ -77,18 +79,35 @@ static void create_file(const char *dir, int loop, int child, int fnum)
 	char fname[1024];
 
 	sprintf(fname, "%s/file%d", dir, fnum);
-	fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+	fd = open(fname, O_RDWR|O_CREAT|O_TRUNC, 0644);
 	if (fd == -1) {
 		perror(fname);
 		exit(1);
 	}
-
-	for (size=0; size<file_size; size += BUF_SIZE) {
-		gen_buffer(buf, loop, child, fnum, size);
-		if (pwrite(fd, buf, BUF_SIZE, size) != BUF_SIZE) {
-			fprintf(stderr,"Write failed at offset %d\n", size);
+		
+	if (!use_mmap) {
+		for (size=0; size<file_size; size += BUF_SIZE) {
+			gen_buffer(buf, loop, child, fnum, size);
+			if (pwrite(fd, buf, BUF_SIZE, size) != BUF_SIZE) {
+				fprintf(stderr,"Write failed at offset %d\n", size);
+				exit(1);
+			}
+		}
+	} else {
+		char *p;
+		if (ftruncate(fd, file_size) != 0) {
+			perror("ftruncate");
 			exit(1);
 		}
+		p = mmap(NULL, file_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+		if (p == (char *)-1) {
+			perror("mmap");
+			exit(1);
+		}
+		for (size=0; size<file_size; size += BUF_SIZE) {
+			gen_buffer(p+size, loop, child, fnum, size);
+		}
+		munmap(p, file_size);
 	}
 
 	close(fd);
@@ -204,6 +223,7 @@ static void usage(void)
 " -s file_size          set file sizes\n"
 " -p path               set base path\n"
 " -l loops              set loop count\n"
+" -m                    use mmap\n"
 " -h                    show this help message\n");
 }
 
@@ -216,7 +236,7 @@ int main(int argc, char *argv[])
 	int num_children = 1;
 	int i, status, ret;
 
-	while ((c = getopt(argc, argv, "n:s:f:p:l:h")) != -1) {
+	while ((c = getopt(argc, argv, "n:s:f:p:l:hm")) != -1) {
 		switch (c) {
 		case 'n':
 			num_children = strtol(optarg, NULL, 0);
@@ -229,6 +249,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'p':
 			base_dir = optarg;
+			break;
+		case 'm':
+			use_mmap = 1;
 			break;
 		case 'l':
 			loop_count = strtol(optarg, NULL, 0);
@@ -244,6 +267,12 @@ int main(int argc, char *argv[])
 
 	argc -= optind;
 	argv += optind;
+
+	/* round up the file size */
+	file_size = (file_size + (BUF_SIZE-1)) & ~(BUF_SIZE-1);
+
+	printf("num_children=%d file_size=%d num_files=%d loop_count=%d mmap=%d\n",
+	       num_children, file_size, num_files, loop_count, use_mmap);
 
 	/* fork and run run_child() for each child */
 	for (i=0;i<num_children;i++) {
