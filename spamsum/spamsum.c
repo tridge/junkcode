@@ -130,23 +130,39 @@ again:
 		if (ignore_char(in[i])) continue;
 
 		/* 
-		   at each character we update the rolling hash and the normal hash. When the rolling
-		   hash hits the reset value then we emit the normal hash as a element of the signature
-		   and reset both hashes
+		   at each character we update the rolling hash and
+		   the normal hash. When the rolling hash hits the
+		   reset value then we emit the normal hash as a
+		   element of the signature and reset both hashes
 		*/
 		h = roll_hash(in[i]);
 		h2 = sum_hash(in[i], h2);
 
 		if (h % block_size == (block_size-1)) {
+			/* we have hit a reset point. We now emit a
+			   hash which is based on all chacaters in the
+			   piece of the message between the last reset
+			   point and this one */
 			p[j] = b64[h2 % 64];
 			h = roll_reset();
 			if (j < SPAMSUM_LENGTH-1) {
+				/* we can have a problem with the tail
+				   overflowing. The easiest way to
+				   cope with this is to only reset the
+				   second hash if we have room for
+				   more characters in our
+				   signature. This has the effect of
+				   combining the last few pieces of
+				   the message into a single piece */
 				h2 = HASH_INIT;
 				j++;
 			}
 		}
 	}
 
+	/* if we have anything left then add it to the end. This
+	 * ensures that the last part of the message is always
+	 * considered */
 	if (h != 0) {
 		p[j] = b64[h2 % 64];
 	}
