@@ -1,4 +1,4 @@
-CFLAGS = -Wall -O2
+CFLAGS = -Wall -g
 # -ftest-coverage -fprofile-arcs
 
 all: ms_fnmatch
