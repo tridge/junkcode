@@ -20,7 +20,7 @@ int main(void)
 
 	for (i=0;i<ngroups;i++) {
 		grp = getgrgid(grps[i]);
-		printf("%5d %s\n", grps[i], grp->gr_name);
+		printf("%5d %s\n", grps[i], grp?grp->gr_name:"<NULL>");
 	}
 	return 0;
 }
