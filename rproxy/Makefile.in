@@ -1,0 +1,50 @@
+# Makefile for rproxy. This is processed by configure to produce the final
+# Makefile
+
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+bindir=@bindir@
+mandir=@mandir@
+
+LIBS=@LIBS@ -lz -Llibrsync -lrsync
+CC=@CC@
+CFLAGS=@CFLAGS@
+
+INSTALLCMD=@INSTALL@
+
+srcdir=@srcdir@
+VPATH=$(srcdir)
+SHELL=/bin/sh
+
+
+.SUFFIXES:
+.SUFFIXES: .c .o
+
+OBJS = rproxy.o header.o util.o socklib.o cache.o signature.o \
+       stream.o compress.o \
+       lib/mdfour.o lib/snprintf.o lib/getopt.o lib/compat.o
+
+# note that the -I. is needed to handle config.h when using VPATH
+.c.o:
+@OBJ_SAVE@
+	$(CC) -I. -I$(srcdir) -I$(srcdir)/lib $(CFLAGS) -c $< @CC_SHOBJ_FLAG@
+@OBJ_RESTORE@
+
+all: rproxy
+
+install: all
+	-mkdir -p ${bindir}
+	${INSTALLCMD} -m 755 rproxy ${bindir}
+
+rproxy: $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o rproxy $(OBJS) $(LIBS)
+
+proto:
+	cat *.c | awk -f mkproto.awk > proto.h
+
+clean:
+	rm -f *~ $(OBJS) rproxy
+
+distclean: clean
+	rm -f config.h config.cache config.status Makefile
+

@@ -1,0 +1,150 @@
+dnl Process this file with autoconf to produce a configure script.
+AC_INIT(rproxy.h)
+AC_CONFIG_HEADER(config.h)
+
+# compile with optimisation and without debugging by default
+CFLAGS=${CFLAGS-"-O"}
+
+AC_CANONICAL_SYSTEM
+AC_VALIDATE_CACHE_SYSTEM_TYPE
+
+dnl Checks for programs.
+AC_PROG_CC
+AC_PROG_INSTALL
+
+AC_C_BIGENDIAN
+AC_HEADER_DIRENT
+AC_HEADER_TIME
+AC_HEADER_SYS_WAIT
+AC_CHECK_HEADERS(sys/fcntl.h sys/select.h fcntl.h sys/time.h sys/unistd.h unistd.h utime.h grp.h)
+AC_CHECK_HEADERS(compat.h sys/param.h ctype.h sys/wait.h sys/ioctl.h)
+AC_CHECK_HEADERS(sys/filio.h string.h stdlib.h sys/socket.h sys/mode.h)
+AC_CHECK_HEADERS(glob.h)
+
+AC_CHECK_SIZEOF(int)
+AC_CHECK_SIZEOF(long)
+AC_CHECK_SIZEOF(short)
+
+AC_TYPE_SIGNAL
+AC_TYPE_OFF_T
+AC_TYPE_SIZE_T
+AC_TYPE_PID_T
+
+AC_CACHE_CHECK([for errno in errno.h],rproxy_cv_errno, [
+    AC_TRY_COMPILE([#include <errno.h>],[int i = errno],
+	rproxy_cv_errno=yes,rproxy_cv_have_errno_decl=no)])
+if test x"$rproxy_cv_errno" = x"yes"; then
+   AC_DEFINE(HAVE_ERRNO_DECL)
+fi
+
+AC_FUNC_MEMCMP
+AC_FUNC_UTIME_NULL
+AC_CHECK_FUNCS(waitpid wait4 strdup strerror)
+AC_CHECK_FUNCS(fstat strchr strftime)
+AC_CHECK_FUNCS(memmove vsnprintf snprintf setsid glob strpbrk)
+AC_CHECK_FUNCS(strlcat strlcpy)
+
+AC_CACHE_CHECK([for working fnmatch],rproxy_cv_HAVE_FNMATCH,[
+AC_TRY_RUN([#include <fnmatch.h>
+main() { exit(fnmatch("*.o", "x.o", FNM_PATHNAME) == 0? 0: 1); }],
+rproxy_cv_HAVE_FNMATCH=yes,rproxy_cv_HAVE_FNMATCH=no,rproxy_cv_HAVE_FNMATCH=cross)])
+if test x"$rproxy_cv_HAVE_FNMATCH" = x"yes"; then
+    AC_DEFINE(HAVE_FNMATCH)
+fi
+
+AC_CACHE_CHECK([for unsigned char],rproxy_cv_HAVE_UNSIGNED_CHAR,[
+AC_TRY_RUN([#include <stdio.h>
+main() { char c; c=250; exit((c > 0)?0:1); }],
+rproxy_cv_HAVE_UNSIGNED_CHAR=yes,rproxy_cv_HAVE_UNSIGNED_CHAR=no,rproxy_cv_HAVE_UNSIGNED_CHAR=cross)])
+if test x"$rproxy_cv_HAVE_UNSIGNED_CHAR" = x"yes"; then
+    AC_DEFINE(HAVE_UNSIGNED_CHAR)
+fi
+
+AC_CACHE_CHECK([for broken inet_ntoa],rproxy_cv_REPLACE_INET_NTOA,[
+AC_TRY_RUN([
+#include <stdio.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+main() { struct in_addr ip; ip.s_addr = 0x12345678;
+if (strcmp(inet_ntoa(ip),"18.52.86.120") &&
+    strcmp(inet_ntoa(ip),"120.86.52.18")) { exit(0); } 
+exit(1);}],
+           rproxy_cv_REPLACE_INET_NTOA=yes,rproxy_cv_REPLACE_INET_NTOA=no,rproxy_cv_REPLACE_INET_NTOA=cross)])
+if test x"$rproxy_cv_REPLACE_INET_NTOA" = x"yes"; then
+    AC_DEFINE(REPLACE_INET_NTOA)
+fi
+
+# The following test taken from the cvs sources
+# If we can't find connect, try looking in -lsocket, -lnsl, and -linet.
+# The Irix 5 libc.so has connect and gethostbyname, but Irix 5 also has
+# libsocket.so which has a bad implementation of gethostbyname (it
+# only looks in /etc/hosts), so we only look for -lsocket if we need
+# it.
+AC_CHECK_FUNCS(connect)
+if test x"$ac_cv_func_connect" = x"no"; then
+    case "$LIBS" in
+    *-lnsl*) ;;
+    *) AC_CHECK_LIB(nsl_s, printf) ;;
+    esac
+    case "$LIBS" in
+    *-lnsl*) ;;
+    *) AC_CHECK_LIB(nsl, printf) ;;
+    esac
+    case "$LIBS" in
+    *-lsocket*) ;;
+    *) AC_CHECK_LIB(socket, connect) ;;
+    esac
+    case "$LIBS" in
+    *-linet*) ;;
+    *) AC_CHECK_LIB(inet, connect) ;;
+    esac
+    dnl We can't just call AC_CHECK_FUNCS(connect) here, because the value
+    dnl has been cached.
+    if test x"$ac_cv_lib_socket_connect" = x"yes" || 
+       test x"$ac_cv_lib_inet_connect" = x"yes"; then
+        # ac_cv_func_connect=yes
+        # don't!  it would cause AC_CHECK_FUNC to succeed next time configure is run
+        AC_DEFINE(HAVE_CONNECT)
+    fi
+fi
+
+# 
+# if we can't find strcasecmp, look in -lresolv (for Unixware at least)
+#
+AC_CHECK_FUNCS(strcasecmp)
+if test x"$ac_cv_func_strcasecmp" = x"no"; then
+    AC_CHECK_LIB(resolv, strcasecmp)
+fi
+
+#
+# The following test was mostly taken from the tcl/tk plus patches
+#
+AC_CACHE_CHECK([whether -c -o works],rproxy_cv_DASHC_WORKS_WITH_DASHO,[
+rm -rf conftest*
+cat > conftest.$ac_ext <<EOF
+int main() { return 0; }
+EOF
+${CC-cc} -c -o conftest..o conftest.$ac_ext
+if test -f conftest..o; then
+    rproxy_cv_DASHC_WORKS_WITH_DASHO=yes
+else
+    rproxy_cv_DASHC_WORKS_WITH_DASHO=no
+fi
+rm -rf conftest*
+])
+if test x"$rproxy_cv_DASHC_WORKS_WITH_DASHO" = x"yes"; then
+    OBJ_SAVE="#"
+    OBJ_RESTORE="#"
+    CC_SHOBJ_FLAG='-o $@'
+else
+    OBJ_SAVE='	@b=`basename $@ .o`;rm -f $$b.o.sav;if test -f $$b.o; then mv $$b.o $$b.o.sav;fi;'
+    OBJ_RESTORE='	@b=`basename $@ .o`;if test "$$b.o" != "$@"; then mv $$b.o $@; if test -f $$b.o.sav; then mv $$b.o.sav $$b.o; fi; fi'
+    CC_SHOBJ_FLAG=""
+fi
+
+AC_SUBST(OBJ_SAVE)
+AC_SUBST(OBJ_RESTORE)
+AC_SUBST(CC_SHOBJ_FLAG)
+
+AC_OUTPUT(Makefile)
