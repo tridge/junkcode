@@ -452,12 +452,13 @@ static void idr_test(int n)
 {
 	struct idr idr;
 	int i;
-	int ids[n];
-	int present[n];
+	int *ids;
+	int *present;
 
 	idr_init(&idr);
 
-	memset(present, 0, n*sizeof(int));
+	ids = calloc(n, sizeof(int));
+	present = calloc(n, sizeof(int));
 
 	for (i=0;i<n;i++) {
 		ids[i] = -1;
