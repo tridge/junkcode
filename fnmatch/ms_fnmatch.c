@@ -233,13 +233,13 @@ int main(void)
 //	exit(0);
 
 	for (i=0;i<100000;i++) {
-		int len1 = random() % 2000;
-		int len2 = random() % 2000;
+		int len1 = random() % 35;
+		int len2 = random() % 35;
 		char *p = malloc(len1+1);
 		char *n = malloc(len2+1);
 		int ret1, ret2;
 
-		randstring(p, len1, "*>\"?a.");
+		randstring(p, len1, "*><\"?a.");
 		randstring(n, len2, "a.");
 
 		p_used = p;
@@ -247,11 +247,11 @@ int main(void)
 
 		alarm(0);
 		start_timer();
-//		ret1 = fnmatch_orig(p, n);
+		ret1 = fnmatch_orig(p, n);
 		t1 += end_timer();
 		alarm(2);
 		start_timer();
-		ret1 = ret2 = fnmatch_test(p, n);
+		ret2 = fnmatch_test(p, n);
 		t2 += end_timer();
 		alarm(0);
 
