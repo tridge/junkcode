@@ -89,9 +89,6 @@ static int trd_allocate(int minor)
 	/* it might be already allocated */
 	if (trd_base[minor]) return 0;
 
-	trd_blocksizes[minor] = TRD_BLOCK_SIZE;
-	trd_blk_sizes[minor] = trd_size;
-
 	trd_base[minor] = (void **)vmalloc(sizeof(void *)*trd_pages);
 	if (!trd_base[minor]) goto nomem;
 	memset(trd_base[minor], 0, sizeof(void *)*trd_pages);
@@ -156,6 +153,9 @@ static int trd_ioctl(struct inode *inode, struct file *file,
 	switch (cmd) {
 	case BLKGETSIZE:
 		return put_user(TRD_SIZE >> 9, (long *) arg);
+	default:
+		printk(KERN_ERR DEVICE_NAME ": unknown ioctl 0x%x\n", cmd);
+		break;
 	}
 	return -EINVAL;
 }
@@ -170,11 +170,18 @@ static struct block_device_operations trd_fops =
 
 static int trd_init(void)
 {
+	int i;
+
 	trd_pages = (TRD_SIZE + (PAGE_SIZE-1)) / PAGE_SIZE;
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &trd_fops)) {
 		printk(KERN_ERR DEVICE_NAME ": Unable to register_blkdev(%d)\n", MAJOR_NR);
 		return -EBUSY;
+	}
+
+	for (i=0;i<MAX_DEVS;i++) {
+		trd_blocksizes[i] = TRD_BLOCK_SIZE;
+		trd_blk_sizes[i] = trd_size;
 	}
 
 	blk_init_queue(BLK_DEFAULT_QUEUE(MAJOR_NR), DEVICE_REQUEST);
