@@ -47,9 +47,25 @@ static void fatal(const char *format, ...)
 	if (!ptr || !*ptr) return;
 
 	fprintf(stderr, "%s", ptr);
+
 	free(ptr);
 	exit(1);
 }
+
+
+static int dump_fn(TDB_CONTEXT *db, TDB_DATA key, TDB_DATA data, void *state)
+{
+	if (strncmp(key.dptr, "IGNORE:", 7) == 0) {
+		printf("%s\n", key.dptr);
+	}
+	return 0;
+}
+
+static void dump_ignored(void)
+{
+	tdb_traverse(tdb, dump_fn, NULL);
+}
+
 
 static void report_difference(const char *fname, 
 			      struct sum_struct *sum2, 
@@ -106,11 +122,53 @@ static int file_checksum(const char *fname, char sum[16])
 	return 0;
 }
 
+static void ignore_file(const char *fname)
+{
+	TDB_DATA key, data;
+	char *keystr=NULL;
+	int one=1;
+
+	asprintf(&keystr, "IGNORE:%s", fname);
+	key.dptr = keystr;
+	key.dsize = strlen(keystr)+1;
+	data.dptr = (void *)&one;
+	data.dsize = sizeof(one);
+
+	tdb_store(tdb, key, data, TDB_REPLACE);
+
+	printf("Added %s\n", keystr);
+	free(keystr);
+}
+
+static int is_ignored(const char *fname)
+{
+	TDB_DATA key, data;
+	char *keystr=NULL;
+
+	asprintf(&keystr, "IGNORE:%s", fname);
+	key.dptr = keystr;
+	key.dsize = strlen(keystr)+1;
+	data.dptr = NULL;
+	data.dsize = 0;
+
+	data = tdb_fetch(tdb, key);
+
+	free(keystr);
+
+	if (data.dptr) return 1;
+
+	return 0;
+}
+
+
 static void tsums_file(const char *fname)
 {
 	struct stat st;
 	struct sum_struct sum;
 	TDB_DATA key, data;
+	char *keystr=NULL;
+
+	if (is_ignored(fname)) return;
 
 	if (lstat(fname, &st) != 0) return;
 
@@ -132,17 +190,24 @@ static void tsums_file(const char *fname)
 		file_checksum(fname, &sum.sum[0]);
 	}
 
-	key.dptr = (void *)fname;
-	key.dsize = strlen(fname)+1;
+	asprintf(&keystr, "FILE:%s", fname);
+
+	key.dptr = (void *)keystr;
+	key.dsize = strlen(keystr)+1;
 	data = tdb_fetch(tdb, key);
+	
 	if (data.dptr && memcmp(&sum, data.dptr, sizeof(sum)) != 0) {
 		report_difference(fname, &sum, (struct sum_struct *)data.dptr);
-		if (!do_update) return;
+		if (!do_update) {
+			free(keystr);
+			return;
+		}
 	}
 
 	data.dptr = (void *)&sum;
 	data.dsize = sizeof(sum);
 	tdb_store(tdb, key, data, TDB_REPLACE);
+	free(keystr);
 }
 
 static void tsums_dir(const char *dname)
@@ -158,10 +223,8 @@ static void tsums_dir(const char *dname)
 		if (strcmp(de->d_name, ".") == 0 ||
 		    strcmp(de->d_name, "..") == 0) continue;
 		asprintf(&s, "%s/%s", dname, de->d_name);
-		if (s) {
-			tsums_file(s);
-			free(s);
-		}
+		tsums_file(s);
+		free(s);
 	}
 	closedir(d);
 }
@@ -188,14 +251,22 @@ int main(int argc, char *argv[])
 	extern char *optarg;
 	extern int optind;
 	int c;
+	int do_ignore = 0;
+	int do_dump = 0;
 
-	while ((c = getopt(argc, argv, "huf:")) != -1){
+	while ((c = getopt(argc, argv, "huf:id")) != -1){
 		switch (c) {
 		case 'h':
 			usage();
 			break;
 		case 'u':
 			do_update = 1;
+			break;
+		case 'd':
+			do_dump = 1;
+			break;
+		case 'i':
+			do_ignore = 1;
 			break;
 		case 'f':
 			db_name = optarg;
@@ -216,8 +287,17 @@ int main(int argc, char *argv[])
 		fatal("can't open tdb\n");
 	}
 
+	if (do_dump) {
+		dump_ignored();
+		exit(0);
+	}
+
 	for (i=0;i<argc;i++) {
-		tsums_dir(argv[i]);
+		if (do_ignore) {
+			ignore_file(argv[i]);
+		} else {
+			tsums_file(argv[i]);
+		}
 	}
 
 	tdb_close(tdb);

@@ -6,7 +6,7 @@ NOTIFY="tridge@samba.org tridge@valinux.com"
 
 export PATH=/bin:/sbin:/usr/bin:$PATH
 
-nice ./tsums $PATHS > tsums.out 2>&1
+nice ./tsums -f tsums.tdb $PATHS > tsums.out 2>&1
 
 if [ -s tsums.out ]; then
    Mail -s 'URGENT tsums' $NOTIFY < tsums.out
