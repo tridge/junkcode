@@ -1,5 +1,4 @@
 #include "rproxy.h"
-#include "librsync/rsync.h"
 
 struct mem_buf {
 	char *buf;
@@ -16,7 +15,19 @@ struct file_buf {
 };
 
 
+enum rs_result {RS_DONE};
+
 size_t sig_inbytes, sig_outbytes, sig_zinbytes, sig_zoutbytes;
+
+typedef struct {
+	char *next_in;		/**< Next input byte */
+	size_t avail_in;            /**< Number of bytes available at next_in */
+	int eof_in;                 /**< True if there is no more data
+				     * after this.  */
+	
+	char *next_out;		/**< Next output byte should be put there */
+	size_t avail_out;           /**< Remaining free space at next_out */
+} rs_buffers_t;
 
 static ssize_t sig_writebuf(void *private, char *buf, size_t len)
 {

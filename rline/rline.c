@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pty.h>
+#include <fcntl.h>
 #include <utmp.h>
 #include <errno.h>
 #include <readline/readline.h>
@@ -185,6 +186,31 @@ void line_handler(char *line)
 }
 
 
+/* mirror echo mode from a slave terminal to our terminal */
+static void mirror_echo_mode(int fd)
+{  
+	struct termios pterm1, pterm2;
+	
+	if (tcgetattr(fd, &pterm1) != 0) return;
+	if (tcgetattr(0, &pterm2) != 0) return;
+
+	pterm2.c_lflag &= ~ICANON;
+	pterm2.c_lflag &= ~ECHO;
+	pterm2.c_lflag |= ISIG;
+	pterm2.c_cc[VMIN] = 1;
+	pterm2.c_cc[VTIME]=0;
+	pterm2.c_lflag &= ~(ICANON|ISIG|ECHO|ECHONL|ECHOCTL| 
+			    ECHOE|ECHOK|ECHOKE| 
+			    ECHOPRT);
+	if (pterm1.c_lflag) {
+		pterm2.c_lflag |= ECHO;
+	} else {
+		pterm2.c_lflag &= ~ECHO;
+	}
+	tcsetattr(0, TCSANOW, &pterm2);
+}
+
+
 /* setup the slave side of a pty appropriately */
 static void setup_terminal(int fd)
 {
@@ -211,6 +237,8 @@ int main(int argc, char *argv[])
 	char *prompt;
 	pid_t pid;
 	struct termios term, *pterm=NULL;
+	int slave_fd;
+	char slave_name[100];
 
 	if (argc < 2 || argv[1][0] == '-') {
 		usage();
@@ -226,7 +254,7 @@ int main(int argc, char *argv[])
 
 	/* by using forkpty we give a true pty to the child, which means it should 
 	   behave the same as if run from a terminal */
-	pid = forkpty(&child_fd, NULL, pterm, NULL);
+	pid = forkpty(&child_fd, slave_name, pterm, NULL);
 
 	if (pid == (pid_t)-1) {
 		perror("forkpty");
@@ -241,6 +269,8 @@ int main(int argc, char *argv[])
 		perror(argv[1]);
 		exit(1);
 	}
+
+	slave_fd = open(slave_name, O_RDWR);
 
 	/* initial blank prompt */
 	prompt = strdup("");
@@ -295,6 +325,9 @@ int main(int argc, char *argv[])
 
 			rl_set_prompt(prompt);
 			rl_on_new_line_with_prompt();
+			if (slave_fd != -1) {
+				mirror_echo_mode(slave_fd);
+			}
 		}
 	}
 
