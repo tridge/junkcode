@@ -151,7 +151,7 @@ mail_fetch() {
 # mail_send to find
 mail_sendmail() {
     msg=$HOME/$MAIL_DIR/mail.out.$RANDOM.$$
-    tmp=tmp.$msg
+    tmp=$msg.tmp
     cat > $tmp
     /bin/mv $tmp $msg
     mail_sendmail_hook $msg
