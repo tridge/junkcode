@@ -470,7 +470,7 @@ static int setup(struct cgi_state *cgi)
 		ret = setup_standalone(cgi);
 	}
 
-	while (cgi->pathinfo && *cgi->pathinfo == '/') cgi->pathinfo++;
+	while (*cgi->pathinfo && *cgi->pathinfo == '/') cgi->pathinfo++;
 
 	return ret;
 }
