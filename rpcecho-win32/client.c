@@ -27,16 +27,53 @@ void main(int argc, char **argv)
 {
 	RPC_STATUS status;
 	char *binding = NULL, *network_address = NULL;
+	const char *username=NULL;
+	const char *password=NULL;
+	const char *domain=NULL;
+	unsigned sec_options = 0;
 
-	if (argc > 3 && strcmp(argv[1], "-e") == 0) {
-		binding = argv[2];
+	argv += 1;
+	argc -= 1;
+
+	while (argc > 2 && argv[0][0] == '-') {
+		const char *option;
+
+		switch (argv[0][1]) {
+		case 'e':
+			binding = argv[1];
+			break;
+		case 'u':
+			username = argv[1];
+			break;
+		case 'p':
+			password = argv[1];
+			break;
+		case 'd':
+			domain = argv[1];
+			break;
+		case '-':
+			option = &argv[0][2];
+			if (strcmp(option, "sign") == 0) {
+				sec_options |= RPC_C_AUTHN_LEVEL_PKT_INTEGRITY;
+			} else if (strcmp(option, "seal") == 0) {
+				sec_options |= RPC_C_AUTHN_LEVEL_PKT_PRIVACY;
+			} else {
+				printf("Bad security option '%s'\n", option);
+				exit(1);
+			}
+			argv++;
+			argc--;
+			continue;
+		default:
+			printf("Bad option -%c\n", argv[0][0]);
+			exit(1);
+		}
 		argv += 2;
 		argc -= 2;
 	}
 
-
-	if (argc < 3) {
-		printf("Usage: client [-e endpoint] hostname cmd [args]\n\n");
+	if (argc < 2) {
+		printf("Usage: client [options] hostname cmd [args]\n\n");
 		printf("Where hostname is the name of the host to connect to,\n");
 		printf("and cmd is the command to execute with optional args:\n\n");
 		printf("\taddone num\tAdd one to num and return the result\n");
@@ -44,14 +81,14 @@ void main(int argc, char **argv)
 		printf("\tsinkdata size\tSend an array of size bytes\n");
 		printf("\tsourcedata size\tReceive an array of size bytes\n");
 		printf("\ttest\trun testcall\n");
+		printf("\noptions:\n");
+		printf("\t-u username -d domain -p password\n");
+		printf("\t--sign --seal\n");
 		exit(0);
 	}
 
-	if (strcmp(argv[1], "localhost") != 0)
+	if (strcmp(argv[0], "localhost") != 0)
 		network_address = argv[1];
-
-	argc = argc - 2;
-	argv = argv + 2;
 
 	if (!binding) {
 		status = RpcStringBindingCompose(
@@ -78,6 +115,23 @@ void main(int argc, char **argv)
 		printf("RpcBindingFromStringBinding returned %d\n", status);
 		exit(status);
 	}
+
+	if (username) {
+		SEC_WINNT_AUTH_IDENTITY ident = { username, strlen(username),
+						  domain, strlen(domain),
+						  password, strlen(password),
+						  SEC_WINNT_AUTH_IDENTITY_ANSI };
+
+		status = RpcBindingSetAuthInfo(rpcecho_IfHandle, NULL,
+					       sec_options,
+					       RPC_C_AUTHN_WINNT,
+					       &ident, 0);
+		if (status) {
+			printf ("RpcBindingSetAuthInfo failed: 0x%x\n", status);
+			exit (1);
+		}
+	}
+
 
 	RpcTryExcept {
 
