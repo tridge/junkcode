@@ -11,34 +11,46 @@ my($opt_parsers) = 0;
 
 ###################################################
 # general handler
-sub handle_general($$$$$$)
+sub handle_general($$$$$$$)
 {
 	my($name) = shift;
 	my($type) = shift;
-	my($flags) = shift;
+	my($ptr_count) = shift;
 	my($size) = shift;
 	my($element) = shift;
 	my($handler) = shift;
+	my($flags) = shift;
 	my($array_len) = 0;
+	my($dynamic_len) = "NULL";
 
-	if ($element =~ /(.*?)\[(.*?)\]/) {
+	# handle arrays, currently treat multidimensional arrays as 1 dimensional
+	while ($element =~ /(.*)\[(.*?)\]$/) {
 		$element = $1;
-		$array_len = $2;
+		if ($array_len == 0) {
+			$array_len = $2;
+		} else {
+			$array_len = "$2 * $array_len";
+		}
 	}
 
-	print CFILE "{\"$element\", $type, $flags, $size, offsetof(struct $name, $element), $array_len, $handler},\n";
+	if ($flags =~ /_LEN\((\w*?)\)/) {
+		$dynamic_len = "\"$1\"";
+	}
+
+	print CFILE "{\"$element\", $type, $ptr_count, $size, offsetof(struct $name, $element), $array_len, $handler, $dynamic_len},\n";
 }
 
 
 ####################################################
 # parse one element
-sub parse_one($$$)
+sub parse_one($$$$)
 {
 	my($name) = shift;
 	my($type) = shift;
 	my($element) = shift;
+	my($flags) = shift;
 	my($tstr) = "";
-	my($flags) = "0";
+	my($ptr_count) = 0;
 	my($handler) = "NULL";
 	my(%typemap) = (
 		       "double" => "T_DOUBLE",
@@ -47,7 +59,9 @@ sub parse_one($$$)
 		       "unsigned int" => "T_UNSIGNED",
 		       "unsigned" => "T_UNSIGNED",
 		       "long" => "T_LONG",
+		       "unsigned long" => "T_ULONG",
 		       "char" => "T_CHAR",
+		       "unsigned char" => "T_CHAR",
 		       "time_t" => "T_TIME_T"
 		       );
 
@@ -59,18 +73,16 @@ sub parse_one($$$)
 		$element = $1;
 	}
 
-	# handle strings
-	if ($type eq "char*") {
-		$tstr .= "|T_STRING";
-		$size = "sizeof($type)";
-		handle_general($name, "T_STRING", "0", $size, $element, $handler);
-		return;
-	}
-	
 	# look for pointers 
-	if ($type =~ /(.*)\*/) {
-		$flags = "T_PTR";
+	while ($type =~ /(.*)\*/) {
+		$ptr_count++;
 		$type = $1;
+	}
+
+	if ($type eq "char" && $ptr_count > 0) {
+		handle_general($name, "T_STRING", $ptr_count-1, "sizeof(char *)", 
+			       $element, $handler, $flags);
+		return;
 	}
 
 	if ($typemap{$type}) {
@@ -87,15 +99,16 @@ sub parse_one($$$)
 		print "skipping unknown type '$type'\n";
 		return;
 	}
-	handle_general($name, $tstr, $flags, $size, $element, $handler);
+	handle_general($name, $tstr, $ptr_count, $size, $element, $handler, $flags);
 }
 
 ####################################################
 # parse one element
-sub parse_element($$)
+sub parse_element($$$)
 {
 	my($name) = shift;
 	my($element) = shift;
+	my($flags) = shift;
 	my($type);
 	my($data);
 
@@ -106,6 +119,9 @@ sub parse_element($$)
 	} elsif ($element =~ /^enum (\S*) (.*)/) {
 		$type = "enum $1";
 		$data = $2;
+	} elsif ($element =~ /^unsigned (\S*) (.*)/) {
+		$type = "unsigned $1";
+		$data = $2;
 	} elsif ($element =~ /^(\S*) (.*)/) {
 		$type = $1;
 		$data = $2;
@@ -115,10 +131,10 @@ sub parse_element($$)
 
 	# handle comma separated lists 
 	while ($data =~ /(\S*),[\s]?(.*)/) {
-		parse_one($name, $type, $1);
+		parse_one($name, $type, $1, $flags);
 		$data = $2;
 	}
-	parse_one($name, $type, $data);
+	parse_one($name, $type, $data, $flags);
 }
 
 
@@ -129,14 +145,15 @@ sub parse_elements($$)
 	my($name) = shift;
 	my($elements) = shift;
 
-	print "Parsing $name\n";
+	print "Parsing struct $name\n";
 
 	print CFILE "static struct parse_struct pinfo_" . $name . "[] = {\n";
 
-	while ($elements =~ /.*^([a-z].*?);.*?\n(.*)/si) {
+	while ($elements =~ /.*^([a-z].*?);\s*?(\S*?)\s*?\n(.*)/si) {
 		my($element) = $1;
-		$elements = $2;
-		parse_element($name, $element);
+		my($flags) = $2;
+		$elements = $3;
+		parse_element($name, $element, $flags);
 	}
 
 	print CFILE "{NULL, 0, 0, 0, 0, 0, NULL}};\n\n";
