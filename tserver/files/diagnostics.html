@@ -5,6 +5,12 @@
 This page shows some basic hardware information which may be useful in
 diagnosing problems with your Snapserver
 
+
+<h3>The environment</h3>
+<pre>
+{{ ! printenv }}
+</pre>
+
 <h3>PCI Devices</h3>
 
 <small>
@@ -32,11 +38,13 @@ diagnosing problems with your Snapserver
 {{ !
    cd /proc/ide || exit 1;
    for d in hd*; do
-      echo "<tr align=right>"
-      echo "<td>$d</td>";
-      echo "<td>"`cat $d/model`"</td>";
-      echo "<td>"`cat $d/capacity 2> /dev/null`"</td>"
-      echo "</tr>"
+cat << EOF
+      <tr align=right>
+      <td>$d</td>
+      <td>`cat $d/model`</td>
+      <td>`cat $d/capacity 2> /dev/null`</td>
+      </tr>
+EOF
    done
 }}
 </table>
