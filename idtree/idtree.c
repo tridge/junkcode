@@ -10,9 +10,9 @@
 typedef int spinlock_t;
 typedef void kmem_cache_t;
 
-#define spin_lock(x) ((*x)=1)
+#define spin_lock(x) do { if (*x) printf("already locked?!\n"); (*x)=1; } while (0)
+#define spin_unlock(x) do { if (! *x) printf("not locked?!\n"); (*x)=0; } while (0)
 #define spin_lock_init(x) ((*x)=0)
-#define spin_unlock(x) ((*x)=0)
 
 #define kmem_cache_alloc(cache, mask) calloc(1, sizeof(struct idr_layer))
 #define kmem_cache_free(cache, p) free(p)
