@@ -279,3 +279,54 @@ BOOL trim_string(char *s,const char *front,const char *back)
 	
 	return(ret);
 }
+
+
+void logmsg(const char *format, ...)
+{
+	va_list ap;  
+	char *s = NULL;
+
+	va_start(ap, format);
+	vasprintf(&s, format, ap);
+	va_end(ap);
+	
+	printf("%4u: %s", (unsigned)getpid(), s);
+	free(s);
+}
+
+void errmsg(const char *format, ...)
+{
+	va_list ap;  
+	char *s = NULL;
+
+	va_start(ap, format);
+	vasprintf(&s, format, ap);
+	va_end(ap);
+	
+	printf("%4u: ERROR! %s", (unsigned)getpid(), s);
+	free(s);
+}
+
+/*
+  save a lump of data into a file. Mostly used for debugging 
+*/
+void file_save(const char *fname, void *data, size_t length)
+{
+	int fd;
+	fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+	if (fd == -1) {
+		return;
+	}
+	if (write(fd, data, length) != length) {
+		return;
+	}
+	close(fd);
+}
+
+float cputime(void)
+{
+	struct rusage ru;
+
+	getrusage(RUSAGE_SELF, &ru);
+	return ru.ru_utime.tv_sec + 1.0e-6*ru.ru_utime.tv_usec;
+}

@@ -10,7 +10,7 @@ char *body_load(FILE *f, int *content_length)
 	if ((*content_length) != -1) {
 		body = xmalloc(*content_length);
 		if (read_all(f, body, *content_length) != *content_length) {
-			printf("Failed to read complete body\n");
+			errmsg("Failed to read complete body\n");
 			exit(1);
 		}
 		return body;
@@ -63,7 +63,7 @@ size_t stream_body(FILE *f_in, FILE *f_out, FILE *f_copy, int content_length)
 	fflush(f_out);
 	fflush(f_copy);
 
-	printf("streamed %d bytes\n", n);
+	logmsg("streamed %d bytes\n", n);
 	return n;
 }
 

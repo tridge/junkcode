@@ -15,11 +15,11 @@ static void log_transfer(int siglen,
 {
 	FILE *f = fopen("rproxy.log", "a");
 	if (f) {
-		fprintf(f,"%4d %6d %6d %6d %6d %s\n", 
+		fprintf(f,"%4d %6d %6d %6d %6d %s   %.4f\n", 
 			siglen, 
 			inbytes, outbytes, 
 			zinbytes, zoutbytes, 
-			req);
+			req, cputime());
 		fclose(f);
 	}
 }
@@ -33,7 +33,7 @@ static FILE *send_upstream(char *request, char *body, int content_length)
 
 	fd = open_socket_out(upstream, upstream_port);
 	if (fd == -1) {
-		printf("Failed to connect to %s:%d\n", 
+		errmsg("Failed to connect to %s:%d\n", 
 		       upstream, upstream_port);
 		exit_cleanup(1);
 	}
@@ -50,7 +50,7 @@ static FILE *send_upstream(char *request, char *body, int content_length)
 	/* and the body */
 	if (body) {
 		fwrite(body, content_length, 1, f);
-		printf("sent body of size %d\n", content_length);
+		logmsg("sent body of size %d\n", content_length);
 	}
 	fflush(f);
 
@@ -77,11 +77,11 @@ static int child_main(int fd)
 
 	/* read the main request */
 	if (!fgets_strip(request, sizeof(request)-1, f)) {
-		printf("failed to read request\n");
+		errmsg("failed to read request\n");
 		exit_cleanup(1);
 	}
 
-	printf("[R] %s\n", request);
+	logmsg("[R] %s\n", request);
 	
 	/* read the headers */
 	header_load(f);
@@ -104,7 +104,7 @@ static int child_main(int fd)
 	   we don't generate one */
 	if (!request_signature && (f_cache = cache_open(request, "r"))) {
 		char *sigblock;
-		printf("Have cached file\n");
+		logmsg("Have cached file\n");
 		sigblock = sig_generate(f_cache);
 		header_add("Rsync-Signature", sigblock);
 		free(sigblock);
@@ -121,11 +121,11 @@ static int child_main(int fd)
 
 	/* read the main response code */
 	if (!fgets_strip(response, sizeof(response)-1, f_in)) {
-		printf("failed to read response\n");
+		errmsg("failed to read response\n");
 		exit_cleanup(1);
 	}
 
-	printf("[R] %s\n", response);
+	logmsg("[r] %s\n", response);
 	
 	/* read the headers */
 	header_load(f_in);
@@ -156,7 +156,7 @@ static int child_main(int fd)
 	encoding = header_content("Content-Encoding");
 	rsync_encoded = (encoding && strstr(encoding,"rsync") != NULL);
 
-	printf("encoded=%d siglen=%d\n", 
+	logmsg("encoded=%d siglen=%d\n", 
 	       rsync_encoded, request_signature?strlen(request_signature):0);
 
 	if ((request_signature && rsync_encoded) ||
@@ -164,7 +164,7 @@ static int child_main(int fd)
 		int stream_size;
 
 		/* case 1 and 2, send as-is */
-		printf("sending as-is\n");
+		logmsg("sending as-is\n");
 
 		if (f_cache) fclose(f_cache);
 
@@ -197,7 +197,7 @@ static int child_main(int fd)
 	/* both case 3 and 4 should cache the reply */
 
 	if (!request_signature && rsync_encoded) {
-		printf("case 3\n");
+		logmsg("case 3\n");
 
 		/* case 3, we need to decode the rsync-encoded reply
 		   then remove the encoding header, adjust the
@@ -225,7 +225,7 @@ static int child_main(int fd)
 	}
 
 	if (request_signature && !rsync_encoded) {
-		printf("case 4\n");
+		logmsg("case 4\n");
 
 		/* case 4, we need to rsync-encode the reply while
 		   cacheing the data, add a encoding header, adjust
@@ -256,7 +256,7 @@ static int child_main(int fd)
 		goto finish;
 	}		
 
-	printf("oops, maybe I can't count?\n");
+	errmsg("oops, maybe I can't count?\n");
 
  finish:
 	

@@ -58,7 +58,7 @@ BEGIN {
   next;
 }
 
-!/^OFF_T|^ssize_t|^FILE|^size_t|^off_t|^pid_t|^unsigned|^mode_t|^DIR|^user|^int|^char|^uint|^struct|^BOOL|^void|^time/ {
+!/^float|^OFF_T|^ssize_t|^FILE|^size_t|^off_t|^pid_t|^unsigned|^mode_t|^DIR|^user|^int|^char|^uint|^struct|^BOOL|^void|^time/ {
   next;
 }
 

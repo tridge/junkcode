@@ -20,10 +20,6 @@ void header_add(char *label, char *content)
 	
 	DLIST_ADD(headers, h);
 
-#if DEBUG
-	printf("[%d] %s: %s\n", num_headers, label, content);
-#endif
-
 	num_headers++;
 }
 
@@ -38,7 +34,7 @@ void header_load(FILE *f)
 		char *p;
 
 		if (!fgets_strip(line, sizeof(line)-1, f)) {
-			printf("Failed to read header %d\n", num_headers);
+			errmsg("Failed to read header %d\n", num_headers);
 			exit_cleanup(1);
 		}
 
@@ -47,7 +43,7 @@ void header_load(FILE *f)
 
 		p = strchr(line,':');
 		if (!p) {
-			printf("no colon in header?!? [%s]\n", line);
+			errmsg("no colon in header?!? [%s]\n", line);
 			exit_cleanup(1);
 		}
 

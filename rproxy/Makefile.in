@@ -6,7 +6,7 @@ exec_prefix=@exec_prefix@
 bindir=@bindir@
 mandir=@mandir@
 
-LIBS=@LIBS@ -lz -Llibrsync -lrsync
+LIBS=@LIBS@ -lz -L/usr/local/lib -lrsync
 CC=@CC@
 CFLAGS=@CFLAGS@
 

@@ -129,7 +129,8 @@
 #endif
 
 #include "dlinklist.h"
-#include "librsync/librsync.h"
+#include "librsync/rsync.h"
+#include "librsync/sumset.h"
 
 #define BUFFER_SIZE 512
 #define CACHE_DIR "cache"
@@ -152,3 +153,5 @@
 #include "proto.h"
 
 
+void logmsg(const char *format, ...);
+void errmsg(const char *format, ...);
