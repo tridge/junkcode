@@ -36,6 +36,7 @@
 #endif
 
 struct parse_string {
+	unsigned allocated;
 	unsigned length;
 	char *s;
 };
@@ -107,40 +108,71 @@ static char *decode_bytes(const char *s, unsigned *len)
 	return ret;
 }
 
-static int addstr(struct parse_string *p, const char *fmt, ...)
+static int addgen_alloc(struct parse_string *p, int n)
 {
-	char *s = NULL;
-	int n;
-	va_list ap;
-	va_start(ap, fmt);
-	n = vasprintf(&s, fmt, ap);
-	va_end(ap);
-	p->s = realloc(p->s, p->length + n + 1);
+	if (p->length + n <= p->allocated) return 0;
+	p->allocated = p->length + n + 100;
+	p->s = realloc(p->s, p->allocated);
 	if (!p->s) {
 		errno = ENOMEM;
 		return -1;
 	}
-	if (n != 0) {
-		memcpy(p->s + p->length, s, n);
-	}
-	p->length += n;
-	p->s[p->length] = 0;
-
-	if (s) free(s);
 	return 0;
 }
 
-static const char *tabstr(unsigned level)
+static int addchar(struct parse_string *p, char c)
 {
-	static char str[8];
-	static unsigned last;
+	if (addgen_alloc(p, 2) != 0) {
+		return -1;
+	}
+	p->s[p->length++] = c;
+	p->s[p->length] = 0;
+	return 0;
+}
 
-	if (last == level) return str;
-	if (level > 7) level = 7;
-	memset(str, '\t', level);
-	str[level] = 0;
-	last = level;
-	return str;
+static int addstr(struct parse_string *p, const char *s)
+{
+	int len = strlen(s);
+	if (addgen_alloc(p, len+1) != 0) {
+		return -1;
+	}
+	memcpy(p->s + p->length, s, len+1);
+	p->length += len;
+	return 0;
+}
+
+static int addtabbed(struct parse_string *p, const char *s, unsigned indent)
+{
+	int len = strlen(s);
+	if (addgen_alloc(p, indent+len+1) != 0) {
+		return -1;
+	}
+	while (indent--) {
+		p->s[p->length++] = '\t';
+	}
+	memcpy(p->s + p->length, s, len+1);
+	p->length += len;
+	return 0;
+}
+
+/* note! this can only be used for results up to 60 chars wide! */
+static int addgen(struct parse_string *p, const char *fmt, ...)
+{
+	char buf[60];
+	int n;
+	va_list ap;
+	va_start(ap, fmt);
+	n = vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	if (addgen_alloc(p, n + 1) != 0) {
+		return -1;
+	}
+	if (n != 0) {
+		memcpy(p->s + p->length, buf, n);
+	}
+	p->length += n;
+	p->s[p->length] = 0;
+	return 0;
 }
 
 static int gen_dump_base(struct parse_string *p, 
@@ -149,21 +181,21 @@ static int gen_dump_base(struct parse_string *p,
 {
 	switch (type) {
 	case T_TIME_T:
-		return addstr(p, "%u", *(time_t *)(ptr));
+		return addgen(p, "%u", *(time_t *)(ptr));
 	case T_UNSIGNED:
-		return addstr(p, "%u", *(unsigned *)(ptr));
+		return addgen(p, "%u", *(unsigned *)(ptr));
 	case T_DOUBLE:
-		return addstr(p, "%lg", *(double *)(ptr));
+		return addgen(p, "%lg", *(double *)(ptr));
 	case T_INT:
-		return addstr(p, "%d", *(int *)(ptr));
+		return addgen(p, "%d", *(int *)(ptr));
 	case T_LONG:
-		return addstr(p, "%ld", *(long *)(ptr));
+		return addgen(p, "%ld", *(long *)(ptr));
 	case T_ULONG:
-		return addstr(p, "%lu", *(unsigned long *)(ptr));
+		return addgen(p, "%lu", *(unsigned long *)(ptr));
 	case T_CHAR:
-		return addstr(p, "%u", *(unsigned char *)(ptr));
+		return addgen(p, "%u", *(unsigned char *)(ptr));
 	case T_FLOAT:
-		return addstr(p, "%g", *(float *)(ptr));
+		return addgen(p, "%g", *(float *)(ptr));
 	case T_STRUCT:
 	case T_ENUM:
 		/* handled elsewhere */
@@ -180,12 +212,12 @@ static int gen_dump_enum(struct parse_string *p,
 	int i;
 	for (i=0;einfo[i].name;i++) {
 		if (v == einfo[i].value) {
-			addstr(p, "%s", einfo[i].name);
+			addstr(p, einfo[i].name);
 			return 0;
 		}
 	}
 	/* hmm, maybe we should just fail? */
-	return addstr(p, "%u", v);
+	return addgen(p, "%u", v);
 }
 
 static int gen_dump_one(struct parse_string *p, 
@@ -196,7 +228,9 @@ static int gen_dump_one(struct parse_string *p,
 	if (pinfo->type == T_STRUCT) {
 		char *s = gen_dump(pinfo->pinfo, ptr, indent+1);
 		if (!s) return -1;
-		if (addstr(p, "{\n%s%s}", s, tabstr(indent)) != 0) {
+		if (addstr(p, "{\n") || 
+		    addstr(p,s) || 
+		    addtabbed(p,"}", indent)) {
 			free(s);
 			return -1;
 		}
@@ -206,10 +240,13 @@ static int gen_dump_one(struct parse_string *p,
 
 	if (pinfo->type == T_CHAR && pinfo->ptr_count == 1) {
 		char *s = encode_bytes(ptr, strlen(ptr));
-		int ret;
-		ret = addstr(p, "{%s}", s);
-		free(s);
-		return ret;
+		if (addchar(p,'{') || 
+		    addstr(p, s) ||
+		    addchar(p,'}')) {
+			free(s);
+			return -1;
+		}
+		return 0;
 	}
 
 	if (pinfo->type == T_ENUM) {
@@ -234,8 +271,13 @@ static int gen_dump_array(struct parse_string *p,
 	    pinfo->type == T_CHAR) {
 		char *s = encode_bytes(ptr, array_len);
 		if (!s) return -1;
-		addstr(p, "%s%s = {%s}\n", tabstr(indent), pinfo->name, s);
-		free(s);
+		if (addtabbed(p, pinfo->name, indent) ||
+		    addstr(p, " = {") ||
+		    addstr(p, s) ||
+		    addstr(p, "}\n")) {
+			free(s);
+			return -1;
+		}
 		return 0;
 	}
 
@@ -256,13 +298,12 @@ static int gen_dump_array(struct parse_string *p,
 			continue;
 		}
 		if (count == 0) {
-			if (addstr(p, "%s%s = %u:", 
-				   tabstr(indent),
-				   pinfo->name, i) != 0) {
+			if (addtabbed(p, pinfo->name, indent) ||
+			    addgen(p, " = %u:", i)) {
 				return -1;
 			}
 		} else {
-			if (addstr(p, ", %u:", i) != 0) {
+			if (addgen(p, ", %u:", i) != 0) {
 				return -1;
 			}
 		}
@@ -321,6 +362,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 	int i;
 	
 	p.length = 0;
+	p.allocated = 0;
 	p.s = NULL;
 
 	if (addstr(&p, "") != 0) {
@@ -378,7 +420,8 @@ char *gen_dump(const struct parse_struct *pinfo,
 			ptr = *(const char **)ptr;
 		}
 
-		if (addstr(&p, "%s%s = ", tabstr(indent), pinfo[i].name) ||
+		if (addtabbed(&p, pinfo[i].name, indent) ||
+		    addstr(&p, " = ") ||
 		    gen_dump_one(&p, &pinfo[i], ptr, indent) ||
 		    addstr(&p, "\n")) {
 			goto failed;

@@ -183,6 +183,8 @@ sub parse_enum_elements($$)
 	my($name) = shift;
 	my($elements) = shift;
 	
+	print "Parsing enum $name\n";
+
 	print CFILE "static const struct enum_struct einfo_" . $name . "[] = {\n";
 
 	my(@enums) = split(/,/s, $elements);
