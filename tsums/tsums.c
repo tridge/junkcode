@@ -29,7 +29,6 @@ struct sum_struct {
 	char sum[16];
 };
 
-
 static TDB_CONTEXT *tdb;
 static int do_update;
 
@@ -233,12 +232,17 @@ static void tsums_dir(const char *dname)
 static void usage(void)
 {
 	printf("
-Usage: tsums [options] <dirs...>
+tsums maintains signatures of files on a system. Similar to tripwire.
+Copyright (C) Andrew Tridgell (tridge@samba.org)
+
+Usage: tsums [options] <files|dirs...>
 
 Options:
-  -h        this help
-  -u        update sums
-  -f        db name
+  -h          this help
+  -u          update sums
+  -f <DB>     database name
+  -i          add listed files to ignore list
+  -d          dump the ignored list
 ");
 	exit(1);
 }
@@ -280,6 +284,8 @@ int main(int argc, char *argv[])
 
 	argc -= optind;
 	argv += optind;
+
+	if (argc == 0) usage();
 
 	tdb = tdb_open(db_name, 1000, 0, O_CREAT|O_RDWR, 0600);
 	
