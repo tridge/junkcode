@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 # a simple system for generating C parse info
 # this can be used to write generic C structer load/save routines
-# Copyright 2002 Andrew Tridgell <tridge@samba.org>
+# Copyright 2002 Andrew Tridgell <genstruct@tridgell.net>
 # released under the GNU General Public License v2 or later
 
 use strict;
@@ -270,7 +270,6 @@ Options:
     --help                this help page
     --header=SOURCE       the header to parse
     --cfile=DEST          the C file to produce
-    --parsers             enable producing parser fns
 ";
     exit(0);
 }

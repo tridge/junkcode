@@ -1,0 +1,45 @@
+genstruct is a system for marshalling/unmarshalling C structures. It
+has a number of unusual features:
+
+- can handle a very wide range of C constructs
+- produces a human-readable marshalled format
+- can handle significant changes in the structures between marshalling
+  and unmarshalling
+- works directly from C header files
+
+To see how to use it please take a look at test.c and test.h. I'm
+afraid that the only documentation at the moment is these examples.
+
+Limitations
+-----------
+
+genstruct cannot handle some types of C structures. In particular it
+cannot handle structures where a single pointer is used more than once
+(for example in doubly linked lists). Once I add reference counting
+this should be fixed.
+
+A second problem is that genstruct works on the C headers before they
+have been through the C pre-processor. This means that #ifdefs within
+structures will screw things up badly.
+
+Finally, genstruct only handles structure definitions if they are
+formatted in a certain way. For example this will work:
+
+GENSTRUCT struct foo {
+	  char *s;
+	  int x;
+};
+
+but this won't:
+
+GENSTRUCT typedef struct {
+	  char *s;
+	  int x;
+} foo;
+
+This may be fixed in a future release.
+
+
+ --
+ Andrew Tridgell
+ genstruct@tridgell.net

@@ -1,5 +1,5 @@
 /*
-   Copyright (C) Andrew Tridgell 2002
+   Copyright (C) Andrew Tridgell <genstruct@tridgell.net> 2002
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -35,12 +35,14 @@
 #include "includes.h"
 #endif
 
+/* intermediate dumps are stored in one of these */
 struct parse_string {
 	unsigned allocated;
 	unsigned length;
 	char *s;
 };
 
+/* see if a range of memory is all zero. Used to prevent dumping of zero elements */
 static int all_zero(const char *ptr, unsigned size)
 {
 	int i;
@@ -51,6 +53,7 @@ static int all_zero(const char *ptr, unsigned size)
 	return 1;
 }
 
+/* encode a buffer of bytes into a escaped string */
 static char *encode_bytes(const char *ptr, unsigned len)
 {
 	const char *hexdig = "0123456789abcdef";
@@ -77,6 +80,7 @@ static char *encode_bytes(const char *ptr, unsigned len)
 	return ret;
 }
 
+/* decode an escaped string from encode_bytes() into a buffer */
 static char *decode_bytes(const char *s, unsigned *len) 
 {
 	char *ret, *p;
@@ -108,10 +112,14 @@ static char *decode_bytes(const char *s, unsigned *len)
 	return ret;
 }
 
+/* the add*() functions deal with adding things to a struct
+   parse_string */
+
+/* allocate more space if needed */
 static int addgen_alloc(struct parse_string *p, int n)
 {
 	if (p->length + n <= p->allocated) return 0;
-	p->allocated = p->length + n + 100;
+	p->allocated = p->length + n + 200;
 	p->s = realloc(p->s, p->allocated);
 	if (!p->s) {
 		errno = ENOMEM;
@@ -120,6 +128,7 @@ static int addgen_alloc(struct parse_string *p, int n)
 	return 0;
 }
 
+/* add a character to the buffer */
 static int addchar(struct parse_string *p, char c)
 {
 	if (addgen_alloc(p, 2) != 0) {
@@ -130,6 +139,7 @@ static int addchar(struct parse_string *p, char c)
 	return 0;
 }
 
+/* add a string to the buffer */
 static int addstr(struct parse_string *p, const char *s)
 {
 	int len = strlen(s);
@@ -141,6 +151,7 @@ static int addstr(struct parse_string *p, const char *s)
 	return 0;
 }
 
+/* add a string to the buffer with a tab prefix */
 static int addtabbed(struct parse_string *p, const char *s, unsigned indent)
 {
 	int len = strlen(s);
@@ -175,6 +186,7 @@ static int addgen(struct parse_string *p, const char *fmt, ...)
 	return 0;
 }
 
+/* the base dump function for all base types */
 static int gen_dump_base(struct parse_string *p, 
 			  enum parse_type type, 
 			  const char *ptr)
@@ -204,6 +216,7 @@ static int gen_dump_base(struct parse_string *p,
 	return 0;
 }
 
+/* dump a enumerated type */
 static int gen_dump_enum(struct parse_string *p, 
 			 const struct enum_struct *einfo,
 			 const char *ptr)
@@ -220,6 +233,7 @@ static int gen_dump_enum(struct parse_string *p,
 	return addgen(p, "%u", v);
 }
 
+/* dump a single non-array element, hanlding struct and enum */
 static int gen_dump_one(struct parse_string *p, 
 			 const struct parse_struct *pinfo,
 			 const char *ptr,
@@ -256,7 +270,7 @@ static int gen_dump_one(struct parse_string *p,
 	return gen_dump_base(p, pinfo->type, ptr);
 }
 
-
+/* handle dumping of an array of arbitrary type */
 static int gen_dump_array(struct parse_string *p,
 			  const struct parse_struct *pinfo, 
 			  const char *ptr,
@@ -319,7 +333,8 @@ static int gen_dump_array(struct parse_string *p,
 	return 0;
 }
 
-
+/* find a variable by name in a loaded structure and return its value
+   as an integer. Used to support dynamic arrays */
 static int find_var(const struct parse_struct *pinfo,
 		    const char *data,
 		    const char *var)
@@ -354,6 +369,8 @@ static int find_var(const struct parse_struct *pinfo,
 	return -1;
 }
 
+/* the generic dump routine. Scans the parse information for this structure
+   and processes it recursively */
 char *gen_dump(const struct parse_struct *pinfo, 
 	       const char *data, 
 	       unsigned indent)
@@ -377,6 +394,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 			size = sizeof(void *);
 		}
 
+		/* special handling for array types */
 		if (pinfo[i].array_len) {
 			unsigned len = pinfo[i].array_len;
 			if (pinfo[i].flags & FLAG_NULLTERM) {
@@ -396,6 +414,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 			continue;
 		}
 
+		/* and dynamically sized arrays */
 		if (pinfo[i].dynamic_len) {
 			int len = find_var(pinfo, data, pinfo[i].dynamic_len);
 			struct parse_struct p2 = pinfo[i];
@@ -413,6 +432,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 			continue;
 		}
 
+		/* don't dump zero elements */
 		if (pinfo[i].type != T_ENUM && all_zero(ptr, size)) continue;
 
 		/* generic pointer dereference */
@@ -434,7 +454,8 @@ failed:
 	return NULL;
 }
 
-
+/* search for a character in a string, skipping over sections within
+   matching braces */
 static char *match_braces(char *s, char c)
 {
 	int depth = 0;
@@ -455,6 +476,7 @@ static char *match_braces(char *s, char c)
 	return s;
 }
 
+/* parse routine for enumerated types */
 static int gen_parse_enum(const struct enum_struct *einfo, 
 			  char *ptr, 
 			  const char *str)
@@ -482,6 +504,7 @@ static int gen_parse_enum(const struct enum_struct *einfo,
 	return -1;
 }
 
+/* parse all base types */
 static int gen_parse_base(const struct parse_struct *pinfo, 
 			  char *ptr, 
 			  const char *str)
@@ -595,6 +618,7 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 	return 0;
 }
 
+/* parse a generic array */
 static int gen_parse_array(const struct parse_struct *pinfo, 
 			    char *ptr, 
 			    const char *str,
@@ -648,6 +672,7 @@ static int gen_parse_array(const struct parse_struct *pinfo,
 	return 0;
 }
 
+/* parse one element, hanlding dynamic and static arrays */
 static int gen_parse_one(const struct parse_struct *pinfo, 
 			 const char *name, 
 			 char *data, 
@@ -695,6 +720,7 @@ static int gen_parse_one(const struct parse_struct *pinfo,
 	return gen_parse_base(&pinfo[i], data + pinfo[i].offset, str);
 }
 
+/* the main parse routine */
 int gen_parse(const struct parse_struct *pinfo, char *data, const char *s)
 {
 	char *str, *s0;

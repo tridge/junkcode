@@ -1,5 +1,5 @@
 /*
-   Copyright (C) Andrew Tridgell 2002
+   Copyright (C) Andrew Tridgell <genstruct@tridgell.net> 2002
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ enum parse_type {T_INT, T_UNSIGNED, T_CHAR,
 		 T_FLOAT, T_DOUBLE, T_ENUM, T_STRUCT,
 		 T_TIME_T, T_LONG, T_ULONG};
 
+/* flag to mark a fixed size array as actually being null terminated */
 #define FLAG_NULLTERM 1
 
 struct enum_struct {
@@ -36,6 +37,7 @@ struct enum_struct {
 	unsigned value;
 };
 
+/* genstruct.pl generates arrays of these */
 struct parse_struct {
 	const char *name;
 	enum parse_type type;

@@ -17,7 +17,8 @@
 */
 
 /*
-  test code for genstruct
+  test code for genstruct. Creates a random set of structures and
+  dumps/parses them
 */
 
 #define _GNU_SOURCE
@@ -147,8 +148,11 @@ int main(void)
 {
 	char *s, *s2;
 	struct test1 t, t2;
+	int i;
 
+#if !TIMING
 	srandom(time(NULL));
+#endif
 	
 	fill_test1(&t);
 
@@ -173,6 +177,12 @@ int main(void)
 	} else {
 		printf("Compares OK!\n");
 	}
+
+#if TIMING
+	for (i=0;i<5000;i++) {
+		gen_parse(pinfo_test1, (char *)&t2, s);
+	}
+#endif
 
 	return 0;
 }
