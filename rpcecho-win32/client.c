@@ -283,6 +283,24 @@ void main(int argc, char **argv)
 			continue;
 		}
 
+
+		if (strcmp(argv[0], "enum") == 0) {
+			enum echo_Enum1 v = ECHO_ENUM1;
+			echo_Enum2 e2;
+			echo_Enum3 e3;
+
+			e2.e1 = 76;
+			e2.e2 = ECHO_ENUM1_32;
+			e3.e1 = ECHO_ENUM2;
+			
+			argc -= 1;
+			argv += 1;
+
+			echo_TestEnum(&v, &e2, &e3);
+			
+			continue;
+		}
+
 		if (strcmp(argv[0], "sleep") == 0) {
 			long arg, result;
 

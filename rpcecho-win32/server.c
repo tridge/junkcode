@@ -125,6 +125,14 @@ long TestSleep(long seconds)
 }
 #endif
 
+
+void echo_TestEnum(echo_Enum1 *foo1,
+		   echo_Enum2 *foo2,
+		   echo_Enum3 *foo3)
+{
+	foo2->e1 = ECHO_ENUM2;
+}
+
 void main(int argc, char **argv)
 {
 	RPC_STATUS status;
@@ -178,3 +186,4 @@ void main(int argc, char **argv)
 		exit(status);
 	}
 }
+
