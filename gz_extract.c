@@ -47,16 +47,21 @@ static void file_save(const char *fname, const char *p, off_t size)
 	close(fd);
 }
 
-static void scan_memory(int i, char *p, off_t size)
+static void scan_memory(int i, unsigned char *p, off_t size)
 {
-	char *p0 = p;
+	unsigned char *p0 = p;
 	int found = 0;
 	
 	while ((p = memmem(p, size - (p-p0), GZIP_HEADER, strlen(GZIP_HEADER)))) {
 		char *fname=NULL;
 
+		if (p[8] > 4) {
+			p++;
+			continue;
+		}
+
 		/* only want unix gzip output */
-		if (p[9] != 3) {
+		if (p[9] > 11) {
 			p++;
 			continue;
 		}
@@ -75,7 +80,7 @@ int main(int argc, const char *argv[])
 	int i;
 
 	for (i=1;i<argc;i++) {
-		char *p;
+		unsigned char *p;
 		off_t size;
 
 		printf("Scanning %s\n", argv[i]);
