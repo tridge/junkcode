@@ -28,8 +28,15 @@ void main(int argc, char **argv)
 	RPC_STATUS status;
 	char *binding = NULL, *network_address = NULL;
 
+	if (argc > 3 && strcmp(argv[1], "-e") == 0) {
+		binding = argv[2];
+		argv += 2;
+		argc -= 2;
+	}
+
+
 	if (argc < 3) {
-		printf("Usage: rpcechocli hostname cmd [args]\n\n");
+		printf("Usage: client [-e endpoint] hostname cmd [args]\n\n");
 		printf("Where hostname is the name of the host to connect to,\n");
 		printf("and cmd is the command to execute with optional args:\n\n");
 		printf("\taddone num\tAdd one to num and return the result\n");
@@ -46,17 +53,19 @@ void main(int argc, char **argv)
 	argc = argc - 2;
 	argv = argv + 2;
 
-	status = RpcStringBindingCompose(
-		NULL, /* uuid */
-		"ncacn_np",
-		network_address,
-		"\\pipe\\rpcecho",
-		NULL, /* options */
-		&binding);
+	if (!binding) {
+		status = RpcStringBindingCompose(
+			NULL, /* uuid */
+			"ncacn_np",
+			network_address,
+			"\\pipe\\rpcecho",
+			NULL, /* options */
+			&binding);
 
-	if (status) {
-		printf("RpcStringBindingCompose returned %d\n", status);
-		exit(status);
+		if (status) {
+			printf("RpcStringBindingCompose returned %d\n", status);
+			exit(status);
+		}
 	}
 
 	printf("Endpoint is %s\n", binding);

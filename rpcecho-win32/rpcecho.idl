@@ -52,6 +52,7 @@ interface rpcecho
 #define uint32 long
 #define HYPER_T hyper
 
+	const long myconstant = 42;
 
 	/* test strings */
  	void TestCall (
