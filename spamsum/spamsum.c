@@ -207,7 +207,7 @@ again:
 		ret2[k] = b64[h3 % 64];
 	}
 
-	p[++j] = ':';
+	strcat(p+j, ":");
 	strcat(p+j, ret2);
 
 	/* our blocksize guess may have been way off - repeat if necessary */
