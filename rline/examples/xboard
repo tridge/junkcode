@@ -1,0 +1,165 @@
+abort
+accept
+addlist
+adjourn
+alias
+allobservers
+assess
+backward
+bell
+best
+boards
+bsetup
+bugwho
+cbest
+clearmessages
+convert_bcf
+convert_elo
+convert_uscf
+copygame
+crank
+cshout
+date
+decline
+draw
+examine
+finger
+flag
+flip
+fmessage
+follow
+forward
+games
+gnotify
+goboard
+handles
+hbest
+help
+history
+hrank
+inchannel
+index
+info
+it
+jkill
+jsave
+kibitz
+limits
+llogons
+logons
+mailhelp
+mailmess
+mailmoves
+mailoldmoves
+mailsource
+mailstored
+match
+messages
+mexamine
+moretime
+moves
+news
+next
+observe
+oldmoves
+open
+password
+pause
+pending
+pfollow
+play
+pobserve
+promote
+pstat
+qtell
+quit
+rank
+refresh
+resign
+resume
+revert
+say
+seek
+servers
+shout
+showlist
+simabort
+simallabort
+simadjourn
+simalladjourn
+simgames
+simmatch
+simnext
+simobserve
+simopen
+simpass
+simprev
+smoves
+smposition
+sought
+sposition
+statistics
+stored
+style
+sublist
+switch
+takeback
+tell
+time
+unalias
+unexamine
+unobserve
+unpause
+unseek
+uptime
+variables
+whisper
+who
+withdraw
+xkibitz
+xtell
+xwhisper
+znotify
+set 
+set Lang
+set autoflag
+set automail
+set availinfo
+set availmax
+set availmin
+set bell
+set bugopen
+set chanoff
+set cshout
+set ctell
+set echo
+set flip
+set gin
+set height
+set highlight
+set inc
+set jprivate
+set kibitz
+set kiblevel
+set mailmess
+set messreply
+set notifiedby
+set open
+set pgn
+set pin
+set private
+set provshow
+set ptime
+set rated
+set ropen
+set seek
+set shout
+set silence
+set simopen
+set style
+set tell
+set time
+set tourney
+set tzone
+set unobserve
+set width
