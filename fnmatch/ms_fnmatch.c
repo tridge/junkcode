@@ -81,37 +81,35 @@ static int null_match(const char *p)
   the original, recursive function. Needs replacing, but with exactly
   the same output
 */
-static int fnmatch_test2(const char *p, size_t ofs, const char *n, char **max_n)
+static int fnmatch_test2(const char *p, const char *n, const char **max_n)
 {
 	char c;
 	int i;
 
-	while ((c = p[ofs++])) {
+	while ((c = *p++)) {
+		if (*max_n && *max_n <= n) {
+			return null_match(p);
+		}
+
 		switch (c) {
 		case '*':
-			if (max_n[ofs] && max_n[ofs] <= n) {
-				return null_match(p+ofs);
-			}
 			for (i=0; n[i]; i++) {
-				if (fnmatch_test2(p, ofs, n+i, max_n) == 0) {
+				if (fnmatch_test2(p, n+i, max_n+1) == 0) {
 					return 0;
 				}
 			}
-			if (!max_n[ofs] || max_n[ofs] > n) max_n[ofs] = n;
-			return null_match(p+ofs);
+			if (!*max_n || *max_n > n) *max_n = n;
+			return null_match(p);
 
 		case '<':
-			if (max_n[ofs] && max_n[ofs] <= n) {
-				return null_match(p+ofs);
-			}
 			for (i=0; n[i]; i++) {
-				if (fnmatch_test2(p, ofs, n+i, max_n) == 0) return 0;
+				if (fnmatch_test2(p, n+i, max_n+1) == 0) return 0;
 				if (n[i] == '.' && !strchr(n+i+1,'.')) {
-					return fnmatch_test2(p, ofs, n+i+1, max_n);
+					return fnmatch_test2(p, n+i+1, max_n+1);
 				}
 			}
-			if (!max_n[ofs] || max_n[ofs] > n) max_n[ofs] = n;
-			return null_match(p+ofs);
+			if (!*max_n || *max_n > n) *max_n = n;
+			return null_match(p);
 
 		case '?':
 			if (! *n) {
@@ -122,18 +120,17 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, char **max_n)
 
 		case '>':
 			if (n[0] == '.') {
-				if (! n[1] && null_match(p+ofs) == 0) {
+				if (! n[1] && null_match(p) == 0) {
 					return 0;
 				}
 				break;
 			}
-			if (! *n) return null_match(p+ofs);
+			if (! *n) return null_match(p);
 			n++;
 			break;
 
 		case '"':
-			if (*n == 0 && 
-			    null_match(p+ofs) == 0) {
+			if (*n == 0 && null_match(p) == 0) {
 				return 0;
 			}
 			if (*n != '.') return -1;
@@ -141,9 +138,7 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, char **max_n)
 			break;
 
 		default:
-			if (c != *n && 
-			    toupper(c) != 
-			    toupper(*n)) {
+			if (c != *n && toupper(c) != toupper(*n)) {
 				return -1;
 			}
 			n++;
@@ -164,11 +159,11 @@ static int fnmatch_test2(const char *p, size_t ofs, const char *n, char **max_n)
 static int fnmatch_test(const char *p, const char *n)
 {
 	int ret;
-	char **max_n;
+	const char **max_n;
 
 	max_n = calloc(sizeof(char *), strlen(p)+1);
 
-	ret = fnmatch_test2(p, 0, n, max_n);
+	ret = fnmatch_test2(p, n, max_n);
 
 	free(max_n);
 
