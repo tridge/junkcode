@@ -36,6 +36,13 @@ static int trd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	void *addr;
 	u_long minor, page, ofs, len1;
 
+	if (!trd_base[minor]) {
+		int ret;
+		printk(KERN_ERR DEVICE_NAME ": access to unopened device minor=%ld\n", minor);
+		ret = trd_allocate(minor);
+		if (ret != 0) return ret;
+	}
+
 	start = bh->b_rsector << 9;
 	minor = MINOR(bh->b_rdev);
 	len = bh->b_size;
@@ -61,8 +68,8 @@ static int trd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	b_addr = bh_kmap(bh);
 
 	while (len) {
-		page = start / PAGE_SIZE;
-		ofs = start % PAGE_SIZE;
+		page = start >>  PAGE_SHIFT;
+		ofs = start & (PAGE_SIZE-1);
 		addr = (void *) (((char *)(trd_base[minor][page])) + ofs);
 		
 		len1 = len;
@@ -180,7 +187,7 @@ static int trd_init(void)
 {
 	int i;
 
-	trd_pages = (TRD_SIZE + (PAGE_SIZE-1)) / PAGE_SIZE;
+	trd_pages = (TRD_SIZE + (PAGE_SIZE-1)) >> PAGE_SHIFT;
 
 	if (register_blkdev(MAJOR_NR, DEVICE_NAME, &trd_fops)) {
 		printk(KERN_ERR DEVICE_NAME ": Unable to register_blkdev(%d)\n", MAJOR_NR);
