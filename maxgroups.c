@@ -7,17 +7,6 @@
 #include <sys/types.h>
 
 
-#include <asm/unistd.h>
-static int setgroups(size_t size, const gid_t *list)
-{
-	return syscall(__NR_setgroups, size, list);
-}
-
-static int getgroups(int size, gid_t list[])
-{
-	return syscall(__NR_getgroups, size, list);
-}
-
 static int trygroups(int n)
 {
 	gid_t *gids;

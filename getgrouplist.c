@@ -8,7 +8,7 @@
 #include <grp.h>
 #include <pwd.h>
 
-
+#ifndef HAVE_GETGROUPLIST
 /*
   This is a *much* faster way of getting the list of groups for a user
   without changing the current supplemenrary group list. The old
@@ -50,6 +50,7 @@ getgrouplist(uname, agroup, groups, grpcnt)
 
 	return ret;
 }
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -60,9 +61,21 @@ int main(int argc, char *argv[])
 
 	pwd = getpwnam(user);
 
-	count = NGROUPS_MAX;
+	if (!pwd) {
+		printf("Unknown user '%s'\n", user);
+		exit(1);
+	}
+
+	count = 11;
 
 	ret = getgrouplist(user, pwd->pw_gid, gids, &count);
+
+	printf("ret=%d\n", ret);
+
+	if (ret == -1) {
+		printf("getgrouplist failed\n");
+		return -1;
+	}
 
 	printf("Got %d groups\n", ret);
 	if (ret != -1) {
