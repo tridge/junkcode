@@ -179,6 +179,14 @@ To install mail.runner you need to do the following:
 - install the mail.runner script on both the server and client 
 - create a .mail.runner configuration file on the server and client (see
   the CONFIGURATION section of this help for details)
+- tell your email program to use "mail.runner sendmail" as the local
+  program to send email with
+
+How you do the last step depends on your email program. I use RMAIL in
+emacs to read and send email, so I used the following in my .emacs:
+  (setq sendmail-program "~/bin/mail.sendmail")
+and then I created a one line script called 'mail.sendmail' that ran
+'mail.runner sendmail'.
 
 
 CONFIGURATION
