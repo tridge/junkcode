@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <stdlib.h>
 
 
 /***************************************************************************
@@ -14,7 +16,11 @@ static int base64_decode(char *s)
 
 	n=i=0;
 
-	while (*s && (p=strchr(b64,*s))) {
+	while (*s && ((*s == '\n') || (p=strchr(b64,*s)))) {
+		if (*s == '\n') {
+			s++;
+			continue;
+		}
 		idx = (int)(p - b64);
 		byte_offset = (i*6)/8;
 		bit_offset = (i*6)%8;
@@ -35,11 +41,29 @@ static int base64_decode(char *s)
 	return n;
 }
 
-static void usage(void)
+
+static int load_stdin(char **s)
 {
-	printf("
-Usage: ubase64 <string>
-");
+	char buf[1024];
+	int length = 0;
+
+	*s = NULL;
+
+	while (1) {
+		int n = read(0, buf, sizeof(buf));
+		if (n == -1 && errno == EINTR) continue;
+		if (n <= 0) break;
+
+		(*s) = realloc((*s), length + n + 1);
+		if (!(*s)) return 0;
+
+		memcpy((*s)+length, buf, n);
+		length += n;
+	}
+
+	(*s)[length] = 0;
+	
+	return length;
 }
 
 int main(int argc, char *argv[])
@@ -47,12 +71,7 @@ int main(int argc, char *argv[])
 	char *s;
 	int n;
 
-	if (argc < 2) {
-		usage();
-		exit(1);
-	}
-	
-	s = strdup(argv[1]);
+	n = load_stdin(&s);
 
 	n = base64_decode(s);
 	write(1, s, n);
