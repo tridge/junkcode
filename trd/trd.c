@@ -29,6 +29,8 @@ static unsigned trd_size = 4096;
 
 MODULE_PARM (trd_size, "1i");
 
+static int trd_allocate(int minor);
+
 static int trd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 {
 	u_long start, len;
@@ -36,16 +38,16 @@ static int trd_make_request(request_queue_t *q, int rw, struct buffer_head *bh)
 	void *addr;
 	u_long minor, page, ofs, len1;
 
+	start = bh->b_rsector << 9;
+	minor = MINOR(bh->b_rdev);
+	len = bh->b_size;
+
 	if (!trd_base[minor]) {
 		int ret;
 		printk(KERN_ERR DEVICE_NAME ": access to unopened device minor=%ld\n", minor);
 		ret = trd_allocate(minor);
 		if (ret != 0) return ret;
 	}
-
-	start = bh->b_rsector << 9;
-	minor = MINOR(bh->b_rdev);
-	len = bh->b_size;
 
 	if (minor >= MAX_DEVS || !trd_base[minor]) {
 		printk(KERN_ERR DEVICE_NAME ": bad minor %ld\n", minor);
