@@ -46,6 +46,15 @@ code under a different license.<p>
 Most of this code was written by <a
 href="http://samba.org/~tridge/">Andrew Tridgell<a>. 
 
+<h2>More code</h2>
+
+<p>There are some other bits of code that I haven't catalogued yet
+available at <a
+href="http://samba.org/ftp/unpacked/junkcode/">http://samba.org/ftp/unpacked/junkcode/</a>.
+If I refer to some piece of 'junkcode' in an email to you and you
+don't see it listed below then try looking there.
+
+
 <h2>Index</h2>
 <table>
 <tr>
@@ -72,14 +81,6 @@ href="http://samba.org/~tridge/">Andrew Tridgell<a>.
 }}
 </tr>
 </table>
-
-<h2>More code</h2>
-
-<p>There are some other bits of code that I haven't catalogued yet
-available at <a
-href="http://samba.org/ftp/unpacked/junkcode/">http://samba.org/ftp/unpacked/junkcode/</a>.
-If I refer to some piece of 'junkcode' in an email to you and you
-don't see it listed above then try looking there.
 
 
 {{ C_SOURCE=<p>Download and compile <a href="{{$JUNKCODE}}/{{$name}}.c">{{$name}}.c</a><p> }}
