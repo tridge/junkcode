@@ -229,6 +229,7 @@ static void tsums_file(const char *fname)
 	if (data.dsize==sizeof(sum) &&
 	    memcmp(&sum, data.dptr, sizeof(sum)) == 0) {
 		/* nothings changed */
+		free(data.dptr);
 		goto next;
 	}
 
@@ -236,11 +237,17 @@ static void tsums_file(const char *fname)
 		/* data structure extended */
 		if (verbose) printf("old record size (%d/%d) - updating\n",
 				    data.dsize, sizeof(sum));
-		goto update;
+		free(data.dptr);
+		if (do_update) {
+			goto update;
+		} else {
+			goto next;
+		}
 	}
 	
 	bzero(&old, sizeof(old));
 	memcpy(&old, data.dptr, MIN(sizeof(old), data.dsize));
+	free(data.dptr);
 
 	if (do_quick &&
 	    old.ctime == sum.ctime &&
@@ -259,13 +266,12 @@ static void tsums_file(const char *fname)
 
 	report_difference(fname, &sum, &old);
 
-update:
 	if (!do_update) {
 		goto next;
 	}
 
+update:
 	if (do_quick) file_checksum(fname, &sum.sum[0]);
-	if (data.dptr) free(data.dptr);
 	data.dptr = (void *)&sum;
 	data.dsize = sizeof(sum);
 	tdb_store(tdb, key, data, TDB_REPLACE);
