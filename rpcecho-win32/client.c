@@ -26,7 +26,7 @@
 void main(int argc, char **argv)
 {
 	RPC_STATUS status;
-	char *binding = NULL, *network_address = NULL;
+	char *binding = NULL;
 	const char *username=NULL;
 	const char *password=NULL;
 	const char *domain=NULL;
@@ -84,13 +84,22 @@ void main(int argc, char **argv)
 		printf("\noptions:\n");
 		printf("\t-u username -d domain -p password -e endpoint\n");
 		printf("\t--sign --seal\n");
+		printf("\nExamples:\n");
+		printf("\tclient HOSTNAME addone 3\n");
+		printf("\tclient 192.168.115.1 addone 3\n");
+		printf("\tclient -e ncacn_np:HOSTNAME[\\\\pipe\\\\rpcecho] addone 3\n");
+		printf("\tclient -e ncacn_ip_tcp:192.168.115.1 addone 3\n");
+		printf("\tclient -e ncacn_ip_tcp:192.168.115.1 -u tridge -d MYDOMAIN -p PASSWORD addone 3\n");
 		exit(0);
 	}
 
-	if (strcmp(argv[0], "localhost") != 0)
-		network_address = argv[1];
 
 	if (!binding) {
+		char *network_address = argv[0];
+
+		argc--;
+		argv++;
+
 		status = RpcStringBindingCompose(
 			NULL, /* uuid */
 			"ncacn_np",

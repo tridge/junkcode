@@ -3,7 +3,7 @@ INCLUDES=-I
 CFLAGS=$(INCLUDES) -Zi
 LIBS=rpcrt4.lib
 
-default: client server
+all: client server
 
 clean:
 	del *~ *.obj client server rpcecho_c.c rpcecho_s.c rpcecho.h
