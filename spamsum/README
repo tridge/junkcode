@@ -1,0 +1,112 @@
+Overview
+--------
+
+spamsum is a tool for generating and testing signatures on files.  The
+signature is designed to be particularly suitable for producing a
+result that can be used to compare two emails and see if they are
+'similar'. This can provide the core of a SPAM detection system.
+
+The algorithms in spamsum are in two parts. The first part generates a
+signature which is encoded as a string of ascii characters less than
+72 characters long. The second part takes a new signature and a
+database of existing signatures (actually just a text file with one
+signature per line) and finds the existing signature that best matches
+the new signature. A match result in the range of 0 to 100 is
+generated, where 100 is a perfect match and 0 is a complete mismatch.
+
+
+Signature Algorithm
+-------------------
+
+The signature algorithm in spamsum has a number of interesting
+properties that make is especially suitable for SPAM detection. 
+
+* non-propogation
+
+  In most hash algorithms a change in any part of a plaintext will
+  either change the resulting hash completely or will change all parts
+  of the hash after the part corresponding with the changed
+  plaintext. In the spamsum algorithm only the part of the spamsum
+  signature that corresponds linearly with the changed part of the
+  plaintext will be changed. This means that small changes in any part
+  of the plaintext will leave most of the signature the same. This is
+  essential for SPAM detection as it is common for varients of the
+  same SPAM to have small changes in their body and we need to ensure
+  that the matching algorithm can cope with these changes.
+
+* alignment robustness
+
+  Most hash algorithms are very alignment sensitive. If you shift the
+  plaintext by a byte (say by inserting a character at the start) then
+  a completely different hash is generated. The spamsum algorithm is
+  robust to alignment changes, and will automatically re-align the
+  resulting signature after insertions or deletions. This works in
+  combination with the non-propogation property to make spamsum
+  suitable for telling if two emails are 'similar'.
+
+The core of the spamsum algorithm is a rolling hash similar to the
+rolling hash used in 'rsync'. The rolling hash is used to produce a
+series of 'reset points' in the plaintext that depend only on the
+immediate context (with a default context width of seven characters)
+and not on the earlier or later parts of the plaintext. A stronger
+hash based on the FNV algorithm is then used to produce hash values of
+the areas between two reset points. The resulting signature comes from
+the concatenation of a single character from the FNV hash per reset
+point.
+
+The frequency of the reset points determines how many characters in
+the plaintext will be used for each character of output in the
+signature. At startup spamsum scans the plaintext to determine how
+many valid input characters are in the plaintext (whitespace is
+ignored). The algorithm then estimates the reset frequency needed to
+produce a signature of length 64 and starts producing the
+signature. If after the signature is produced the result is less than
+a third of the desired length then the reset frequency is adjusted and
+the signature re-generated.
+
+
+Similarity Testing
+------------------
+
+Once a set of signatures has been generated you need to be able to
+take a new plaintext and see if it matches one of the signatures. The
+way this is done is to generate a spamsum signature of the new
+plaintext then compute a distance measure between each of the existing
+signatures and the new signature.
+
+The distance measure that spamsum uses is based on the 'string edit
+distance'. The string edit distance is a measure of how many edit
+operations are required to take one of the signatures and turn it into
+the other. In spamsum the 'insert' and 'delete' edit operations are
+given a weight of 1 while substitution is given a weight of 3 and
+transposition is given a weight of 5.
+
+The resulting string edit distance is then scaled to produce a 'score'
+in the range 0-100. A score of 100 indicates a perfect match and a
+score of 0 indicates a complete mismatch. If the two signatures used a
+different 'reset frequency' (also known as block_size) then the score
+is automatically set as 0.
+
+The score is weighted so that a value of 50 is a reasonable threshold
+to use for a 'good match'. 
+
+
+Running spamsum
+---------------
+
+Please run 'spamsum -h' for help with command line operation. 
+
+
+Infrastructure
+--------------
+
+spamsum is useless without a good quality database of signatures for
+known spam. I am hoping that the spamsum algorithm will be
+incorportated into a online system for capturing known SPAM (such as
+razor).
+
+
+Author
+------
+
+spamsum was written by Andrew Tridgell <tridge@samba.org>
