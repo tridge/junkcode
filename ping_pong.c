@@ -68,7 +68,7 @@ static void ping_pong(int fd, int num_locks)
 	start_timer();
 
 	lock_range(fd, 0, 1);
-	i = 1;
+	i = 0;
 
 	while (1) {
 		if (lock_range(fd, (i+1) % num_locks, 1) != 0) {
