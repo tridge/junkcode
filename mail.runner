@@ -1,4 +1,5 @@
 #!/bin/bash
+
 ###################
 # a simple mail delivery and transmission system
 # Copyright Andrew Tridgell <tridge@samba.org> 1997-2002
@@ -21,13 +22,23 @@ export PATH=$PATH:$HOME/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
 # load the user specific config
 . $HOME/.mail.runner
 
+if [ ! -z "$MAIL_RUNNER_CONF" -a -r "$MAIL_RUNNER_CONF" ]; then
+ . $MAIL_RUNNER_CONF
+fi
+
+if [ -z "$MAIL_OUT_DIR" ]; then
+    MAIL_OUT_DIR="$MAIL_DIR"
+fi
+
+
+
 # processing now continues in MAIN SCRIPT section at bottom of file
 
 
 ###############################################################################
 # send all pending mail, invoking mail.deliver at the other end
 mail_send() {
-    list=`echo $HOME/$MAIL_DIR/mail.out.*.*`
+    list=`echo $HOME/$MAIL_OUT_DIR/mail.out.*.*[0-9]`
     echo
     if [ "$list" = "" ]; then
 	echo "No messages to send";
@@ -82,7 +93,8 @@ mail_fetch() {
 # a sendmail-like call. This just places the mail in a known location for 
 # mail_send to find
 mail_sendmail() {
-    cat > $HOME/$MAIL_DIR/mail.out.$RANDOM.$$
+    msg=$HOME/$MAIL_DIR/mail.out.$RANDOM.$$
+    cat > $msg
     exit 0
 }
 
@@ -97,7 +109,7 @@ mail_remote_deliver() {
 	return $status;
     fi
 
-    for f in $HOME/$MAIL_DIR/mail.out.*.*; do
+    for f in $HOME/$MAIL_DIR/mail.out.*.*[0-9]; do
 	    if $SENDMAIL $SENDMAIL_OPTS < $f; then
 		rm -f $f
 	    else
