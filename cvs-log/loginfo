@@ -1,0 +1,39 @@
+#
+#ident	"@(#)cvs/examples:$Name:  $:$Id: loginfo,v 1.1 2001/09/15 03:07:15 tridge Exp $"
+#
+# The "loginfo" file is used to control where "cvs commit" log information
+# is sent.  The first entry on a line is a regular expression which is tested
+# against the directory that the change is being made to, relative to the
+# $CVSROOT.  For the first match that is found, then the remainder of the
+# line is a filter program that should expect log information on its standard
+# input.
+#
+# If the repository name does not match any of the regular expressions in the
+# first field of this file, the "DEFAULT" line is used, if it is specified.
+#
+# If the name "ALL" appears as a regular expression it is always used
+# in addition to the first matching regex or "DEFAULT".
+#
+# The filter program may use one and only one "%s" modifier (ala printf).  If
+# such a "%s" is specified in the filter program, a brief title is included
+# (as one argument, enclosed in single quotes) showing the relative directory
+# name and listing the modified file names.
+#
+
+samba $CVSROOT/CVSROOT/log -m samba-cvs@samba.org %{sVv}
+sidlc $CVSROOT/CVSROOT/log -m samba-cvs@samba.org %{sVv}
+jitterbug $CVSROOT/CVSROOT/log -m jitter-bugs %{sVv}
+rproxy $CVSROOT/CVSROOT/log -m rproxy-cvslog@lists.sourceforge.net %{sVv}
+librsync $CVSROOT/CVSROOT/log -m rproxy-cvslog@lists.sourceforge.net %{sVv}
+rsync $CVSROOT/CVSROOT/log -m rsync-cvs %{sVv}
+n4 $CVSROOT/CVSROOT/log -m n4-cvs %{sVv}
+evacs $CVSROOT/CVSROOT/log -m evacs-cvs %{sVv}
+jCIFS $CVSROOT/CVSROOT/log -m jCIFS %{sVv}
+ppp $CVSROOT/CVSROOT/log -m ppp-bugs %{sVv}
+linux-pmac $CVSROOT/CVSROOT/log -m linux-pmac-bugs %{sVv}
+netfilter $CVSROOT/CVSROOT/log -m rusty@rustcorp.com.au,marc+netfilter-cvs@mbsi.ca,netfilter-cvslog@lists.gnumonks.org,jamesm@intercode.com.au %{sVv}
+gnokii $CVSROOT/CVSROOT/log -m gnokii-cvs@vsb.com.au %{sVv}
+dirdiff $CVSROOT/CVSROOT/log -m tridge,paulus %{sVv}
+build_farm $CVSROOT/CVSROOT/log -m tridge,abartlet %{sVv}
+mod_ntlm_winind $CVSROOT/CVSROOT/log -m tpot %{sVv}
+DEFAULT $CVSROOT/CVSROOT/log -m tridge,tpot %{sVv}
