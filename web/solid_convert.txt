@@ -1,0 +1,4 @@
+solid_cnvert.pl converts a solid database dump to a postgres database
+dump. This was written to help move a medium sized solid database to postgresql.
+
+{{! echo "$PERL_SOURCE" }}
