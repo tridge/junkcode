@@ -197,7 +197,7 @@ static int load_one_part(struct cgi_state *cgi, FILE *f, int *len, char *boundar
 		    memcmp("--", &content[content_len-boundary_len-2], 2) == 0) {
 			content_len -= boundary_len+4;
 			if (name) {
-				if (raw_data) {
+				if (raw_data || filename) {
 					put(cgi, name, filename?filename:"");
 					cgi->variables->content = content;
 					cgi->variables->content_len = content_len;
