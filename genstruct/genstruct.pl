@@ -59,6 +59,7 @@ sub parse_one($$$$)
 		       "long" => "T_LONG",
 		       "unsigned long" => "T_ULONG",
 		       "char" => "T_CHAR",
+		       "byte_t" => "T_CHAR",
 		       "unsigned char" => "T_CHAR",
 		       "time_t" => "T_TIME_T"
 		       );
@@ -75,12 +76,6 @@ sub parse_one($$$$)
 	while ($type =~ /(.*)\*/) {
 		$ptr_count++;
 		$type = $1;
-	}
-
-	if ($type eq "char" && $ptr_count > 0) {
-		handle_general($name, "T_STRING", $ptr_count-1, "sizeof(char *)", 
-			       $element, $handler, $flags);
-		return;
 	}
 
 	if ($typemap{$type}) {

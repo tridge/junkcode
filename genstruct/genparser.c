@@ -40,6 +40,79 @@ struct parse_string {
 	char *s;
 };
 
+static int all_zero(const char *ptr, unsigned size)
+{
+	int i;
+	if (!ptr) return 1;
+	for (i=0;i<size;i++) {
+		if (ptr[i]) return 0;
+	}
+	return 1;
+}
+
+static char *encode_bytes(const char *ptr, unsigned len)
+{
+	char *ret, *p;
+	unsigned i;
+	ret = calloc(1, len*3 + 1); /* worst case size */
+	if (!ret) return NULL;
+	for (p=ret,i=0;i<len;i++) {
+		if (isprint(ptr[i]) && !strchr("\\{}", ptr[i])) {
+			*p++ = ptr[i];
+		} else {
+			if (all_zero(ptr+i, len-i)) break;
+			snprintf(p, 4, "\\%02x", *(unsigned char *)(ptr+i));
+			p += 3;
+		}
+	}
+
+	*p = 0;
+
+	return ret;
+}
+
+static char *decode_bytes(const char *s, unsigned *len) 
+{
+	char *ret, *p;
+	unsigned i;
+	ret = calloc(1, strlen(s)+1); /* worst case length */
+
+	if (*s == '{') s++;
+
+	for (p=ret,i=0;s[i];i++) {
+		if (s[i] == '}') {
+			break;
+		} else if (s[i] == '\\') {
+			unsigned v;
+			if (sscanf(&s[i+1], "%02x", &v) != 1 || v > 255) {
+				free(ret);
+				return NULL;
+			}
+			*(unsigned char *)p = v;
+			p++;
+			i += 2;
+		} else {
+			*p++ = s[i];
+		}
+	}
+	*p = 0;
+
+	(*len) = (unsigned)(p - ret);
+	
+	return ret;
+}
+
+static char *encode_string(const char *s)
+{
+	return encode_bytes(s, strlen(s));
+}
+
+static char *decode_string(const char *s)
+{
+	unsigned len;
+	return decode_bytes(s, &len);
+}
+
 static int addstr(struct parse_string *p, const char *fmt, ...)
 {
 	char *s = NULL;
@@ -63,15 +136,6 @@ static int addstr(struct parse_string *p, const char *fmt, ...)
 	return 0;
 }
 
-static int all_zero(const char *ptr, unsigned size)
-{
-	int i;
-	for (i=0;i<size;i++) {
-		if (ptr[i]) return 0;
-	}
-	return 1;
-}
-
 static const char *tabstr(unsigned level)
 {
 	static char str[8];
@@ -86,10 +150,6 @@ static int gen_dump_base(struct parse_string *p,
 			  const char *ptr)
 {
 	switch (type) {
-	case T_STRING:
-		return addstr(p, "{%s}", *(char **)(ptr));
-	case T_FSTRING:
-		return addstr(p, "{%s}", ptr);
 	case T_TIME_T:
 		return addstr(p, "%u", *(time_t *)(ptr));
 	case T_UNSIGNED:
@@ -129,6 +189,15 @@ static int gen_dump_one(struct parse_string *p,
 		free(s);
 		return 0;
 	}
+
+	if (pinfo->type == T_CHAR && pinfo->ptr_count == 1) {
+		char *s = encode_bytes(ptr, strlen(ptr));
+		int ret;
+		ret = addstr(p, "{%s}", s);
+		free(s);
+		return ret;
+	}
+
 	return gen_dump_base(p, pinfo->type, ptr);
 }
 
@@ -140,6 +209,18 @@ static int gen_dump_array(struct parse_string *p,
 			  int indent)
 {
 	int i, count=0;
+
+	/* special handling of fixed length strings */
+	if (array_len != 0 && 
+	    pinfo->ptr_count == 0 &&
+	    pinfo->type == T_CHAR) {
+		char *s = encode_bytes(ptr, array_len);
+		if (!s) return -1;
+		addstr(p, "%s%s = {%s}\n", tabstr(indent), pinfo->name, s);
+		free(s);
+		return 0;
+	}
+
 	for (i=0;i<array_len;i++) {
 		const char *p2 = ptr;
 		unsigned size = pinfo->size;
@@ -150,7 +231,7 @@ static int gen_dump_array(struct parse_string *p,
 			size = sizeof(void *);
 		}
 		
-		if (all_zero(p2, size)) {
+		if (all_zero(p2, pinfo->size)) {
 			ptr += size;
 			continue;
 		}
@@ -229,18 +310,6 @@ char *gen_dump(const struct parse_struct *pinfo,
 			size = sizeof(void *);
 		}
 
-		/* check for fixed length strings, assume null termination */
-		if (pinfo[i].array_len != 0 && 
-		    pinfo[i].ptr_count == 0 &&
-		    pinfo[i].type == T_CHAR) {
-			if (addstr(&p, "%s%s = ", tabstr(indent), pinfo[i].name) ||
-			    gen_dump_base(&p, T_FSTRING, ptr) ||
-			    addstr(&p, "\n")) {
-				goto failed;
-			}
-			continue;
-		}
-
 		if (pinfo[i].array_len) {
 			if (gen_dump_array(&p, &pinfo[i], ptr, 
 					   pinfo[i].array_len, indent)) {
@@ -257,6 +326,7 @@ char *gen_dump(const struct parse_struct *pinfo,
 			}
 			if (len > 0) {
 				p2.ptr_count--;
+				p2.dynamic_len = NULL;
 				if (gen_dump_array(&p, &p2, *(char **)ptr, 
 						   len, indent) != 0) {
 					goto failed;
@@ -307,6 +377,14 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 			  char *ptr, 
 			  const char *str)
 {
+	if (pinfo->type == T_CHAR && pinfo->ptr_count==1) {
+		unsigned len;
+		char *s = decode_bytes(str, &len);
+		if (!s) return -1;
+		*(char **)ptr = s;
+		return 0;
+	}
+
 	if (pinfo->ptr_count) {
 		struct parse_struct p2 = *pinfo;
 		*(void **)ptr = calloc(1, pinfo->ptr_count>1?sizeof(void *):pinfo->size);
@@ -319,13 +397,6 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 	}
 
 	switch (pinfo->type) {
-	case T_STRING:
-		*(char **)ptr = strdup(str);
-		if (*(char **)ptr == NULL) {
-			errno = ENOMEM;
-			return -1;
-		}
-		break;
 	case T_TIME_T:
 	{
 		unsigned v = 0;
@@ -409,8 +480,6 @@ static int gen_parse_base(const struct parse_struct *pinfo,
 	}
 	case T_STRUCT:
 		return gen_parse(pinfo->pinfo, ptr, str);
-	case T_FSTRING:
-		return -1;
 	}
 	return 0;
 }
@@ -424,10 +493,15 @@ static int gen_parse_array(const struct parse_struct *pinfo,
 	unsigned size = pinfo->size;
 
 	/* special handling of fixed length strings */
-	if (pinfo->array_len != 0 && 
+	if (array_len != 0 && 
 	    pinfo->ptr_count == 0 &&
 	    pinfo->type == T_CHAR) {
-		strncpy(ptr, str, array_len);
+		unsigned len = 0;
+		char *s = decode_bytes(str, &len);
+		if (!s) return -1;
+		memset(ptr, 0, array_len);
+		memcpy(ptr, s, len);
+		free(s);
 		return 0;
 	}
 
@@ -498,6 +572,7 @@ static int gen_parse_one(const struct parse_struct *pinfo,
 			}
 			*((char **)(data + pinfo[i].offset)) = ptr;
 			p2.ptr_count--;
+			p2.dynamic_len = NULL;
 			return gen_parse_array(&p2, ptr, str, len);
 		}
 		return 0;

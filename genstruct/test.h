@@ -4,6 +4,8 @@
 GENSTRUCT struct test2 {
 	int x1;
 	char *foo;
+	int dlen;
+	char *dfoo; _LEN(dlen)
 	struct test2 *next;
 };
 

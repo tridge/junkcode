@@ -38,7 +38,16 @@ static void fill_test2_p(struct test2 **t, int count);
 static void fill_test2(struct test2 *t2, int count)
 {
 	t2->x1 = 7 - count;
-	t2->foo = strdup("hello there");
+	t2->foo = strdup("hello { there");
+
+	t2->dlen = random() % 30;
+	if (t2->dlen) {
+		int i;
+		t2->dfoo = malloc(t2->dlen);
+		for (i=0;i<t2->dlen;i++) {
+			t2->dfoo[i] = random();
+		}
+	}
 	
 	if (count) fill_test2_p(&t2->next, count-1);
 }
@@ -57,7 +66,7 @@ static void fill_test1(struct test1 *t)
 	memset(t, 0, sizeof(*t));
 
 	strcpy(t->foo, "hello foo");
-	t->foo2[1] = strdup("foo2 you");
+	t->foo2[1] = strdup("foo2 } you");
 	t->foo2[2] = strdup("foo2 you 2");
 
 	t->xlen = random() % 10;

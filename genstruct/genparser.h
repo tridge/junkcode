@@ -24,7 +24,7 @@
   automatic marshalling/unmarshalling system for C structures
 */
 
-enum parse_type {T_STRING, T_FSTRING, T_INT, T_UNSIGNED, T_CHAR,
+enum parse_type {T_INT, T_UNSIGNED, T_CHAR,
 		 T_FLOAT, T_DOUBLE, T_ENUM, T_STRUCT,
 		 T_TIME_T, T_LONG, T_ULONG};
 
