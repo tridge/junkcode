@@ -37,7 +37,7 @@ static void read_file(char *fname)
 	while ((n = read(fd, buf, sizeof(buf))) > 0) {
 		total += n;
 		thisrun += n;
-		if (end_timer() >= 2.0) {
+		if (end_timer() >= 1.0) {
 			printf("%d MB    %g MB/sec\n", 
 			       (int)(total/1.0e6),
 			       (thisrun*1.0e-6)/end_timer());
