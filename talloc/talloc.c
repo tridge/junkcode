@@ -757,6 +757,7 @@ void talloc_report_full(const void *ptr, FILE *f)
 		(unsigned long)talloc_total_blocks(ptr));
 
 	talloc_report_depth(ptr, f, 1);
+	fflush(f);
 }
 
 /*
@@ -784,7 +785,7 @@ void talloc_report(const void *ptr, FILE *f)
 			(unsigned long)talloc_total_size(c+1),
 			(unsigned long)talloc_total_blocks(c+1));
 	}
-
+	fflush(f);
 }
 
 /*
@@ -945,16 +946,13 @@ static char *talloc_vasprintf_append(char *s, const char *fmt, va_list ap) PRINT
 
 static char *talloc_vasprintf_append(char *s, const char *fmt, va_list ap)
 {	
+	struct talloc_chunk *tc = talloc_chunk_from_ptr(s);
 	int len, s_len;
 	va_list ap2;
 
 	VA_COPY(ap2, ap);
 
-	if (s) {
-		s_len = strlen(s);
-	} else {
-		s_len = 0;
-	}
+	s_len = tc->size - 1;
 	len = vsnprintf(NULL, 0, fmt, ap2);
 
 	s = talloc_realloc(NULL, s, char, s_len + len+1);
