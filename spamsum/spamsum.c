@@ -18,9 +18,6 @@
 #include <unistd.h>
 #include <ctype.h>
 
-/* we ignore all spaces */
-#define ignore_char(c) isspace(c)
-
 /* the output is a string of length 64 in base64 */
 #define SPAMSUM_LENGTH 64
 
@@ -36,6 +33,9 @@
 
 typedef unsigned u32;
 typedef unsigned char uchar;
+
+#define FLAG_IGNORE_WHITESPACE 1
+#define FLAG_IGNORE_HEADERS 2
 
 static struct {
 	uchar window[ROLLING_WINDOW];
@@ -91,7 +91,7 @@ static inline u32 sum_hash(uchar c, u32 h)
   take a message of length 'length' and return a string representing a hash of that message,
   prefixed by the selected blocksize
 */
-char *spamsum(const uchar *in, size_t length)
+char *spamsum(const uchar *in, size_t length, u32 flags)
 {
 	const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 	char *ret, *p;
@@ -99,12 +99,25 @@ char *spamsum(const uchar *in, size_t length)
 	u32 h, h2;
 	u32 block_size, j, n, i;
 
-	/* count the non-ignored chars */
-	for (n=0, i=0; i<length; i++) {
-		if (ignore_char(in[i])) continue;
-		n++;
+	/* if we are ignoring email headers then skip past them now */
+	if (flags & FLAG_IGNORE_HEADERS) {
+		const uchar *s = strstr(in, "\n\n");
+		if (s) {
+			length -= (s+2 - in);
+			in = s+2;
+		}
 	}
-	total_chars = n;
+
+	if (flags & FLAG_IGNORE_WHITESPACE) {
+		/* count the non-ignored chars */
+		for (n=0, i=0; i<length; i++) {
+			if (isspace(in[i])) continue;
+			n++;
+		}
+		total_chars = n;
+	} else {
+		total_chars = length;
+	}
 
 	/* guess a reasonable block size */
 	block_size = MIN_BLOCKSIZE;
@@ -127,7 +140,8 @@ again:
 	h = roll_reset();
 
 	for (i=0; i<length; i++) {
-		if (ignore_char(in[i])) continue;
+		if ((flags & FLAG_IGNORE_WHITESPACE) && 
+		    isspace(in[i])) continue;
 
 		/* 
 		   at each character we update the rolling hash and
@@ -325,7 +339,8 @@ u32 spamsum_match(const char *str1, const char *str2)
 	/* rescale to a 0-100 scale (friendlier to humans) */
 	score = (100 * score) / 64;
 
-	/* it is possible to get a score above 100 here, but it is a really terrible match */
+	/* it is possible to get a score above 100 here, but it is a
+	   really terrible match */
 	if (score >= 100) return 0;
 
 	/* now re-scale on a 0-100 scale with 0 being a poor match and
@@ -373,7 +388,7 @@ u32 spamsum_match_db(const char *fname, const char *sum)
 /*
   return the spamsum on stdin
 */
-char *spamsum_stdin(void)
+char *spamsum_stdin(u32 flags)
 {
 	uchar buf[10*1024];
 	uchar *msg;
@@ -396,7 +411,7 @@ char *spamsum_stdin(void)
 		length += n;
 	}
 	
-	sum = spamsum(msg, length);
+	sum = spamsum(msg, length, flags);
 	
 	free(msg);
 
@@ -407,7 +422,7 @@ char *spamsum_stdin(void)
 /*
   return the spamsum on a file
 */
-char *spamsum_file(const char *fname)
+char *spamsum_file(const char *fname, u32 flags)
 {
 	int fd;
 	char *sum;
@@ -432,7 +447,7 @@ char *spamsum_file(const char *fname)
 	}
 	close(fd);
 
-	sum = spamsum(msg, st.st_size);
+	sum = spamsum(msg, st.st_size, flags);
 
 	munmap(msg, st.st_size);
 
@@ -442,15 +457,15 @@ char *spamsum_file(const char *fname)
 static void show_help(void)
 {
 	printf("
-spamsum v1.0 written by Andrew Tridgell <tridge@samba.org>
+spamsum v1.1 written by Andrew Tridgell <tridge@samba.org>
 
 spamsum computes a signature string that is particular good for detecting if two emails
 are very similar. This can be used to detect SPAM.
 
 Syntax:
-   spamsum <files> 
+   spamsum [options] <files> 
 or
-   spamsum -d sigs.txt -c SIG
+   spamsum [options] -d sigs.txt -c SIG
 
 When called with a list of filenames spamsum will write out the signatures of each file
 on a separate line. You can specify the filename '-' for standard input.
@@ -459,6 +474,10 @@ When called with the second form, spamsum will print the best score
 for the given signature with the signatures in the given database. A
 score of 100 means a perfect match, and a score of 0 means a complete
 mismatch.
+
+Options:
+   -W          ignore whitespace
+   -H          skip past mail headers
 ");
 }
 
@@ -471,9 +490,18 @@ int main(int argc, char *argv[])
 	char *dbname = NULL;
 	u32 score;
 	int i;
+	u32 flags = 0;
 
-	while ((c = getopt(argc, argv, "d:c:h")) != -1) {
+	while ((c = getopt(argc, argv, "WHd:c:h")) != -1) {
 		switch (c) {
+		case 'W':
+			flags |= FLAG_IGNORE_WHITESPACE;
+			break;
+
+		case 'H':
+			flags |= FLAG_IGNORE_HEADERS;
+			break;
+
 		case 'd':
 			dbname = optarg;
 			break;
@@ -505,9 +533,9 @@ int main(int argc, char *argv[])
 	/* compute the spamsum on a list of files */
 	for (i=0;i<argc;i++) {
 		if (strcmp(argv[i], "-") == 0) {
-			sum = spamsum_stdin();
+			sum = spamsum_stdin(flags);
 		} else {
-			sum = spamsum_file(argv[i]);
+			sum = spamsum_file(argv[i], flags);
 		}
 		printf("%s\n", sum);
 		free(sum);
