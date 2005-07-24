@@ -1,6 +1,24 @@
+/* 
+   Unix SMB/CIFS implementation.
+
+   Copyright (C) Andrew Tridgell 2005
+   
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+   
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+   
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+*/
 /*
   a replacement for opendir/readdir/telldir/seekdir/closedir for BSD systems
-  tridge@samba.org, July 2005
 
   This is needed because the existing directory handling in FreeBSD
   and OpenBSD (and possibly NetBSD) doesn't correctly handle unlink()
@@ -18,7 +36,11 @@
   Note! This replacement code is not portable. It relies on getdents()
   always leaving the file descriptor at a seek offset that is a
   multiple of DIR_BUF_SIZE. If the code detects that this doesn't
-  happen then it will abort().
+  happen then it will abort(). It also does not handle directories
+  with offsets larger than can be stored in a long,
+
+  This code is available under other free software licenses as
+  well. Contact the author.
 */
 
 #include <stdlib.h>
@@ -39,7 +61,7 @@ struct dir_buf {
 	char buf[DIR_BUF_SIZE];
 };
 
-struct dir_buf *rep_opendir(const char *dname)
+DIR *opendir(const char *dname)
 {
 	struct dir_buf *d;
 	d = malloc(sizeof(*d));
@@ -55,11 +77,12 @@ struct dir_buf *rep_opendir(const char *dname)
 	d->ofs = 0;
 	d->seekpos = 0;
 	d->nbytes = 0;
-	return d;
+	return (DIR *)d;
 }
 
-struct dirent *rep_readdir(struct dir_buf *d)
+struct dirent *readdir(DIR *dir)
 {
+	struct dir_buf *d = (struct dir_buf *)dir;
 	struct dirent *de;
 
 	if (d->ofs >= d->nbytes) {
@@ -75,8 +98,9 @@ struct dirent *rep_readdir(struct dir_buf *d)
 	return de;
 }
 
-off_t rep_telldir(struct dir_buf *d)
+long telldir(DIR *dir)
 {
+	struct dir_buf *d = (struct dir_buf *)dir;
 	if (d->ofs >= d->nbytes) {
 		d->seekpos = lseek(d->fd, 0, SEEK_CUR);
 		d->ofs = 0;
@@ -90,18 +114,25 @@ off_t rep_telldir(struct dir_buf *d)
 	return d->seekpos + d->ofs;
 }
 
-void rep_seekdir(struct dir_buf *d, off_t ofs)
+void seekdir(DIR *dir, long ofs)
 {
+	struct dir_buf *d = (struct dir_buf *)dir;
 	d->seekpos = lseek(d->fd, ofs & ~(DIR_BUF_SIZE-1), SEEK_SET);
 	d->nbytes = getdents(d->fd, d->buf, DIR_BUF_SIZE);
 	d->ofs = 0;
 	while (d->ofs < (ofs & (DIR_BUF_SIZE-1))) {
-		if (rep_readdir(d) == NULL) break;
+		if (readdir(dir) == NULL) break;
 	}
 }
 
-int rep_closedir(struct dir_buf *d)
+void rewinddir(DIR *dir)
 {
+	seekdir(dir, 0);
+}
+
+int closedir(DIR *dir)
+{
+	struct dir_buf *d = (struct dir_buf *)dir;
 	int r = close(d->fd);
 	if (r != 0) {
 		return r;
@@ -110,3 +141,11 @@ int rep_closedir(struct dir_buf *d)
 	return 0;
 }
 
+#ifndef dirfd
+/* darn, this is a macro on some systems. */
+int dirfd(DIR *dir)
+{
+	struct dir_buf *d = (struct dir_buf *)dir;
+	return d->fd;
+}
+#endif
