@@ -1,6 +1,24 @@
 /*
   a replacement for opendir/readdir/telldir/seekdir/closedir for BSD systems
-  
+  tridge@samba.org, July 2005
+
+  This is needed because the existing directory handling in FreeBSD
+  and OpenBSD (and possibly NetBSD) doesn't correctly handle unlink()
+  on files in a directory where telldir() has been used. On a block
+  boundary it will occasionally miss a file when seekdir() is used to
+  return to a position previously recorded with telldir().
+
+  This also fixes a severe performance and memory usage problem with
+  telldir() on BSD systems. Each call to telldir() in BSD adds an
+  entry to a linked list, and those entries are cleaned up on
+  closedir(). This means with a large directory closedir() can take an
+  arbitrary amount of time, causing network timeouts as millions of
+  telldir() entries are freed
+
+  Note! This replacement code is not portable. It relies on getdents()
+  always leaving the file descriptor at a seek offset that is a
+  multiple of DIR_BUF_SIZE. If the code detects that this doesn't
+  happen then it will abort().
 */
 
 #include <stdlib.h>

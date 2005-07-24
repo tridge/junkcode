@@ -13,8 +13,8 @@ int rep_closedir(struct dir_buf *d);
 
 /* and for compatibility ... */
 #define DIR struct dir_buf
-#define opendir rep_opendir
-#define readdir rep_readdir
-#define telldir rep_telldir
-#define seekdir rep_seekdir
-#define closedir rep_closedir
+#define opendir(d) rep_opendir(d)
+#define readdir(d) rep_readdir(d)
+#define telldir(d) rep_telldir(d)
+#define seekdir(d, ofs) rep_seekdir(d, ofs)
+#define closedir(d) rep_closedir(d)
