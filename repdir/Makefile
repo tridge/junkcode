@@ -10,10 +10,10 @@ bsd_telldir: bsd_telldir.o repdir.o
 	$(CC) -o bsd_telldir bsd_telldir.o repdir.o
 
 os2_delete_broken: os2_delete.o
-	$(CC) -o os2_delete os2_delete.o
+	$(CC) -o os2_delete_broken os2_delete.o
 
 bsd_telldir_broken: bsd_telldir.o
-	$(CC) -o bsd_telldir bsd_telldir.o
+	$(CC) -o bsd_telldir_broken bsd_telldir.o
 
 clean:
 	rm -f *.o os2_delete bsd_telldir *~
