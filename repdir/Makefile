@@ -16,4 +16,4 @@ bsd_telldir_broken: bsd_telldir.o
 	$(CC) -o bsd_telldir_broken bsd_telldir.o
 
 clean:
-	rm -f *.o os2_delete bsd_telldir *~
+	rm -f *.o os2_delete bsd_telldir os2_delete_broken bsd_telldir_broken *~
