@@ -209,7 +209,8 @@ int main(int argc, char *argv[])
 		nread = recvfrom(sock_in, buf, sizeof(buf), 0, &in, &len);
 		if (nread == -1) continue;
 
-		printf("XXX Received %d byte request\n", nread);
+#if 0
+		printf("Received %d byte request\n", nread);
 		if (nread < 400) {
 			printf("RECOGNISED AS-REQ\n");
 			sock_out = open_socket_out(host, dest_port);
@@ -217,6 +218,10 @@ int main(int argc, char *argv[])
 			printf("NOT AS-REQ\n");
 			sock_out = open_socket_out("127.0.0.1", 89);
 		}
+#else
+		printf("Received %d byte request\n", nread);
+		sock_out = open_socket_out(host, dest_port);
+#endif
 		if (sock_out == -1) {
 			exit(1);
 		}
