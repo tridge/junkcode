@@ -11,11 +11,8 @@ CC=gcc
 
 all: main
 
-main: main.o includes.h.gch
+main: includes.h.gch main.o 
 	$(CC) -o main main.o
 
 clean:
 	rm -f *.gch *.o trace.out *~ main
-
-
-
