@@ -1,5 +1,10 @@
 #!/usr/bin/perl -w
 
+# analyse a strace in format given by strace -ttT
+# Andrew Tridgell <tridge@samba.org> March 2006
+# released under GNU GPL version 2 or later
+
+
 my %totals;
 my %cpu;
 my $total;
