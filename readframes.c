@@ -58,6 +58,19 @@ static void test_file(const char *fname)
 	printf("%6.2fms %s\n", t*1000.0, fname);
 }
 
+static int name_cmp(char **n1, char **n2)
+{
+	const char *s1=*n1, *s2=*n2;
+	/* try to do numerical sorting */
+	while (*s1 && *s1 == *s2 && !(isdigit(*s1) || isdigit(*s2))) {
+		s1++; s2++;
+	}
+	if (isdigit(*s1)) {
+		return atoi(s1) - atoi(s2);
+	}
+	return strcmp(s1, s2);
+}
+
 int main(int argc, char* argv[])
 {
 	int i;	
@@ -68,6 +81,8 @@ int main(int argc, char* argv[])
 		printf("Usage: readframes <files>\n");
 		exit(1);
 	}
+
+	qsort(&argv[1], argc-1, sizeof(char *), name_cmp);
 
 	for (i=1;i<argc;i++) {
 		test_file(argv[i]);
