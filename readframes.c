@@ -62,10 +62,10 @@ static int name_cmp(char **n1, char **n2)
 {
 	const char *s1=*n1, *s2=*n2;
 	/* try to do numerical sorting */
-	while (*s1 && *s1 == *s2 && !(isdigit(*s1) || isdigit(*s2))) {
+	while (*s1 && *s1 == *s2) {
 		s1++; s2++;
 	}
-	if (isdigit(*s1)) {
+	if (isdigit(*s1) || isdigit(*s2)) {
 		return atoi(s1) - atoi(s2);
 	}
 	return strcmp(s1, s2);
