@@ -40,7 +40,7 @@ static void xlogit(const char *fmt, ...)
 
 	if (logfd != -1) {
 		va_start(ap, fmt);
-		vdprintf(2, fmt, ap);
+		vdprintf(logfd, fmt, ap);
 		va_end(ap);
 	}
 }
