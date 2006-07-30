@@ -16,8 +16,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <getopt.h>
 
 static struct timeval tp1,tp2;
+
+static int do_reads, do_writes;
 
 static void start_timer()
 {
@@ -75,6 +78,18 @@ static void ping_pong(int fd, int num_locks)
 			printf("lock at %d failed! - %s\n",
 			       (i+1) % num_locks, strerror(errno));
 		}
+		if (do_reads) {
+			char c;
+			if (pread(fd, &c, 1, i) != 1) {
+				printf("read failed at %d\n", i);
+			}
+		}
+		if (do_writes) {
+			char c;
+			if (pwrite(fd, &c, 1, i) != 1) {
+				printf("write failed at %d\n", i);
+			}
+		}
 		if (unlock_range(fd, i, 1) != 0) {
 			printf("unlock at %d failed! - %s\n",
 			       i, strerror(errno));
@@ -95,14 +110,34 @@ int main(int argc, char *argv[])
 {
 	char *fname;
 	int fd, num_locks;
+	int c;
 
-	if (argc < 3) {
-		printf("ping_pong <file> <num_locks>\n");
+	while ((c = getopt(argc, argv, "rw")) != -1) {
+		switch (c){
+		case 'w':
+			do_writes = 1;
+			break;
+		case 'r':
+			do_reads = 1;
+			break;
+		default:
+			fprintf(stderr, "Unknown option '%c'\n", c);
+			exit(1);
+		}
+	}
+
+	argv += optind;
+	argc -= optind;
+
+	if (argc < 2) {
+		printf("ping_pong [options] <file> <num_locks>\n");
+		printf("           -r    do reads\n");
+		printf("           -w    do writes\n");
 		exit(1);
 	}
 
-	fname = argv[1];
-	num_locks = atoi(argv[2]);
+	fname = argv[0];
+	num_locks = atoi(argv[1]);
 
 	fd = open(fname, O_CREAT|O_RDWR, 0600);
 	if (fd == -1) exit(1);
