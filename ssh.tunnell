@@ -1,0 +1,20 @@
+#!/bin/sh
+
+GATEWAY=tridgell.net
+GATEWAY_ADDR=192.168.2.2
+GATEWAY_IFACE=eth0
+CLIENT_ADDR=192.168.2.15
+NETWORK=192.168.2.0/24
+TUNDEV=7
+
+pkill -f tun$TUNDEV
+
+ssh -f -w $TUNDEV:$TUNDEV root@$GATEWAY "/sbin/ifconfig tun$TUNDEV up $GATEWAY_ADDR; /sbin/route add $CLIENT_ADDR dev tun$TUNDEV; /usr/sbin/arp -Ds $CLIENT_ADDR $GATEWAY_IFACE pub; while /sbin/ifconfig tun$TUNDEV > /dev/null; do sleep 5; done;"
+
+sleep 2
+
+sudo /sbin/ifconfig tun$TUNDEV up $CLIENT_ADDR
+sudo /sbin/route add -net $NETWORK dev tun$TUNDEV
+/sbin/ifconfig tun$TUNDEV
+
+echo "Tunnel up - to bring it down run \"pkill -f tun$TUNDEV\""
