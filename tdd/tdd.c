@@ -28,6 +28,8 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #endif
 
+static int sparse_writes;
+
 _syscall5(int , _llseek, 
 	  int, fd, 
 	  unsigned long , offset_high,
@@ -95,6 +97,26 @@ static void swap_bytes(char *p, int n)
 	}
 }
 
+static int all_zero(const char *buf, size_t count)
+{
+	while (count--) {
+		if (*buf != 0) return 0;
+	}
+	return 1;
+}
+
+/* varient of write() that will produce a sparse file if possible */
+static ssize_t write_sparse(int fd, const void *buf, size_t count)
+{
+	if (!sparse_writes || !all_zero(buf, count)) {
+		return write(fd, buf, count);
+	}
+	if (ftruncate(fd, lseek(fd, 0, SEEK_CUR) + count) != 0) {
+		return -1;
+	}
+	lseek(fd, count, SEEK_CUR);
+	return count;
+}
 
 static void usage(void)
 {
@@ -151,11 +173,14 @@ int main(int argc, char *argv[])
 		} else if (strncmp(a,"count=", 6) == 0) {
 			count = getval(a+6);
 		} else if (strncmp(a,"conv=", 4) == 0) {
-			if (strcmp(a+5, "swab")) {
+			if (strcmp(a+5, "sparse") == 0) {
+				sparse_writes=1;
+			} else if (strcmp(a+5, "swab") == 0) {
+				bswap = 1;
+			} else {
 				fprintf(stderr,"%s not supported\n", a);
 				exit(1);
 			}
-			bswap = 1;
 		} else {
 			fprintf(stderr,"unknown option %s\n", a);
 			exit(1);
@@ -221,7 +246,7 @@ int main(int argc, char *argv[])
 		n += nread;
 
 		while (n >= obs) {
-			loff_t nwritten = write(fd2, buf, obs);
+			loff_t nwritten = write_sparse(fd2, buf, obs);
 			if (nwritten > 0) bytes_out += nwritten;
 			if (nwritten != obs) {
 				fprintf(stderr,"write failure\n");
@@ -243,7 +268,7 @@ int main(int argc, char *argv[])
 
  out1:
 	if (n) {
-		loff_t nwritten = write(fd2, buf, n);
+		loff_t nwritten = write_sparse(fd2, buf, n);
 		if (nwritten > 0) bytes_out += nwritten;
 	}
 
