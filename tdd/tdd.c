@@ -47,6 +47,9 @@ static loff_t llseek(int fd, loff_t offset, unsigned origin)
 	return ret;
 }
 
+extern int ftruncate64(int , loff_t);
+
+
 static loff_t getval(char *s)
 {
 	char *p;
@@ -108,13 +111,15 @@ static int all_zero(const char *buf, size_t count)
 /* varient of write() that will produce a sparse file if possible */
 static ssize_t write_sparse(int fd, const void *buf, size_t count)
 {
+	loff_t ofs;
 	if (!sparse_writes || !all_zero(buf, count)) {
 		return write(fd, buf, count);
 	}
-	if (ftruncate(fd, lseek(fd, 0, SEEK_CUR) + count) != 0) {
+	ofs = llseek(fd, 0, SEEK_CUR) + count;
+	if (ftruncate64(fd, ofs) != 0) {
 		return -1;
 	}
-	lseek(fd, count, SEEK_CUR);
+	llseek(fd, count, SEEK_CUR);
 	return count;
 }
 
