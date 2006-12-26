@@ -106,27 +106,11 @@ static void write_all(int fd, unsigned char *s, size_t n)
 
 static void main_loop(int sock1, int sock2)
 {
-	unsigned char buf[1024];
-	int log1, log2, i=0;
+	unsigned char buf[10240];
+	int i=0;
 	struct sockaddr from;
 	socklen_t fromlen = sizeof(from);
 	int connected = 0;
-
-	do {
-		char *fname1, *fname2;
-		asprintf(&fname1, "udpspy-in.%d", i);
-		asprintf(&fname2, "udpspy-out.%d", i);
-		log1 = open(fname1, O_WRONLY|O_CREAT|O_EXCL, 0644);
-		log2 = open(fname2, O_WRONLY|O_CREAT|O_EXCL, 0644);
-		free(fname1);
-		free(fname2);
-		i++;
-	} while (i<1000 && (log1 == -1 || log2 == -1));
-
-	if (log1 == -1 || log2 == -1) {
-		fprintf(stderr,"Failed to open log files\n");
-		return;
-	}
 
 	while (1) {
 		fd_set fds;
@@ -149,18 +133,16 @@ static void main_loop(int sock1, int sock2)
 				connected = 1;
 			}
 
-			printf("out %d bytes\n", n);
+//			printf("out %d bytes\n", n);
 			write_all(sock2, buf, n);
-			write_all(log1, buf, n);
 		}
 
 		if (FD_ISSET(sock2, &fds)) {
 			int n = read(sock2, buf, sizeof(buf));
 			if (n <= 0) break;
 
-			printf("in %d bytes\n", n);
+//			printf("in %d bytes\n", n);
 			write_all(sock1, buf, n);
-			write_all(log2, buf, n);
 		}
 	}	
 }
@@ -201,43 +183,9 @@ int main(int argc, char *argv[])
 
 	signal(SIGALRM, sig_alrm);
 
-	while (1) {
-		struct sockaddr_in in;
-		socklen_t len = sizeof(in);
-		int nread;
+	sock_out = open_socket_out(host, dest_port);
 
-		nread = recvfrom(sock_in, buf, sizeof(buf), 0, &in, &len);
-		if (nread == -1) continue;
+	main_loop(sock_in, sock_out);
 
-#if 0
-		printf("Received %d byte request\n", nread);
-		if (nread < 400) {
-			printf("RECOGNISED AS-REQ\n");
-			sock_out = open_socket_out(host, dest_port);
-		} else {
-			printf("NOT AS-REQ\n");
-			sock_out = open_socket_out("127.0.0.1", 89);
-		}
-#else
-		printf("Received %d byte request\n", nread);
-		sock_out = open_socket_out(host, dest_port);
-#endif
-		if (sock_out == -1) {
-			exit(1);
-		}
-		
-		write(sock_out, buf, nread);
-		
-		alarm(2);
-		nread = read(sock_out, buf, sizeof(buf));
-		alarm(0);
-		
-		printf("YYY Received %d byte reply\n", nread);
-		
-		close(sock_out);
-		if (nread != -1) {
-			sendto(sock_in, buf, nread, 0, &in, len);
-		}
-	}
 	return 0;
 }
