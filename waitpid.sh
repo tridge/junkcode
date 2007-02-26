@@ -9,8 +9,8 @@ waitforpid() {
     _wcount=0
     while kill -0 $pid 2> /dev/null; do
 	sleep 1;
-	wcount=`expr $wcount + 1`
-	if [ $wcount -eq $timeout ]; then
+	_wcount=`expr $_wcount + 1`
+	if [ $_wcount -eq $timeout ]; then
 	    return "1";
 	fi
     done
