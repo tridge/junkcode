@@ -1,6 +1,8 @@
 #!/bin/sh
 
 
+# wait for a pid with given timeout
+# returns 1 if it timed out, 0 if the process exited itself
 waitforpid() {
     pid=$1
     timeout=$2 # in seconds
@@ -9,9 +11,14 @@ waitforpid() {
 	sleep 1;
 	wcount=`expr $wcount + 1`
 	if [ $wcount -eq $timeout ]; then
-	    break;
+	    return "1";
 	fi
     done
+    return "0";
 }
 
-waitforpid $1 $2
+if `waitforpid $1 $2`; then
+    echo "process $1 exited"
+else
+    echo "process $1 timed out"
+fi
