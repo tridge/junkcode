@@ -1,0 +1,23 @@
+--- bzrtools.py~     2006-11-28 12:04:34.000000000 +1100
++++ bzrtools.py      2006-12-05 10:15:25.000000000 +1100
+@@ -249,6 +249,11 @@
+     if push_location is None:
+         raise BzrCommandError("No rspush location known or specified.")
+
++    if (push_location.find('::') != -1):
++        usessh=False
++    else:
++        usessh=True
++
+     if (push_location.find('://') != -1 or
+         push_location.find(':') == -1):
+         raise BzrCommandError("Invalid rsync path %r." % push_location)
+@@ -283,7 +288,7 @@
+                 " specified location.  Please ensure that"
+                 ' "%s" is of the form "machine:/path".' % push_location)
+     print "Pushing to %s" % push_location
+-    rsync(tree.basedir+'/', push_location, ssh=True,
++    rsync(tree.basedir+'/', push_location, ssh=usessh,
+           excludes=final_exclusions)
+
+     set_push_data(tree, push_location)
