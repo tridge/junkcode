@@ -21,7 +21,9 @@
 #include <netinet/tcp.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <sys/epoll.h>
 
+#define TCP_NODELAY            1
 
 typedef int BOOL;
 
@@ -285,11 +287,20 @@ static int tcp_socket_accept(int fd)
 	return accept(fd, &a, &len);
 }
 
+static void set_nonblocking(int fd)
+{
+	unsigned v = fcntl(fd, F_GETFL, 0);
+	fcntl(fd, F_SETFL, v | O_NONBLOCK);
+}
+
 static void worker(const char *host, int port1, int port2, int w)
 {
 	int l = tcp_socket_bind(port1);
 	int s2, s1;
 	int count=0;
+	char c[4] = { 0, };
+	int epoll_fd;
+	struct epoll_event event;
 
 	set_socket_options(l, "SO_REUSEADDR");
 
@@ -303,12 +314,36 @@ static void worker(const char *host, int port1, int port2, int w)
 
 	start_timer();
 
+	epoll_fd = epoll_create(2);
+
+	memset(&event, 0, sizeof(event));
+
+	event.events = EPOLLIN | EPOLLERR | EPOLLHUP;
+	event.data.fd = s1;
+	epoll_ctl(epoll_fd, EPOLL_CTL_ADD, s1, &event);
+
+	set_nonblocking(s1);
+
 	while (1) {
-		char c=0;
-		if (write(s2, &c, 1) != 1) {
+		struct epoll_event events[8];
+		int ret;
+		int num_ready;
+
+		*(int*)c = count;
+		
+		if (write(s2, c, sizeof(c)) != sizeof(c)) {
 			fatal("write");
 		}
-		if (read(s1, &c, 1) != 1) {
+		ret = epoll_wait(epoll_fd, events, 8, -1);
+		if (ret != 1) fatal("epoll_wait");
+
+		if (ioctl(s1, FIONREAD, &num_ready) != 0) fatal("FIONREAD");
+
+		printf("num_ready=%d\n", num_ready);
+
+//		if (num_ready != sizeof(c)) fatal("num_ready");
+	     
+		if (read(s1, c, sizeof(c)) != sizeof(c)) {
 			fatal("read");
 		}
 		if (w == 1 && (end_timer() > 1.0)) {

@@ -288,11 +288,11 @@ static void worker(const char *host, int port1, int port2, int w)
 	start_timer();
 
 	while (1) {
-		char c=0;
-		if (write(s2, &c, 1) != 1) {
+		char c[1];
+		if (write(s2, c, sizeof(c)) != sizeof(c)) {
 			fatal("write");
 		}
-		if (read(s1, &c, 1) != 1) {
+		if (read(s1, c, sizeof(c)) != sizeof(c)) {
 			fatal("read");
 		}
 		if (w == 1 && (end_timer() > 1.0)) {
