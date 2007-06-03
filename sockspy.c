@@ -33,7 +33,7 @@ static int open_socket_out(const char *host, int port)
 	} else {
 		hp = gethostbyname(host);
 		if (!hp) {
-			fprintf(stderr,"tseal: unknown host %s\n", host);
+			fprintf(stderr,"unknown host %s\n", host);
 			return -1;
 		}
 		memcpy(&sock_out.sin_addr, hp->h_addr, hp->h_length);
@@ -44,7 +44,7 @@ static int open_socket_out(const char *host, int port)
 
 	if (connect(res,(struct sockaddr *)&sock_out,sizeof(sock_out)) != 0) {
 		close(res);
-		fprintf(stderr,"tseal: failed to connect to %s (%s)\n", 
+		fprintf(stderr,"failed to connect to %s (%s)\n", 
 			host, strerror(errno));
 		return -1;
 	}
@@ -103,15 +103,8 @@ static void write_all(int fd, unsigned char *s, size_t n)
 static void main_loop(int sock1, int sock2)
 {
 	unsigned char buf[1024];
-	int log1, log2;
 
-	log1 = open("sockspy.log1", O_WRONLY|O_CREAT|O_TRUNC, 0644);
-	log2 = open("sockspy.log2", O_WRONLY|O_CREAT|O_TRUNC, 0644);
-
-	if (log1 == -1 || log2 == -1) {
-		fprintf(stderr,"Failed to open log files\n");
-		return;
-	}
+	srandom(getpid());
 
 	while (1) {
 		fd_set fds;
@@ -128,15 +121,14 @@ static void main_loop(int sock1, int sock2)
 		if (FD_ISSET(sock1, &fds)) {
 			int n = read(sock1, buf, sizeof(buf));
 			if (n <= 0) break;
+
 			write_all(sock2, buf, n);
-			write_all(log1, buf, n);
 		}
 
 		if (FD_ISSET(sock2, &fds)) {
 			int n = read(sock2, buf, sizeof(buf));
 			if (n <= 0) break;
 			write_all(sock1, buf, n);
-			write_all(log2, buf, n);
 		}
 	}	
 }
@@ -168,26 +160,33 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	if (listen(listen_fd, 5) == -1) {
+	if (listen(listen_fd, 100) == -1) {
 		fprintf(stderr,"listen failed\n");
 		exit(1);
 	}
 
-	sock_in = accept(listen_fd,&addr,&in_addrlen);
+	while (1) {
+		sock_in = accept(listen_fd,&addr,&in_addrlen);
+		if (sock_in == -1) {
+			fprintf(stderr,"accept on port %d failed - %s\n", 
+				listen_port, strerror(errno));
+			exit(1);
+		}
 
-	if (sock_in == -1) {
-		fprintf(stderr,"accept on port %d failed - %s\n", 
-			listen_port, strerror(errno));
-		exit(1);
+		if (fork() == 0) {
+			close(listen_fd);
+
+			sock_out = open_socket_out(host, dest_port);
+			if (sock_out == -1) {
+				exit(1);
+			}
+
+			main_loop(sock_in, sock_out);
+			_exit(0);
+		}
+
+		close(sock_in);
 	}
 
-	close(listen_fd);
-
-	sock_out = open_socket_out(host, dest_port);
-	if (sock_out == -1) {
-		exit(1);
-	}
-
-	main_loop(sock_in, sock_out);
 	return 0;
 }
