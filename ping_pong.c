@@ -72,13 +72,15 @@ static void ping_pong(int fd, int num_locks)
 	unsigned char incr=0, last_incr=0;
 	unsigned char *p = NULL;
 
+	ftruncate(fd, num_locks+1);
+
 	if (use_mmap) {
 		p = mmap(NULL, num_locks+1, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
 	}
 
 	val = (unsigned char *)calloc(num_locks+1, sizeof(unsigned char));
 
-	start_timer();
+	start_timer();	
 
 	lock_range(fd, 0, 1);
 	i = 0;
