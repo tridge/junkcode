@@ -17,10 +17,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <sys/mman.h>
 
 static struct timeval tp1,tp2;
 
-static int do_reads, do_writes;
+static int do_reads, do_writes, use_mmap;
 
 static void start_timer()
 {
@@ -69,6 +70,11 @@ static void ping_pong(int fd, int num_locks)
 	int i=0;
 	unsigned char *val;
 	unsigned char incr=0, last_incr=0;
+	unsigned char *p = NULL;
+
+	if (use_mmap) {
+		p = mmap(NULL, num_locks+1, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	}
 
 	val = (unsigned char *)calloc(num_locks+1, sizeof(unsigned char));
 
@@ -84,7 +90,9 @@ static void ping_pong(int fd, int num_locks)
 		}
 		if (do_reads) {
 			unsigned char c;
-			if (pread(fd, &c, 1, i) != 1) {
+			if (use_mmap) {
+				c = p[i];
+			} if (pread(fd, &c, 1, i) != 1) {
 				printf("read failed at %d\n", i);
 			}
 			incr = c - val[i];
@@ -92,7 +100,9 @@ static void ping_pong(int fd, int num_locks)
 		}
 		if (do_writes) {
 			char c = val[i] + 1;
-			if (pwrite(fd, &c, 1, i) != 1) {
+			if (use_mmap) {
+				p[i] = c;
+			} else if (pwrite(fd, &c, 1, i) != 1) {
 				printf("write failed at %d\n", i);
 			}
 		}
@@ -123,13 +133,16 @@ int main(int argc, char *argv[])
 	int fd, num_locks;
 	int c;
 
-	while ((c = getopt(argc, argv, "rw")) != -1) {
+	while ((c = getopt(argc, argv, "rwm")) != -1) {
 		switch (c){
 		case 'w':
 			do_writes = 1;
 			break;
 		case 'r':
 			do_reads = 1;
+			break;
+		case 'm':
+			use_mmap = 1;
 			break;
 		default:
 			fprintf(stderr, "Unknown option '%c'\n", c);
@@ -144,6 +157,7 @@ int main(int argc, char *argv[])
 		printf("ping_pong [options] <file> <num_locks>\n");
 		printf("           -r    do reads\n");
 		printf("           -w    do writes\n");
+		printf("           -m    use mmap\n");
 		exit(1);
 	}
 
