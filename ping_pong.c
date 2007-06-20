@@ -67,6 +67,10 @@ static void ping_pong(int fd, int num_locks)
 {
 	unsigned count = 0;
 	int i=0;
+	unsigned char *val;
+	unsigned char incr=0, last_incr=0;
+
+	val = (unsigned char *)calloc(num_locks+1, sizeof(unsigned char));
 
 	start_timer();
 
@@ -79,13 +83,15 @@ static void ping_pong(int fd, int num_locks)
 			       (i+1) % num_locks, strerror(errno));
 		}
 		if (do_reads) {
-			char c;
+			unsigned char c;
 			if (pread(fd, &c, 1, i) != 1) {
 				printf("read failed at %d\n", i);
 			}
+			incr = c - val[i];
+			val[i] = c;
 		}
 		if (do_writes) {
-			char c;
+			char c = val[i] + 1;
 			if (pwrite(fd, &c, 1, i) != 1) {
 				printf("write failed at %d\n", i);
 			}
@@ -96,6 +102,11 @@ static void ping_pong(int fd, int num_locks)
 		}
 		i = (i+1) % num_locks;
 		count++;
+		if (incr != last_incr) {
+			last_incr = incr;
+			printf("data increment = %u\n", incr);
+			fflush(stdout);
+		}
 		if (end_timer() > 1.0) {
 			printf("%8u locks/sec\r", 
 			       (unsigned)(2*count/end_timer()));
