@@ -67,7 +67,7 @@ static int unlock_range(int fd, int offset, int len)
 static void ping_pong(int fd, int num_locks)
 {
 	unsigned count = 0;
-	int i=0;
+	int i=0, loops=0;
 	unsigned char *val;
 	unsigned char incr=0, last_incr=0;
 	unsigned char *p = NULL;
@@ -114,7 +114,7 @@ static void ping_pong(int fd, int num_locks)
 		}
 		i = (i+1) % num_locks;
 		count++;
-		if (incr != last_incr) {
+		if (loops > num_locks && incr != last_incr) {
 			last_incr = incr;
 			printf("data increment = %u\n", incr);
 			fflush(stdout);
@@ -126,6 +126,7 @@ static void ping_pong(int fd, int num_locks)
 			start_timer();
 			count=0;
 		}
+		loops++;
 	}
 }
 
