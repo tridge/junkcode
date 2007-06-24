@@ -35,7 +35,7 @@ static int open_socket_out(const char *host, int port)
 	} else {
 		hp = gethostbyname(host);
 		if (!hp) {
-			fprintf(stderr,"tseal: unknown host %s\n", host);
+			fprintf(stderr,"iolmaster: unknown host %s\n", host);
 			return -1;
 		}
 		memcpy(&sock_out.sin_addr, hp->h_addr, hp->h_length);
@@ -46,7 +46,7 @@ static int open_socket_out(const char *host, int port)
 
 	if (connect(res,(struct sockaddr *)&sock_out,sizeof(sock_out)) != 0) {
 		close(res);
-		fprintf(stderr,"tseal: failed to connect to %s (%s)\n", 
+		fprintf(stderr,"iolmaster: failed to connect to %s (%s)\n", 
 			host, strerror(errno));
 		return -1;
 	}
@@ -80,6 +80,15 @@ static int new_file(time_t *t)
 
 	do {
 		char *name;
+		struct stat st;
+		asprintf(&name, "iol-%u.dat", (unsigned)*t);
+		if (stat(name, &st) == 0) {
+		  fd = -1;
+			free(name);
+			(*t)++;
+			continue;
+		}
+		free(name);
 		asprintf(&name, "iol-%u.tmp", (unsigned)*t);
 		fd = open(name, O_CREAT|O_EXCL|O_WRONLY, 0644);
 		if (fd == -1) {
@@ -106,10 +115,37 @@ static void end_file(time_t t)
 	free(name2);
 }
 
+static char nbuf[1024];
+static int nbuflen, nbufofs;
+
+static int next_char(int fd, char *c)
+{
+	if (nbuflen == 0) {
+		nbuflen = read(fd, nbuf, sizeof(nbuf));
+		if (nbuflen <= 0) return 0;
+		nbufofs = 0;
+	}
+	
+	*c = nbuf[nbufofs++];
+	nbuflen--;
+	return 1;
+}
+
 static int check_checksum(const char *line, size_t len)
 {
 	unsigned char sum = 0;
 	int i;
+
+	if (nbuflen > 0 && 
+	    nbuf[nbufofs] != 'B' &&
+	    nbuf[nbufofs] != 'E') {
+	  return 0;
+	}
+
+	if (nbuflen > 1 && 
+	    (!isxdigit(nbuf[nbufofs+1]) || islower(nbuf[nbufofs+1]))) {
+	  return 0;
+	}
 
 	for (i=0;i<len-3;i++) {
 		sum += ((unsigned char *)line)[i];
@@ -145,7 +181,7 @@ static int fetch_line(int fd, char **line)
 			}
 		}
 
-		if (read(fd, &c, 1) != 1) {
+		if (next_char(fd, &c) != 1) {
 			return len;
 		}
 

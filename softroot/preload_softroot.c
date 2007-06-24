@@ -78,13 +78,16 @@ static const char *redirect_name(const char *filename)
 {
 	static char buf[1024];
 	static int (*access_orig)(const char *, int );
+	static char *(*getenv_orig)(const char *);
 	static const char *lroot;
 
 	if (filename == NULL) return filename;
 
-	if (hack_disabled == -1) {
-		char *(*getenv_orig)(const char *);
+	if (!getenv_orig) {
 		getenv_orig = dlsym(RTLD_NEXT, "getenv");
+	}
+
+	if (hack_disabled == -1) {
 		if (getenv_orig("SOFTROOT_DISABLED")) {
 			hack_disabled = 1;
 		} else {
@@ -97,7 +100,7 @@ static const char *redirect_name(const char *filename)
 	}
 
 	if (lroot == NULL) {
-		lroot = getenv("LROOT");
+		lroot = getenv_orig("LROOT");
 	}
 	if (lroot == NULL) {
 		lroot = "/opt/softroot";
@@ -304,6 +307,7 @@ FILE *fopen(const char *filename, const char *mode)
 
 	if (!fopen_orig) {
 		fopen_orig = dlsym(RTLD_NEXT, "fopen");
+
 	}
 
 	ret = fopen_orig(redirect_name(filename), mode);

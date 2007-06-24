@@ -9,7 +9,7 @@ int main(int argc, char *argv[])
 	int fd;
 
 	fd = open(fname,O_WRONLY|O_CREAT|O_TRUNC, 0600);
-	lseek(fd, megs * 1024*1024, SEEK_SET);
+	llseek(fd, megs * 1024*1024, SEEK_SET);
 	write(fd, fname, strlen(fname));
 	close(fd);
 	return 0;

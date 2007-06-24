@@ -19,6 +19,7 @@ static void usage(void)
 
 static void sig_alrm(int sig)
 {
+	fprintf(stderr, "\nMaximum time expired in timelimit - killing\n");
 	kill(0, SIGKILL);
 	exit(1);
 }
@@ -32,10 +33,17 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+#ifdef BSD_SETPGRP
+	if (setpgrp(0,0) == -1) {
+		perror("setpgrp");
+		exit(1);
+	}
+#else
 	if (setpgrp() == -1) {
 		perror("setpgrp");
 		exit(1);
 	}
+#endif
 
 	maxtime = atoi(argv[1]);
 	signal(SIGALRM, sig_alrm);
@@ -43,6 +51,8 @@ int main(int argc, char *argv[])
 
 	if (fork() == 0) {
 		execvp(argv[2], argv+2);
+		perror(argv[2]);
+		exit(1);
 	}
 
 	do {

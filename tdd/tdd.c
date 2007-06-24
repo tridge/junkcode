@@ -103,7 +103,7 @@ static void swap_bytes(char *p, int n)
 static int all_zero(const char *buf, size_t count)
 {
 	while (count--) {
-		if (*buf != 0) return 0;
+		if (*buf++ != 0) return 0;
 	}
 	return 1;
 }
@@ -119,7 +119,7 @@ static ssize_t write_sparse(int fd, const void *buf, size_t count)
 	if (ftruncate64(fd, ofs) != 0) {
 		return -1;
 	}
-	llseek(fd, count, SEEK_CUR);
+	llseek(fd, ofs, SEEK_SET);
 	return count;
 }
 

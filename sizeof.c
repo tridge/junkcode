@@ -13,4 +13,8 @@ main()
         printf("off_t : %d\n", sizeof(off_t));
         printf("size_t : %d\n", sizeof(size_t));
         printf("uid_t : %d\n", sizeof(uid_t));
+        printf("dev_t : %d\n", sizeof(dev_t));
+        printf("ino_t : %d\n", sizeof(ino_t));
+        printf("float : %d\n", sizeof(float));
+        printf("double : %d\n", sizeof(double));
 }

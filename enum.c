@@ -1,7 +1,10 @@
 #include <stdio.h>
 
+enum xxy;
+
 typedef struct { int v; } BOOL;
 typedef enum {NO_PROBLEM=0, BLAH=1} NT_STATUS;
+#define False 0
 
 static BOOL foo1(void)
 {

@@ -3,18 +3,20 @@
 #include <errno.h>
 #include <stdlib.h>
 
-/***************************************************************************
-encode a buffer using base64 - simple and slow algorithm. null terminates
-the result.
-  ***************************************************************************/
-static void base64_encode(char *buf, int len, char *out)
+/*
+  encode as base64
+  caller frees
+*/
+static char *base64_encode(const char *buf, int len)
 {
-	char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 	int bit_offset, byte_offset, idx, i;
-	unsigned char *d = (unsigned char *)buf;
-	int bytes = (len*8 + 5)/6;
+	const unsigned char *d = (const unsigned char *)buf;
+	int bytes = (len*8 + 5)/6, pad_bytes = (bytes % 4) ? 4 - (bytes % 4) : 0;
+	char *out;
 
-	memset(out, 0, bytes+1);
+	out = calloc(1, bytes+pad_bytes+1);
+	if (!out) return NULL;
 
 	for (i=0;i<bytes;i++) {
 		byte_offset = (i*6)/8;
@@ -29,6 +31,12 @@ static void base64_encode(char *buf, int len, char *out)
 		}
 		out[i] = b64[idx];
 	}
+
+	for (;i<bytes+pad_bytes;i++)
+		out[i] = '=';
+	out[i] = 0;
+
+	return out;
 }
 
 
@@ -60,13 +68,9 @@ int main(int argc, char *argv[])
 {
 	char *s;
 	int n;
-	char *out;
 
 	n = load_stdin(&s);
 
-	out = malloc(n*2);
-
-	base64_encode(s, n, out);
-	printf("%s\n", out);
+	printf("%s\n", base64_encode(s, n));
 	return 0;
 }

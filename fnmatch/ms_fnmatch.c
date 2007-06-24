@@ -109,7 +109,7 @@ static int fnmatch_core(const char *p, const char *n, struct max_n *max_n, const
 			if (max_n->predot && max_n->predot <= n) {
 				return null_match(p);
 			}
-			if (max_n->postdot && max_n->postdot <= n && n < ldot) {
+			if (max_n->postdot && max_n->postdot <= n && n <= ldot) {
 				return -1;
 			}
 			for (i=0; n[i]; i++) {

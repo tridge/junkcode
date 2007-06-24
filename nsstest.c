@@ -257,7 +257,8 @@ static int nss_initgroups(char *user, gid_t group, gid_t **groups, long int *sta
 
 	if (!_nss_initgroups) return NSS_STATUS_UNAVAIL;
 
-	status = _nss_initgroups(user, group, start, size, groups, 0, &nss_errno);
+	status = _nss_initgroups(user, group, start, size, groups, 2, &nss_errno);
+	printf("nss_errno=%d *size=%d\n", nss_errno, *size);
 	if (status != NSS_STATUS_SUCCESS) {
 		report_nss_error("initgroups", status);
 	}

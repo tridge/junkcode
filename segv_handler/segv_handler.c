@@ -18,7 +18,7 @@ static int segv_handler(int sig)
 	p = strrchr(progname, '/');
 	*p = 0;
 	
-	snprintf(cmd, sizeof(cmd), "backtrace %d > /tmp/segv_%s.%d.out 2>&1", 
+	snprintf(cmd, sizeof(cmd), "backtrace %d > /var/log/segv/segv_%s.%d.out 2>&1", 
 		 (int)getpid(), p+1, (int)getpid());
 	system(cmd);
 	signal(SIGSEGV, SIG_DFL);
@@ -28,4 +28,5 @@ static int segv_handler(int sig)
 void _init(void)
 {
 	signal(SIGSEGV, segv_handler);
+	signal(SIGBUS, segv_handler);
 }

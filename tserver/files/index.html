@@ -1,34 +1,73 @@
 {{ header.html }}
 
-<form method=POST>
-<table BORDER=0>
-<tr>
-<td COLSPAN="2">
-Please enter the location of the installation archive and a HTTP proxy
-server if you have one
-</td>
-</tr>
+<h2>Snapserver Installation Diagnostics</h2>
 
-<tr>
-<td><b>Archive location:</b></td>
+This page shows some basic hardware information which may be useful in
+diagnosing problems with your Snapserver
 
-<td><input type=text size=40 name="archive_location"></td>
-</tr>
 
-<tr>
-<td><b>Proxy Server:</b></td>
+<h3>The environment</h3>
+<pre>
+{{ ! printenv }}
+</pre>
 
-<td><input type=text size=40 name="proxy_server"></td>
-</tr>
+<h3>PCI Devices</h3>
 
-<tr>
- <td>
-  <input type=submit name="action" value="Install">
-  <input type=submit name="action" value="Upgrade">
-  <input type=submit name="action" value="Diagnostics">
- </td>
-</tr>
+<small>
+<pre>
+{{ !
+   lspci
+}}
+</pre>
+</small>
+
+<h3>Kernel Version</h3>
+
+<small>
+<pre>
+{{ !
+   cat /proc/version
+}}
+</pre>
+</small>
+
+<h3>Attached Disks</h3>
+
+<table border=1>
+<tr><th>Device</th><th>Model</th><th>Capacity (sectors)</th></tr>
+{{ !
+   cd /proc/ide || exit 1;
+   for d in hd*; do
+cat << EOF
+      <tr align=right>
+      <td>$d</td>
+      <td>`cat $d/model`</td>
+      <td>`cat $d/capacity 2> /dev/null`</td>
+      </tr>
+EOF
+   done
+}}
 </table>
-</form>
 
-{{ footer.html }}
+<h3>Disk Partitions</h3>
+
+<pre>{{ ! cat /proc/partitions }}</pre>
+
+<h3>Network devices</h3>
+
+<pre>
+{{ !
+   ifconfig -a;
+   route -n
+}}
+</pre>
+
+<h3>CPU Info</h3>
+
+<pre>
+{{ !
+   cat /proc/cpuinfo
+}}
+</pre>
+
+{{footer.html}}

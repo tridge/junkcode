@@ -74,11 +74,14 @@ sub test_include($$$$)
 	my $out = test_compile($fname);
 	
 	if ($out eq $original) {
-	    if ($opt_remove) {
-		print "$fname: removing $line";
-		return;
-	    }
-	    print "$fname: might be able to remove $line";
+		if ($opt_remove) {
+			print "$fname: removing $line";
+			return;
+		}
+		print "$fname: might be able to remove $line";
+	} else {
+#		print "OUT:  $out\n";
+#		print "ORIG: $original\n";
 	}
 
 	$lines->[$i] = $line;

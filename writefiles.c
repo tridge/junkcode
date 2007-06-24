@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/time.h>
 
 
 static struct timeval tp1,tp2;
 static size_t block_size = 64 * 1024;
+static int osync;
 
 static void start_timer()
 {
@@ -32,11 +34,11 @@ static void write_file(char *fname)
 	buf = malloc(block_size);
 
 	if (!buf) {
-		printf("Malloc of %d failed\n", block_size);
+		printf("Malloc of %d failed\n", (int)block_size);
 		exit(1);
 	}
 
-	fd = open(fname, O_WRONLY|O_SYNC);
+	fd = open(fname, O_WRONLY|(osync?O_SYNC:0));
 	if (fd == -1) {
 		perror(fname);
 		free(buf);
@@ -64,17 +66,18 @@ static void write_file(char *fname)
 
 static void usage(void)
 {
-	printf("
-writefiles - writes to a list of files, showing throughput
-
-Usage: writefiles [options] <files>
-
-Options:
-    -B size        set the block size in bytes
-
-WARNING: writefiles is a destructive test!
-
-");
+	printf("\n" \
+"writefiles - writes to a list of files, showing throughput\n" \
+"\n" \
+"Usage: writefiles [options] <files>\n" \
+"\n" \
+"Options:\n" \
+"    -B size        set the block size in bytes\n" \
+"    -s             sync open\n" \
+"\n" \
+"WARNING: writefiles is a destructive test!\n" \
+"\n" \
+"");
 }
 
 
@@ -85,10 +88,13 @@ int main(int argc, char *argv[])
 	extern int optind;
 	int c;
 
-	while ((c = getopt(argc, argv, "B:h")) != -1) {
+	while ((c = getopt(argc, argv, "B:hs")) != -1) {
 		switch (c) {
 		case 'B':
 			block_size = strtol(optarg, NULL, 0);
+			break;
+		case 's':
+			osync = 1;
 			break;
 		case 'h':
 		default:

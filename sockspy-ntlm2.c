@@ -77,7 +77,6 @@ void dump_data(int level, const char *buf1,int len)
 static void replace_str(char *buf, int n)
 {
 	static int count;
-	char *p;
 	printf("Packet %d\n", count++);
 	dump_data(0, buf, n);
 	if (0 && n == 0x40) {
@@ -227,6 +226,29 @@ static void main_loop(int sock1, int sock2)
 	}	
 }
 
+static char *get_socket_addr(int fd)
+{
+	struct sockaddr sa;
+	struct sockaddr_in *sockin = (struct sockaddr_in *) (&sa);
+	socklen_t length = sizeof(sa);
+	static char addr_buf[200];
+
+	strcpy(addr_buf,"0.0.0.0");
+
+	if (fd == -1) {
+		return addr_buf;
+	}
+	
+	if (getsockname(fd, &sa, &length) < 0) {
+		printf("getpeername failed. Error was %s\n", strerror(errno) );
+		return addr_buf;
+	}
+	
+	strcpy(addr_buf,(char *)inet_ntoa(sockin->sin_addr));
+	
+	return addr_buf;
+}
+
 int main(int argc, char *argv[])
 {
 	int listen_port, dest_port;
@@ -266,6 +288,8 @@ int main(int argc, char *argv[])
 			listen_port, strerror(errno));
 		exit(1);
 	}
+
+	printf("Connection from %s\n", get_socket_addr(sock_in));
 
 	close(listen_fd);
 

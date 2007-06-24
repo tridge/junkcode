@@ -1,6 +1,6 @@
 
 {
-  counts[$1]++;
+  counts[$0]++;
   total++;
 }
 

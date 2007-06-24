@@ -6,7 +6,6 @@
 #include <sys/wait.h>
 #include <errno.h>
 
-
 static void run_child(int epoll_fd)
 {
 	struct epoll_event event;
@@ -20,7 +19,10 @@ static void run_child(int epoll_fd)
 	event.events = EPOLLIN|EPOLLERR;
 	event.data.u32 = getpid();
 
-	epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd[0], &event);
+	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd[0], &event) != 0) {
+		perror("epoll_ctl");
+		abort();
+	}
 
 	while (1) {
 		char c = 0;

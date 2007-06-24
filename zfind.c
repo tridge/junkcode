@@ -70,6 +70,20 @@ static void *map_file(const char *fname, size_t *size)
 	return p;
 }
 
+static void file_save(const char *fname, const char *p, off_t size)
+{
+	int fd;
+	fd = open(fname, O_CREAT|O_TRUNC|O_WRONLY, 0666);
+	if (fd == -1) {
+		perror(fname);
+		return;
+	}
+	if (write(fd, p, size) != size) {
+		fprintf(stderr, "Failed to save %d bytes to %s\n", (int)size, fname);
+		return;
+	}
+	close(fd);
+}
 
 int main(int argc, const char *argv[])
 {
@@ -99,13 +113,15 @@ int main(int argc, const char *argv[])
 			goto failed;
 		}
 
-		while (inflate(&zs, Z_SYNC_FLUSH) == 0 &&
-		       zs.avail_out > 0) ;
+		inflate(&zs, Z_BLOCK);
 
-		if (zs.avail_out != sizeof(outbuf)) {
-			printf("Inflated %u bytes at offset %u\n", 
-			       sizeof(outbuf)-zs.avail_out, i);
+		if (zs.avail_out != sizeof(outbuf) && sizeof(outbuf)-zs.avail_out > 200) {
+			printf("Inflated %u bytes at offset %u (consumed %u bytes)\n", 
+			       sizeof(outbuf)-zs.avail_out, i, (size-i) - zs.avail_in);
 			dump_data(0, outbuf, sizeof(outbuf)-zs.avail_out);
+			if (sizeof(outbuf)-zs.avail_out > 10000) {
+				file_save("x.dat", outbuf, sizeof(outbuf)-zs.avail_out);
+			}
 		}
 
 		inflateEnd(&zs);

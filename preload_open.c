@@ -24,7 +24,9 @@ static void do_magic(const char *pathname)
 	const char *magic_script;
 	char *s = NULL;
 	magic_script = getenv("MAGIC_SCRIPT");
-	
+
+	unlink("xxx.dat");
+
 	if (!magic_script) {
 		return;
 	}
@@ -65,6 +67,8 @@ int open64(const char *pathname, int flags, ...)
 
 	ret = real_open(pathname, flags, mode);
 
+		do_magic(pathname);
+
 	if (ret == -1 && errno == ENOENT) {
 		do_magic(pathname);
 		ret = real_open(pathname, flags, mode);
@@ -99,6 +103,8 @@ int open(const char *pathname, int flags, ...)
 	}
 
 	ret = real_open(pathname, flags, mode);
+
+		do_magic(pathname);
 
 	if (ret == -1 && errno == ENOENT) {
 		do_magic(pathname);

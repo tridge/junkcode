@@ -437,6 +437,7 @@
 #       define RADEON_DAC_VGA_ADR_EN        (1 << 13)
 #       define RADEON_DAC_PDWN              (1 << 15)
 #       define RADEON_DAC_MASK_ALL          (0xff << 24)
+#define RADEON_DAC_EXT_CNTL                 0x0280
 #define RADEON_DAC_CNTL2                     0x007c
 #       define RADEON_DAC2_DAC_CLK_SEL      (1 <<  0)
 #       define RADEON_DAC2_DAC2_CLK_SEL     (1 <<  1)

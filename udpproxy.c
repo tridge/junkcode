@@ -108,9 +108,8 @@ static void main_loop(int sock1, int sock2)
 {
 	unsigned char buf[10240];
 	int i=0;
-	struct sockaddr from;
-	socklen_t fromlen = sizeof(from);
-	int connected = 0;
+	static struct sockaddr from;
+	static socklen_t fromlen = sizeof(from);
 
 	while (1) {
 		fd_set fds;
@@ -128,11 +127,6 @@ static void main_loop(int sock1, int sock2)
 			int n = recvfrom(sock1, buf, sizeof(buf), 0, &from, &fromlen);
 			if (n <= 0) break;
 
-			if (!connected) {
-				connect(sock1,&from,sizeof(from));
-				connected = 1;
-			}
-
 //			printf("out %d bytes\n", n);
 			write_all(sock2, buf, n);
 		}
@@ -142,7 +136,7 @@ static void main_loop(int sock1, int sock2)
 			if (n <= 0) break;
 
 //			printf("in %d bytes\n", n);
-			write_all(sock1, buf, n);
+			sendto(sock1, buf, n, 0, &from, fromlen);
 		}
 	}	
 }

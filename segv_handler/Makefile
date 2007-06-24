@@ -10,7 +10,7 @@ testprog: testprog.c
 
 test: all
 	-LD_PRELOAD=./segv_handler.so ./testprog
-	ls -l /tmp/segv_testprog.*
+	ls -l /var/log/segv/segv_testprog.*
 
 clean:
 	/bin/rm -f *.o *.so *~ testprog /tmp/segv_testprog.*

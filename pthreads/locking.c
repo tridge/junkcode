@@ -66,6 +66,8 @@ static void *thread_main(void *private)
 		}
 	}
 
+	printf("tid %d done\n", tid);
+
 	return NULL;
 }
 

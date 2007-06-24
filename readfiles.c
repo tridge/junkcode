@@ -62,14 +62,14 @@ static void read_file(char *fname)
 
 static void usage(void)
 {
-	printf("
-readfiles - reads from a list of files, showing read throughput
-
-Usage: readfiles [options] <files>
-
-Options:
-    -B size        set the block size in bytes
-");
+	printf("\n" \
+"readfiles - reads from a list of files, showing read throughput\n" \
+"\n" \
+"Usage: readfiles [options] <files>\n" \
+"\n" \
+"Options:\n" \
+"    -B size        set the block size in bytes\n" \
+"");
 }
 
 int main(int argc, char *argv[])

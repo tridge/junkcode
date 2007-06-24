@@ -45,6 +45,8 @@ int main(int argc, char *argv[])
 	thread_start(thread_main, NULL);
 	thread_start(thread_main, NULL);
 
+	usleep(1);
+
 	printf("tls=%d non_tls=%d\n", tls, non_tls);
 
 	if (tls != 0 || non_tls != 5) {

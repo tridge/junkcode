@@ -41,4 +41,6 @@ int main(void)
 		pause();
 		printf("Got event on fd=%d\n", event_fd);
 	}
+
+	return 0;
 }

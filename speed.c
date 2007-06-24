@@ -1,4 +1,9 @@
+#define _GNU_SOURCE
+#include <sys/types.h>
+#include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <sys/time.h>
 
@@ -96,7 +101,7 @@ static void memcpy_test(int size)
 }
 
 
-main()
+int main(void)
 {
   int loops = 100000;
   int l;
@@ -147,6 +152,7 @@ main()
     for (i=0;i<l;i++)
       p1[i] = i;
     start_timer();
+
     for (i=0;i<loops/100;i++)
       {
 	int j;
@@ -202,4 +208,5 @@ main()
   }
   printf("%g MOPS\n",0.01*(loops*l)/(1.0e6*t));
 
+  return 0;
 }
