@@ -332,6 +332,35 @@ failed:
 }
 
 /***********************************************************************
+test fstat() operations
+************************************************************************/
+static void *test_fstat(int id)
+{
+	int i, fd;
+
+	barrier_wait(&barriers[0]);
+
+	fd = open(id_data[id].fname, O_RDWR|O_CREAT, 0600);
+	if (fd == -1) goto failed;
+
+	for (i=0;i<1000000;i++) {
+		struct stat st;
+		if (fstat(fd, &st) != 0) goto failed;
+	}
+
+	close(fd);
+	unlink(id_data[id].fname);
+
+	barrier_wait(&barriers[1]);
+
+	return NULL;
+
+failed:
+	fprintf(stderr,"fstat failed\n");
+	exit(1);
+}
+
+/***********************************************************************
 test directory operations
 ************************************************************************/
 static void *test_dir(int id)
@@ -488,6 +517,7 @@ int main(int argc, char *argv[])
 		{"malloc", test_malloc},
 		{"readwrite", test_readwrite},
 		{"stat", test_stat},
+		{"fstat", test_fstat},
 		{"dir", test_dir},
 		{"dirsingle", test_dirsingle},
 		{"create", test_create},
