@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <sys/mman.h>
@@ -20,10 +21,12 @@
 #endif
 
 #define PAGE_SIZE   4096
+#define PAGE_MASK   (~(intptr_t)(PAGE_SIZE-1))
 #define NUM_BUCKETS    7
 #define BASE_BUCKET   40
 #define FREE_PAGE_LIMIT 2
 #define LARGEST_BUCKET (BASE_BUCKET*(1<<(NUM_BUCKETS-1)))
+#define MAX_ELEMENTS (PAGE_SIZE/BASE_BUCKET)
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -58,23 +61,21 @@ do { \
 
 
 struct page_header {
-	struct page_header *next, *prev;
-	uint32_t bytes_used;
-	struct bucket_state *bucket;
-};
-
-
-struct block_header {
-	struct page_header *page;
-	struct block_header *next, *prev;
 	uint32_t num_pages;
+	uint16_t num_elements;
+	uint16_t elements_used;
+	struct page_header *next, *prev;
+	struct bucket_state *bucket;
+	uint32_t used[(MAX_ELEMENTS+31)/32];
 };
+
 
 struct bucket_state {
 	uint32_t alloc_limit;
 	uint32_t num_free_pages;
-	struct block_header *freelist;
 	struct page_header *page_list;
+	struct page_header *full_list;
+	struct page_header *empty_list;
 };
 
 struct alloc_state {
@@ -83,15 +84,6 @@ struct alloc_state {
 };
 
 static struct alloc_state state;
-
-/*
-  fatal error
- */
-static void alloc_fatal(const char *msg)
-{
-	write(2, msg, strlen(msg));
-	abort();
-}
 
 /*
   initialise the allocator
@@ -112,32 +104,29 @@ static void alloc_initialise(void)
  */
 static void *alloc_large(size_t size)
 {
-	uint32_t num_pages = (size+sizeof(struct block_header)+(PAGE_SIZE-1))/PAGE_SIZE;
+	uint32_t num_pages = (size+sizeof(uint32_t)+(PAGE_SIZE-1))/PAGE_SIZE;
 	void *p;
-	struct block_header *bh;
+	uint32_t *nump;
 
 	p = mmap(0, num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
 	if (p == (void *)-1) {
 		return NULL;
 	}
 
-	bh = (struct block_header *)p;
-	bh->page = NULL;
-	bh->num_pages = num_pages;
+	nump = (uint32_t *)p;
+	*nump = num_pages;
 
-	return (void *)(bh+1);
+	return (void *)(nump+1);
 }
 
 
 /*
   large free function
  */
-static void alloc_large_free(struct block_header *bh)
+static void alloc_large_free(void *ptr)
 {
-	if (unlikely(((intptr_t)bh) & (PAGE_SIZE-1))) {
-		alloc_fatal("FATAL: Free of large alloc is not page aligned\n");
-	}
-	munmap((void *)bh, bh->num_pages*PAGE_SIZE);
+	uint32_t *nump = ((uint32_t *)ptr)-1;
+	munmap(ptr, (*nump)*PAGE_SIZE);
 }
 
 /*
@@ -147,8 +136,13 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 {
 	void *p;
 	struct page_header *ph;
-	struct block_header *bh;
-	uint32_t size, bsize;
+
+	ph = bs->empty_list;
+	if (ph != NULL) {
+		DLIST_REMOVE(bs->empty_list, ph);
+		DLIST_ADD(bs->page_list, ph);
+		return;
+	}
 
 	p = mmap(0, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
 	if (p == (void *)-1) {
@@ -157,25 +151,30 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 
 	ph = (struct page_header *)p;
 	ph->bucket = bs;
-	ph->bytes_used = 0;
-	bh = (struct block_header *)(ph+1);
+	ph->num_elements = (PAGE_SIZE-sizeof(struct page_header)) / bs->alloc_limit;
 
 	DLIST_ADD(bs->page_list, ph);
 
-	bsize = sizeof(struct block_header)+bs->alloc_limit;
-
-	size = PAGE_SIZE - sizeof(struct page_header);
-	while (size > bsize) {
-		bh->page = ph;
-
-		DLIST_ADD(bs->freelist, bh);
-
-		size -= bsize;
-		bh = (struct block_header *)(bsize + (char *)bh);
-	}	
-
 	bs->num_free_pages++;
 //	fprintf(stderr, "added page %p\n", ph);
+}
+
+
+/*
+  find the first free element in a bitmap. This assumes there is a bit
+  to be found! If not, you will get weird results
+ */
+static inline int alloc_find_free_element(struct page_header *ph)
+{
+	int i, j;
+	uint32_t *used = ph->used;
+	uint32_t n = (ph->num_elements+31)/32;
+	for (i=0;i<n;i++) {
+		if (used[i] != 0xFFFFFFFF) break;
+	}
+	j = ffs(~used[i]) - 1;
+	i = (i*32) + j;
+	return i;
 }
 
 /*
@@ -185,7 +184,7 @@ static void *alloc_malloc(size_t size)
 {
 	int i;
 	struct bucket_state *bs;
-	struct block_header *bh;
+	struct page_header *ph;
 
 	if (unlikely(state.initialised == false)) {
 		alloc_initialise();
@@ -203,74 +202,51 @@ static void *alloc_malloc(size_t size)
 		}
 	}
 
-	if (unlikely(i==NUM_BUCKETS)) {
-		alloc_fatal("FATAL: bucket error?\n");
-	}
-
 	bs = &state.buckets[i];
 
 	/* it might be empty */
-	if (unlikely(bs->freelist == NULL)) {
+	if (unlikely(bs->page_list == NULL)) {
 		alloc_refill_bucket(bs);
-		if (unlikely(bs->freelist == NULL)) {
+		if (unlikely(bs->page_list == NULL)) {
 			return NULL;
 		}
 	}
 
-	/* take the top one */
-	bh = bs->freelist;
-	DLIST_REMOVE(bs->freelist, bh);
+	/* take the first one */
+	ph = bs->page_list;
+	i = alloc_find_free_element(ph);
 
-	if (bh->page->bytes_used == 0) {
+	if (ph->elements_used == 0) {
 		bs->num_free_pages--;
 //		fprintf(stderr,"free pages for bucket %d = %d\n", 
 //			bs->alloc_limit, bs->num_free_pages);
 	}
+	ph->elements_used++;
 
-	bh->page->bytes_used += bs->alloc_limit;
+	ph->used[i/32] |= 1<<(i%32);
+	if (ph->elements_used == ph->num_elements) {
+		DLIST_REMOVE(bs->page_list, ph);
+		DLIST_ADD(bs->full_list, ph);
+	}
 
-	return (void *)(bh+1);
+	return (void *)((i*bs->alloc_limit)+(char *)(ph+1));
 }
 
-
-/*
-  release a complete free page in this bucket
- */
-static void alloc_page_release(struct bucket_state *bs, struct page_header *ph)
-{
-	struct block_header *bh;
-	uint32_t bsize, size;
-
-	bh = (struct block_header *)(ph+1);
-	bsize = sizeof(struct block_header)+bs->alloc_limit;
-	size = PAGE_SIZE - sizeof(struct page_header);
-	while (size > bsize) {
-		DLIST_REMOVE(bs->freelist, bh);
-		size -= bsize;
-		bh = (struct block_header *)(bsize + (char *)bh);
-	}	
-	DLIST_REMOVE(bs->page_list, ph);
-	bs->num_free_pages--;
-	munmap((void *)ph, PAGE_SIZE);
-//	fprintf(stderr, "released page %p\n", ph);
-}
 
 /*
   release all completely free pages in this bucket
  */
 static void alloc_vacuum_bucket(struct bucket_state *bs)
 {
-	struct page_header *ph, *next;
+	struct page_header *ph;
 
 //	fprintf(stderr,"vacuum bucket %d\n", bs->alloc_limit);
 
-	for (ph=bs->page_list;ph;ph=next) {
-		next = ph->next;
-		if (ph->bytes_used == 0) {
-			alloc_page_release(bs, ph);
-		}
+	while ((ph = bs->empty_list)) {
+		DLIST_REMOVE(bs->empty_list, ph);
+		bs->num_free_pages--;
+		munmap((void *)ph, PAGE_SIZE);
 	}
-
 }
 
 /*
@@ -278,26 +254,35 @@ static void alloc_vacuum_bucket(struct bucket_state *bs)
  */
 static void alloc_free(void *ptr)
 {
-	struct block_header *bh = ((struct block_header *)ptr)-1;
+	struct page_header *ph = (struct page_header *)(PAGE_MASK & (intptr_t)ptr);
 	struct bucket_state *bs;
+	int i;
 
 	if (unlikely(ptr == NULL)) {
 		return;
 	}
 
-	if (bh->page == NULL) {
-		alloc_large_free(bh);
+	if (ph->num_pages != 0) {
+		alloc_large_free(ptr);
 		return;
 	}
 
-	bs = bh->page->bucket;
+	bs = ph->bucket;
+	
+	i = ((((intptr_t)ptr) - (intptr_t)ph) - sizeof(struct page_header)) / bs->alloc_limit;
 
-	/* put at the front of the list */
-	DLIST_ADD(bs->freelist, bh);
+	ph->used[i/32] &= ~(1<<(i%32));
 
-	/* reduce usage in page */
-	bh->page->bytes_used -= bs->alloc_limit;
-	if (bh->page->bytes_used == 0) {
+	if (unlikely(ph->elements_used == ph->num_elements)) {
+		DLIST_REMOVE(bs->full_list, ph);
+		DLIST_ADD(bs->page_list, ph);
+	}
+
+	ph->elements_used--;
+
+	if (ph->elements_used == 0) {
+		DLIST_REMOVE(bs->page_list, ph);
+		DLIST_ADD(bs->empty_list, ph);
 		bs->num_free_pages++;
 //		fprintf(stderr,"free pages for bucket %d = %d\n", 
 //			bs->alloc_limit, bs->num_free_pages);
@@ -311,12 +296,13 @@ static void alloc_free(void *ptr)
 /*
   realloc for large blocks
  */
-void *alloc_realloc_large(struct block_header *bh, size_t size)
+void *alloc_realloc_large(void *ptr, size_t size)
 {
 	void *ptr2;
+	uint32_t *nump = ((uint32_t *)ptr)-1;
 
-	if (bh->num_pages*PAGE_SIZE >= (size + sizeof(struct block_header))) {
-		return (void *)(bh+1);
+	if ((*nump)*PAGE_SIZE >= (size + sizeof(uint32_t))) {
+		return ptr;
 	}
 
 	ptr2 = alloc_malloc(size);
@@ -324,8 +310,8 @@ void *alloc_realloc_large(struct block_header *bh, size_t size)
 		return NULL;
 	}
 
-	memcpy(ptr2, bh+1, MIN(size, (bh->num_pages*PAGE_SIZE)-sizeof(struct block_header)));
-	alloc_large_free(bh);
+	memcpy(ptr2, ptr, MIN(size, ((*nump)*PAGE_SIZE)-sizeof(uint32_t)));
+	alloc_large_free(ptr);
 	return ptr2;
 }
 
@@ -336,7 +322,7 @@ void *alloc_realloc_large(struct block_header *bh, size_t size)
  */
 static void *alloc_realloc(void *ptr, size_t size)
 {
-	struct block_header *bh = ((struct block_header *)ptr)-1;
+	struct page_header *ph = (struct page_header *)(PAGE_MASK & (intptr_t)ptr);
 	struct bucket_state *bs;
 	void *ptr2;
 
@@ -349,11 +335,11 @@ static void *alloc_realloc(void *ptr, size_t size)
 		return alloc_malloc(size);
 	}
 
-	if (bh->page == NULL) {
-		return alloc_realloc_large(bh, size);
+	if (ph->num_pages != 0) {
+		return alloc_realloc_large(ptr, size);
 	}	
 
-	bs = bh->page->bucket;
+	bs = ph->bucket;
 	if (bs->alloc_limit >= size) {
 		return ptr;
 	}

@@ -1,4 +1,4 @@
-CFLAGS=-Wall -fPIC -g
+CFLAGS=-Wall -O3
 
 all: alloc_mmap.so
 
