@@ -70,15 +70,15 @@ struct page_header {
 
 struct bucket_state {
 	uint32_t alloc_limit;
-	uint32_t num_free_pages;
 	struct page_header *page_list;
 	struct page_header *full_list;
-	struct page_header *empty_list;
 };
 
 struct alloc_state {
 	struct bucket_state buckets[NUM_BUCKETS];
 	bool initialised;
+	uint32_t num_empty_pages;
+	struct page_header *empty_list;
 };
 
 static struct alloc_state state;
@@ -124,7 +124,7 @@ static void *alloc_large(size_t size)
 static void alloc_large_free(void *ptr)
 {
 	uint32_t *nump = ((uint32_t *)ptr)-1;
-	munmap(ptr, (*nump)*PAGE_SIZE);
+	munmap((void *)nump, (*nump)*PAGE_SIZE);
 }
 
 /*
@@ -135,9 +135,12 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 	void *p;
 	struct page_header *ph;
 
-	ph = bs->empty_list;
+	ph = state.empty_list;
 	if (ph != NULL) {
-		MOVE_LIST_FRONT(bs->empty_list, bs->page_list, ph);
+		MOVE_LIST_FRONT(state.empty_list, bs->page_list, ph);
+		ph->num_elements = (PAGE_SIZE-sizeof(struct page_header)) / bs->alloc_limit;
+		ph->bucket = bs;
+		state.num_empty_pages--;
 		return;
 	}
 
@@ -153,9 +156,6 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 	ph->next = bs->page_list;
 	if (ph->next) ph->next->prev = ph;
 	bs->page_list = ph;
-
-	bs->num_free_pages++;
-//	fprintf(stderr, "added page %p\n", ph);
 }
 
 
@@ -215,11 +215,6 @@ static void *alloc_malloc(size_t size)
 	ph = bs->page_list;
 	i = alloc_find_free_element(ph);
 
-	if (ph->elements_used == 0) {
-		bs->num_free_pages--;
-//		fprintf(stderr,"free pages for bucket %d = %d\n", 
-//			bs->alloc_limit, bs->num_free_pages);
-	}
 	ph->elements_used++;
 
 	ph->used[i/32] |= 1<<(i%32);
@@ -234,16 +229,16 @@ static void *alloc_malloc(size_t size)
 /*
   release all completely free pages in this bucket
  */
-static void alloc_vacuum_bucket(struct bucket_state *bs)
+static void alloc_vacuum(void)
 {
 	struct page_header *ph, *next;
 
-	for (ph=bs->empty_list;ph;ph=next) {
+	for (ph=state.empty_list;ph;ph=next) {
 		next = ph->next;
-		bs->num_free_pages--;
 		munmap((void *)ph, PAGE_SIZE);
 	}
-	bs->empty_list = NULL;
+	state.empty_list = NULL;
+	state.num_empty_pages = 0;
 }
 
 /*
@@ -277,12 +272,10 @@ static void alloc_free(void *ptr)
 	ph->elements_used--;
 
 	if (ph->elements_used == 0) {
-		MOVE_LIST(bs->page_list, bs->empty_list, ph);
-		bs->num_free_pages++;
-//		fprintf(stderr,"free pages for bucket %d = %d\n", 
-//			bs->alloc_limit, bs->num_free_pages);
-		if (bs->num_free_pages == FREE_PAGE_LIMIT) {
-			alloc_vacuum_bucket(bs);
+		MOVE_LIST(bs->page_list, state.empty_list, ph);
+		state.num_empty_pages++;
+		if (state.num_empty_pages == FREE_PAGE_LIMIT) {
+			alloc_vacuum();
 		}
 	}
 }
