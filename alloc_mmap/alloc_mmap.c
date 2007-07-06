@@ -20,44 +20,42 @@
 #define unlikely(x) x
 #endif
 
-#define PAGE_SIZE   4096
-#define PAGE_MASK   (~(intptr_t)(PAGE_SIZE-1))
-#define NUM_BUCKETS    7
-#define BASE_BUCKET   40
-#define FREE_PAGE_LIMIT 2
-#define LARGEST_BUCKET (BASE_BUCKET*(1<<(NUM_BUCKETS-1)))
-#define MAX_ELEMENTS (PAGE_SIZE/BASE_BUCKET)
+#define PAGE_SIZE     4096
+#define PAGE_MASK        (~(intptr_t)(PAGE_SIZE-1))
+#define NUM_BUCKETS      7
+#define BASE_BUCKET     40
+#define FREE_PAGE_LIMIT  2
+#define LARGEST_BUCKET   (BASE_BUCKET*(1<<(NUM_BUCKETS-1)))
+#define MAX_ELEMENTS     (PAGE_SIZE/BASE_BUCKET)
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
 
-/* hook into the front of the list */
-#define DLIST_ADD(list, p) \
-do { \
-        if (!(list)) { \
-		(list) = (p); \
-		(p)->next = (p)->prev = NULL; \
-	} else { \
-		(list)->prev = (p); \
-		(p)->next = (list); \
-		(p)->prev = NULL; \
-		(list) = (p); \
-	}\
-} while (0)
+/* move an element from the front of list1 to the front of list2 */
+#define MOVE_LIST_FRONT(list1, list2, p) \
+	do { \
+		list1 = p->next;	       \
+		if (list1) list1->prev = NULL; \
+		p->next = list2;		\
+		if (p->next) p->next->prev = p;	\
+		list2 = p;			\
+	} while (0)
 
-/* remove an element from a list - element doesn't have to be in list. */
-#define DLIST_REMOVE(list, p) \
-do { \
-	if ((p) == (list)) { \
-		(list) = (p)->next; \
-		if (list) (list)->prev = NULL; \
-	} else { \
-		if ((p)->prev) (p)->prev->next = (p)->next; \
-		if ((p)->next) (p)->next->prev = (p)->prev; \
-	} \
-	if ((p) != (list)) (p)->next = (p)->prev = NULL; \
-} while (0)
+/* move an element from the anywhere in list1 to the front of list2 */
+#define MOVE_LIST(list1, list2, p) \
+	do { \
+		if (p == list1) { \
+			MOVE_LIST_FRONT(list1, list2, p); \
+		} else { \
+			p->prev->next = p->next; \
+			if (p->next) p->next->prev = p->prev; \
+			(p)->next = list2; \
+			if (p->next) (p)->next->prev = (p);	\
+			p->prev = NULL; \
+			list2 = (p);	\
+		} \
+	} while (0)
 
 
 struct page_header {
@@ -139,8 +137,7 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 
 	ph = bs->empty_list;
 	if (ph != NULL) {
-		DLIST_REMOVE(bs->empty_list, ph);
-		DLIST_ADD(bs->page_list, ph);
+		MOVE_LIST_FRONT(bs->empty_list, bs->page_list, ph);
 		return;
 	}
 
@@ -153,7 +150,9 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 	ph->bucket = bs;
 	ph->num_elements = (PAGE_SIZE-sizeof(struct page_header)) / bs->alloc_limit;
 
-	DLIST_ADD(bs->page_list, ph);
+	ph->next = bs->page_list;
+	if (ph->next) ph->next->prev = ph;
+	bs->page_list = ph;
 
 	bs->num_free_pages++;
 //	fprintf(stderr, "added page %p\n", ph);
@@ -225,8 +224,7 @@ static void *alloc_malloc(size_t size)
 
 	ph->used[i/32] |= 1<<(i%32);
 	if (ph->elements_used == ph->num_elements) {
-		DLIST_REMOVE(bs->page_list, ph);
-		DLIST_ADD(bs->full_list, ph);
+		MOVE_LIST_FRONT(bs->page_list, bs->full_list, ph);
 	}
 
 	return (void *)((i*bs->alloc_limit)+(char *)(ph+1));
@@ -238,15 +236,14 @@ static void *alloc_malloc(size_t size)
  */
 static void alloc_vacuum_bucket(struct bucket_state *bs)
 {
-	struct page_header *ph;
+	struct page_header *ph, *next;
 
-//	fprintf(stderr,"vacuum bucket %d\n", bs->alloc_limit);
-
-	while ((ph = bs->empty_list)) {
-		DLIST_REMOVE(bs->empty_list, ph);
+	for (ph=bs->empty_list;ph;ph=next) {
+		next = ph->next;
 		bs->num_free_pages--;
 		munmap((void *)ph, PAGE_SIZE);
 	}
+	bs->empty_list = NULL;
 }
 
 /*
@@ -274,15 +271,13 @@ static void alloc_free(void *ptr)
 	ph->used[i/32] &= ~(1<<(i%32));
 
 	if (unlikely(ph->elements_used == ph->num_elements)) {
-		DLIST_REMOVE(bs->full_list, ph);
-		DLIST_ADD(bs->page_list, ph);
+		MOVE_LIST(bs->full_list, bs->page_list, ph);
 	}
 
 	ph->elements_used--;
 
 	if (ph->elements_used == 0) {
-		DLIST_REMOVE(bs->page_list, ph);
-		DLIST_ADD(bs->empty_list, ph);
+		MOVE_LIST(bs->page_list, bs->empty_list, ph);
 		bs->num_free_pages++;
 //		fprintf(stderr,"free pages for bucket %d = %d\n", 
 //			bs->alloc_limit, bs->num_free_pages);
@@ -300,6 +295,10 @@ void *alloc_realloc_large(void *ptr, size_t size)
 {
 	void *ptr2;
 	uint32_t *nump = ((uint32_t *)ptr)-1;
+
+	if (size + sizeof(uint32_t) < size) {
+		return NULL;
+	}
 
 	if ((*nump)*PAGE_SIZE >= (size + sizeof(uint32_t))) {
 		return ptr;
@@ -326,12 +325,11 @@ static void *alloc_realloc(void *ptr, size_t size)
 	struct bucket_state *bs;
 	void *ptr2;
 
-	if (size == 0) {
+	if (unlikely(size == 0)) {
 		alloc_free(ptr);
 		return NULL;
 	}
-
-	if (ptr == NULL) {
+	if (unlikely(ptr == NULL)) {
 		return alloc_malloc(size);
 	}
 
@@ -361,12 +359,16 @@ static void *alloc_realloc(void *ptr, size_t size)
 static void *alloc_calloc(size_t nmemb, size_t size)
 {
 	void *ptr;
-	if (unlikely(size > LARGEST_BUCKET)) {
-		return alloc_large(nmemb*size);
+	uint32_t total_size = nmemb*size;
+	if (total_size / size != nmemb) {
+		return NULL;
 	}
-	ptr = alloc_malloc(nmemb*size);
+	if (unlikely(total_size > LARGEST_BUCKET)) {
+		return alloc_large(total_size);
+	}
+	ptr = alloc_malloc(total_size);
 	if (ptr) {
-		memset(ptr, 0, nmemb*size);
+		memset(ptr, 0, total_size);
 	}
 	return ptr;
 }
