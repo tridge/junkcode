@@ -26,26 +26,12 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <malloc.h>
 
-static struct timeval timeval_current(void)
-{
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return tv;
-}
-
-static double timeval_elapsed(struct timeval *tv)
-{
-	struct timeval tv2 = timeval_current();
-	return (tv2.tv_sec - tv->tv_sec) + 
-	       (tv2.tv_usec - tv->tv_usec)*1.0e-6;
-}
-
-
-static int test_random(size_t maxsize)
+static int test_random(size_t maxsize, int n)
 {
 	uint32_t *r;
-	int i, numrand = 1000, n=500000;
+	int i, numrand = 1000, loops=7;
 	void **p;
 
 	srandom(0);
@@ -61,21 +47,38 @@ static int test_random(size_t maxsize)
 		assert(p[i] != NULL);
 	}
 	
-	for (i=0;i<n;i++) {
-		switch (i%2) {
-		case 0:
-			free(p[i]);
-			p[i] = NULL;
-			break;
-		case 1:
-			p[i] = realloc(p[i], r[(i*3)%numrand]);
-			assert(p[i] != NULL || r[(i*3)%numrand] == 0);
-			break;
-		case 2:
-			free(p[i]);
-			p[i] = malloc(r[(i*5)%numrand]);
-			assert(p[i] != NULL);
-			break;
+	while (loops--) {
+		for (i=0;i<n;i++) {
+			switch (r[(loops*i)%numrand]%5) {
+			case 0:
+				free(p[i]);
+				p[i] = NULL;
+				break;
+			case 1:
+				p[i] = realloc(p[i], r[(i*3)%numrand]);
+				assert(p[i] != NULL || r[(i*3)%numrand] == 0);
+				break;
+			case 2:
+				free(p[i]);
+				p[i] = malloc(r[(i*5)%numrand]);
+				assert(p[i] != NULL);
+				break;
+			case 3:
+				cfree(p[i]);
+				p[i] = calloc(i%4, r[(i*5)%numrand]);
+				assert(p[i] != NULL);
+				break;
+			case 4:
+				free(p[i]);
+				if (random() % 100 == 0) {
+					int ret = posix_memalign(&p[i], 4096, r[(i*7)%numrand]);
+					assert(ret==0);
+				} else {
+					p[i] = memalign((1<<(i%5)), r[(i*7)%numrand]);
+				}
+				assert(p[i] != NULL);
+				break;
+			}
 		}
 	}
 	for (i=0;i<n;i++) {
@@ -89,7 +92,9 @@ int main(void)
 {
 	int ret = 0;
 
-	ret |= test_random(100);
+	ret |= test_random(100,   500000);
+	ret |= test_random(3000,  10000);
+	ret |= test_random(8000,  5000);
 
 	return ret;
 }

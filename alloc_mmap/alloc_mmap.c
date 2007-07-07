@@ -55,6 +55,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <errno.h>
 #include <sys/mman.h>
 
 #if (__GNUC__ >= 3)
@@ -90,6 +91,9 @@
 
 /* work out the aligned size of a page header, given the size of the used[] array */
 #define PAGE_HEADER_SIZE(n) ALIGN_SIZE(offsetof(struct page_header, used) + 4*(((n)+31)/32))
+
+/* see if a pointer is page aligned. This detects large memalign() pointers */
+#define IS_PAGE_ALIGNED(ptr) (((state.page_size-1) & (intptr_t)ptr) == 0)
 
 /* move an element from the front of list1 to the front of list2 */
 #define MOVE_LIST_FRONT(list1, list2, p) \
@@ -129,6 +133,11 @@ struct large_header {
 	uint32_t num_pages;
 };
 
+struct memalign_header {
+	struct memalign_header *next;
+	void *p;
+	uint32_t num_pages;
+};
 
 struct bucket_state {
 	uint32_t alloc_limit;
@@ -144,6 +153,7 @@ struct alloc_state {
 	uint32_t largest_bucket;
 	uint32_t max_bucket;
 	struct page_header *empty_list;
+	struct memalign_header *memalign_list;
 	struct bucket_state buckets[MAX_BUCKETS];
 };
 
@@ -343,6 +353,67 @@ static void alloc_release(void)
 	state.num_empty_pages = 0;
 }
 
+/*
+  free some memory from a alloc_memalign
+ */
+static void alloc_memalign_free(void *ptr)
+{
+	struct memalign_header *mh;
+	
+	if (state.memalign_list == NULL) {
+		abort();
+	}
+
+	/* see if its the top one */
+	mh = state.memalign_list;
+	if (mh->p == ptr) {
+		state.memalign_list = mh->next;
+		munmap(ptr, mh->num_pages*state.page_size);
+		free(mh);
+		return;
+	}
+
+	/* otherwise walk it */
+	while (mh->next) {
+		struct memalign_header *mh2 = mh->next;
+		if (mh2->p == ptr) {
+			mh->next = mh2->next;
+			munmap(ptr, mh2->num_pages);
+			free(mh2);
+			return;
+		}
+		mh = mh->next;
+	}
+
+	/* it wasn't there ... */
+	abort();
+}
+
+
+/*
+  realloc for memalign blocks
+ */
+static void *alloc_memalign_realloc(void *ptr, size_t size)
+{
+	struct memalign_header *mh;
+	void *ptr2;
+
+	for (mh=state.memalign_list;mh;mh=mh->next) {
+		if (mh->p == ptr) break;
+	}
+	if (mh == NULL) {
+		abort();
+	}
+
+	ptr2 = malloc(size);
+	if (ptr2 == NULL) {
+		return NULL;
+	}
+
+	memcpy(ptr2, ptr, MIN(size, mh->num_pages*state.page_size));
+	free(ptr);
+	return ptr2;
+}
 
 /*
   free some memory
@@ -359,6 +430,11 @@ static void alloc_free(void *ptr)
 
 	if (ph->num_pages != 0) {
 		alloc_large_free(ptr);
+		return;
+	}
+
+	if (unlikely(IS_PAGE_ALIGNED(ptr))) {
+		alloc_memalign_free(ptr);
 		return;
 	}
 
@@ -439,6 +515,10 @@ static void *alloc_realloc(void *ptr, size_t size)
 		return alloc_malloc(size);
 	}
 
+	if (unlikely(IS_PAGE_ALIGNED(ptr))) {
+		return alloc_memalign_realloc(ptr, size);
+	}
+
 	/* if it was a large allocation, it needs special handling */
 	if (ph->num_pages != 0) {
 		return alloc_realloc_large(ptr, size);
@@ -483,6 +563,60 @@ static void *alloc_calloc(size_t nmemb, size_t size)
 	return ptr;
 }
 
+
+/*
+  memalign - the most difficult of the lot with these data structures 
+
+  this is O(n) in the number of aligned allocations. Don't use
+  memalign() unless you _really_ need it
+ */
+static void *alloc_memalign(size_t boundary, size_t size)
+{
+	struct memalign_header *mh;
+	
+	if (unlikely(state.initialised == false)) {
+		alloc_initialise();
+	}
+	if (boundary == 0 || 
+	    boundary > state.page_size ||
+	    (size+state.page_size-1 < size)) {
+		return NULL;
+	}
+
+	/* try and get lucky */
+	if (boundary < state.largest_bucket) {
+		void *ptr = malloc(size);
+		if (((intptr_t)ptr) % boundary == 0) {
+			return ptr;
+		}
+
+		/* nope, do it the slow way */
+		free(ptr);
+	}
+
+	mh = malloc(sizeof(struct memalign_header));
+	if (mh == NULL) {
+		return NULL;
+	}
+
+	/* give them a page aligned allocation */
+	mh->num_pages = (size + state.page_size-1) / state.page_size;
+	if (mh->num_pages == 0) {
+		mh->num_pages = 1;
+	}
+	mh->p = mmap(0, mh->num_pages*state.page_size, PROT_READ | PROT_WRITE, 
+		     MAP_ANON | MAP_PRIVATE, -1, 0);
+	if (mh->p == (void *)-1) {
+		free(mh);
+		return NULL;
+	}
+	
+	mh->next = state.memalign_list;
+	state.memalign_list = mh;
+
+	return mh->p;
+}
+
 #if 1
 void *malloc(size_t size)
 {
@@ -499,9 +633,39 @@ void free(void *ptr)
 	alloc_free(ptr);
 }
 
+void cfree(void *ptr)
+{
+	alloc_free(ptr);
+}
+
 void *realloc(void *ptr, size_t size)
 {
 	return alloc_realloc(ptr, size);
+}
+
+void *memalign(size_t boundary, size_t size)
+{
+	return alloc_memalign(boundary, size);
+}
+
+void *valloc(size_t size)
+{
+	return alloc_memalign(getpagesize(), size);
+}
+
+void *pvalloc(size_t size)
+{
+	return alloc_memalign(getpagesize(), size);
+}
+
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+	*memptr = alloc_memalign(alignment, size);
+	if (*memptr == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+	return 0;
 }
 
 #endif
