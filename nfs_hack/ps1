@@ -1,0 +1,33 @@
+ F S      UID   PID  PPID  C PRI NI     ADDR     SZ    WCHAN    STIME TTY      TIME CMD
+19 T     root     0     0  0   0 SY 10416cf8      0          00:51:16 ?        0:00 sched
+ 8 S     root     1     0  0  41 20 50113338     55 50113508 00:51:19 ?        0:00 /etc/init -
+19 S     root     2     0  0   0 SY 50112cd8      0 10439f0c 00:51:19 ?        0:00 pageout
+19 S     root     3     0  0   0 SY 50112678      0 1043e184 00:51:19 ?        0:15 fsflush
+ 8 S     root   313     1  0  41 20 50112018    178 50029c74 00:55:32 ?        0:00 /usr/lib/saf/sac -t 300
+ 8 S     root   506   504  0  51 20 5016d340    177 5016d510 13:57:21 pts/0    0:00 -bash
+ 8 S     root   142     1  0  51 20 5016cce0    223 50082bb6 00:54:42 ?        0:00 /usr/sbin/rpcbind
+ 8 S     root   122   118  0  39 20 5016c020    195 5008a580 00:54:41 ?        0:00 /opt/FSUNaprcf/lib/ap3_msc_watchd
+ 8 S     root   314     1  0  45 20 5042b980    187 500824ae 00:55:32 console  0:00 /usr/lib/saf/ttymon -g -h -p cnet00
+ 8 S     root   118     1  0  74 20 5042b320    194 5042b390 00:54:41 ?        0:00 /opt/FSUNaprcf/lib/ap3_msc_watchd
+ 8 S     root   162     1  0  41 20 5042acc0    252 50082aee 00:54:54 ?        0:00 /usr/sbin/inetd -s
+ 8 S     root   144     1  0  79 20 5042a660    207 50082b66 00:54:42 ?        0:00 /usr/sbin/keyserv
+ 8 S     root   152     1  0  59 20 5042a000    226 50082b8e 00:54:43 ?        0:00 /usr/sbin/kerbd
+ 8 S     root   150     1  0  43 20 52833988    213 50082c06 00:54:42 ?        0:00 /usr/lib/netsvc/yp/ypbind
+ 8 S     root   189     1  0  44 20 52833328    217 50082b16 00:54:54 ?        0:00 /usr/lib/nfs/statd
+ 8 S     root   191     1  0  66 20 52832cc8    210 50082ac6 00:54:54 ?        0:00 /usr/lib/nfs/lockd
+ 8 S     root   214     1  0  51 20 52832668    247 500829fe 00:55:15 ?        0:00 /usr/lib/autofs/automountd
+ 8 S     root   244     1  0  51 20 52832008    329 5008272e 00:55:26 ?        0:00 /usr/lib/lpsched
+ 8 S     root   251   244  0  41 20 528b3990    185 500826de 00:55:26 ?        0:00 lpNet
+ 8 S     root   218     1  0  41 20 528b3330    188 5008290e 00:55:16 ?        0:00 /usr/sbin/syslogd
+ 8 S     root   272     1  0  56 20 528b2cd0    275 500824d6 00:55:28 ?        0:00 /usr/sbin/vold
+ 8 S     root   253     1  0  41 20 528b2670    238 528ed18e 00:55:27 ?        0:00 /usr/lib/sendmail -bd -q1h
+ 8 S     root   234     1  0  75 20 528b2010    238 528b21e0 00:55:24 ?        0:00 /usr/sbin/nscd
+ 8 S     root   228     1  0  51 20 528d7998    199 50029eb4 00:55:24 ?        0:00 /usr/sbin/cron
+ 8 S     root   316   313  0  41 20 528d7338    188 528d7508 00:55:32 ?        0:00 /usr/lib/saf/ttymon
+ 8 S     root   263     1  0  41 20 528d6cd8    105 5008263e 00:55:27 ?        0:00 /usr/lib/utmpd
+ 8 S     root   303     1  0  87 20 528d6678    225 50082616 00:55:32 ?        0:00 /usr/lib/nfs/mountd
+ 8 S     root   306     1  0  55 20 528d6018    213 5008245e 00:55:32 ?        0:00 /opt/FSUNapwb/sbin/apwbdaemon
+ 8 S     root   308     1  0  55 20 5299b9a0    213 5008240e 00:55:32 ?        0:00 /opt/FSUNapwb/sbin/apwbd
+ 8 S     root   310     1  0  65 20 5299b340    210 500823be 00:55:32 ?        0:00 /opt/FSUNapwb/sbin/apbincpd
+ 8 S     root   504   162  0  61 20 5299ace0    186 5299aeb0 13:57:21 ?        0:00 in.rlogind
+ 8 O     root   536   506  0  51 20 5299a680    106          14:02:58 pts/0    0:00 ps -lef

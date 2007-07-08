@@ -1,0 +1,6 @@
+_init
+_fini
+_info
+xdr_bytes
+xdr_opaque
+copyout

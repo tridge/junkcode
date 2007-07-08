@@ -1,0 +1,85 @@
+Script started on Fri Sep 25 16:43:55 1998
+[?1h=bash# modinfo |grep fsbash# [Kadb -k /dev/ksyms /dev/mem
+physmem	3dea
+svc_sendrepoy  ly/8i
+svc_sendreply:
+svc_sendreply:	save	%sp, -0x90, %sp
+		mov	0x1, %l1
+		st	%l1, [%fp - 0x2c]
+		st	%g0, [%fp - 0x28]
+		add	%fp, -0x30, %o1
+		ld	[%i0 + 0x84], %l4
+		mov	%i0, %o0
+		ld	[%i0 + 0x88], %l6
+
+svc_sendreply+0x20:		st	%l4, [%fp - 0x24]
+		ld	[%i0 + 0x8c], %l4
+		st	%l6, [%fp - 0x20]
+		st	%l4, [%fp - 0x1c]
+		st	%g0, [%fp - 0x18]
+		st	%i2, [%fp - 0x14]
+		st	%i1, [%fp - 0x10]
+		ld	[%i0 + 0x4], %i3
+
+svc_sendreply+0x40:		ld	[%i3 + 0xc], %g1
+		jmpl	%g1, %o7
+		nop
+		ret
+		restore	%g0, %o0, %o0
+svcerr_noproc:	save	%sp, -0x90, %sp
+		mov	0x1, %i4
+		st	%i4, [%fp - 0x2c]
+$q
+
+[?1l>[?1h=bash# adb -k /dev/ksyms /dev/mem
+physmem	3dea
+svc_sendreply=
+bad modifier
+svc_sendreply=X
+		50126954
+0x50126954/i
+svc_sendreply:
+svc_sendreply:	save	%sp, -0x90, %sp
+svc_sendreplX/8i
+symbol not found
+Xvc_sendreply/
+Xvc_sendreply:
+Xvc_sendreply:	save	%sp, -0x70, %sp
+Xvc_sendp^H   reply/8i
+Xvc_sendreply:
+Xvc_sendreply:	save	%sp, -0x70, %sp
+		st	%i0, [%fp + 0x44]
+		st	%i1, [%fp + 0x48]
+		st	%i2, [%fp + 0x4c]
+		call	timediff
+		nop
+		mov	%o0, %o2
+		clr	%o0
+
+Xvc_sendreply+0x20:		sethi	%hi(0x52a57400), %o3
+		or	%o3, 0x3a8, %o1		 ! timediff + 0x1a4
+		call	cmn_err
+		nop
+		sethi	%hi(0x52a58000), %o1
+		ld	[%o1 + 0x2b8], %o0
+		ld	[%fp + 0x4c], %o1
+		call	interpret_reply
+tick1/X
+tick1:
+tick1:		dcc8b9ae
+tick1/D
+tick1:
+tick1:		-590825042
+tick2/
+tick2:
+tick2:		-589157389
+tick2/X
+tick2:
+tick2:		dce22bf3
+tick2/2X
+tick2:
+tick2:		dce22bf3	302f1b68
+$q
+
+[?1l>[?1h=bash# adb -k /dev/ksyms /dev/membash# [10Pmodinfo |grep fsbash# mod[5Pload zfsbash# [K
+script done on Fri Sep 25 16:50:14 1998

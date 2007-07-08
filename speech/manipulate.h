@@ -1,0 +1,26 @@
+/* Prototypes */
+int main(int argc,char *argv[]);
+int addabscissa_main(int argc,char *argv[]);
+int manipulate_main(int argc,char *argv[]);
+int chop_main(int argc,char *argv[]);
+int load_environment(void);
+int next_int(FILE *file);
+int select_main(int argc,char *argv[]);
+int bin2text_main(int argc,char *argv[]);
+int rfft_main(int argc,char *argv[]);
+int fftfilter_main(int argc,char *argv[]);
+int zerocross_main(int argc,char *argv[]);
+int prepare_main(int argc,char *argv[]);
+int open_output(char *optarg);
+int open_input(char *optarg);
+int file_help(void);
+char *basename(char *s);
+void four1(FLOAT *data,int nn,int isign);
+void hamming(FLOAT *data,int n,int skip);
+void hanning(FLOAT *data,int n,int skip);
+void bartlett(FLOAT *data,int n,int skip);
+void rotate(FLOAT *data,int num,int n,int skip);
+FLOAT sum_sq(FLOAT *data,int n);
+FLOAT sum_sq_diff(FLOAT *data1,FLOAT *data2,int n);
+FLOAT arc_error(FLOAT *data,FLOAT *arc,int numpts,int narc);
+void pre_emphasise(FLOAT *data,int n,FLOAT pre_emph,int skip);

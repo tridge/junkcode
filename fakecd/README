@@ -1,0 +1,11 @@
+This is a quick hack to allow vmware to boot ISO image files, which
+means you can test an ISO without burning a cdrom.
+
+To build just type "make" then copy fakecd.so to somewhere like /lib/
+and add the path to fakecd.so into /etc/ld.so.preload
+
+After that you just need to tell vmware to use your iso image instead
+of /dev/cdrom. The ISO must have a filename ending in ".iso".
+
+tridge@linuxcare.com
+October 2000

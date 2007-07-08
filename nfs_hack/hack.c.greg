@@ -1,0 +1,2565 @@
+
+;; Function tick_calibrate
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 8  108 in 9  109 in 9  110 in 8  
+111 in 8  112 in 9  113 in 9  114 in 8  115 in 8  116 in 9  
+117 in 9  118 in 10  119 in 11  
+
+;; Hard regs used:  8 9 10 11 15 30 100
+
+(note 2 0 3 "" NOTE_INSN_DELETED)
+
+(note 3 2 4 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 4 3 6 "" NOTE_INSN_DELETED)
+
+(note 6 4 9 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 9 6 11 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("done.8")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 11 9 12 (set (reg:SI 9 %o1)
+        (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("done.8"))))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 11 13 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 9 %o1)
+            (const_int 0))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 13 12 14 (set (pc)
+        (if_then_else (eq (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 16)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 14 13 15 (set (pc)
+        (label_ref 113)) 338 {jump} (nil)
+    (nil))
+
+(barrier 15 14 16)
+
+;; Insn is not within a basic block
+(code_label 16 15 19 5 "")
+
+;; Insn is not within a basic block
+(insn 19 16 21 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("done.8")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 19 22 (set (reg:SI 9 %o1)
+        (const_int 1)) 111 {*movsi_insn} (nil)
+    (expr_list:REG_EQUAL (const_int 1)
+        (nil)))
+
+;; Insn is not within a basic block
+(insn 22 21 24 (set (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("done.8"))))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 24 22 26 (set (reg:SI 9 %o1)
+        (plus:SI (reg:SI 30 %fp)
+            (const_int -20))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 26 24 28 (set (reg:SI 8 %o0)
+        (const_int 4)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 28 26 30 (set (reg:SI 9 %o1)
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 30 28 33 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("drv_getparm")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 33 30 34 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 34 33 36 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -24)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 36 34 57 "" NOTE_INSN_LOOP_BEG)
+
+(note 57 36 37 "" NOTE_INSN_LOOP_CONT)
+
+;; Insn is not within a basic block
+(code_label 37 57 39 6 "")
+
+;; Insn is not within a basic block
+(insn 39 37 41 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -24)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 41 39 42 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 42 41 43 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 43 42 44 (set (pc)
+        (if_then_else (eq (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 46)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 44 43 45 (set (pc)
+        (label_ref 61)) 338 {jump} (nil)
+    (nil))
+
+(barrier 45 44 46)
+
+;; Insn is not within a basic block
+(code_label 46 45 48 8 "")
+
+(note 48 46 49 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 49 48 51 (set (reg:SI 9 %o1)
+        (plus:SI (reg:SI 30 %fp)
+            (const_int -24))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 51 49 53 (set (reg:SI 8 %o0)
+        (const_int 4)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 53 51 55 (set (reg:SI 9 %o1)
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 55 53 58 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("drv_getparm")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(jump_insn 58 55 59 (set (pc)
+        (label_ref 37)) 338 {jump} (nil)
+    (nil))
+
+(barrier 59 58 60)
+
+(note 60 59 61 "" NOTE_INSN_LOOP_END)
+
+;; Insn is not within a basic block
+(code_label 61 60 64 7 "")
+
+;; Insn is not within a basic block
+(insn 64 61 65 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -24)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 65 64 68 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 68 65 70 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("timestart")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+(note 70 68 91 "" NOTE_INSN_LOOP_BEG)
+
+(note 91 70 71 "" NOTE_INSN_LOOP_CONT)
+
+;; Insn is not within a basic block
+(code_label 71 91 73 9 "")
+
+;; Insn is not within a basic block
+(insn 73 71 75 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -24)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 75 73 76 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 76 75 77 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 77 76 78 (set (pc)
+        (if_then_else (eq (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 80)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 78 77 79 (set (pc)
+        (label_ref 95)) 338 {jump} (nil)
+    (nil))
+
+(barrier 79 78 80)
+
+;; Insn is not within a basic block
+(code_label 80 79 82 11 "")
+
+(note 82 80 83 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 83 82 85 (set (reg:SI 9 %o1)
+        (plus:SI (reg:SI 30 %fp)
+            (const_int -24))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 85 83 87 (set (reg:SI 8 %o0)
+        (const_int 4)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 87 85 89 (set (reg:SI 9 %o1)
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 89 87 92 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("drv_getparm")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(jump_insn 92 89 93 (set (pc)
+        (label_ref 71)) 338 {jump} (nil)
+    (nil))
+
+(barrier 93 92 94)
+
+(note 94 93 95 "" NOTE_INSN_LOOP_END)
+
+;; Insn is not within a basic block
+(code_label 95 94 98 10 "")
+
+;; Insn is not within a basic block
+(call_insn 98 95 100 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("timediff")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 100 98 102 (set (reg:SI 10 %o2)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 102 100 103 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 103 102 104 (set (reg:SI 11 %o3)
+        (high:SI (symbol_ref:SI ("*.LLC0")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 104 103 106 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 11 %o3)
+            (symbol_ref:SI ("*.LLC0")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 106 104 108 (set (reg:SI 10 %o2)
+        (reg:SI 10 %o2)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 108 106 110 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+(note 110 108 111 "" NOTE_INSN_BLOCK_END)
+
+(note 111 110 113 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 113 111 114 4 "")
+
+(note 114 113 0 "" NOTE_INSN_DELETED)
+
+
+;; Function ramp
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 16  108 in 8  109 in 9  110 in 8  
+111 in 9  112 in 8  113 in 8  114 in 8  115 in 8  116 in 8  
+117 in 8  118 in 9  119 in 8  120 in 8  121 in 8  122 in 9  
+123 in 8  124 in 9  125 in 10  126 in 8  127 in 8  128 in 9  
+129 in 9  130 in 8  131 in 9  
+
+;; Hard regs used:  8 9 10 15 16 24 25 30 100
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 7 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 7 6 8 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 8 7 10 "" NOTE_INSN_DELETED)
+
+(note 10 8 13 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 13 10 14 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 14 13 15 "" NOTE_INSN_LOOP_BEG)
+
+;; Insn is not within a basic block
+(code_label 15 14 17 13 "")
+
+;; Insn is not within a basic block
+(insn 17 15 19 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 19 17 20 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 20 19 21 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 21 20 22 (set (pc)
+        (if_then_else (lt (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 24)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 22 21 23 (set (pc)
+        (label_ref 80)) 338 {jump} (nil)
+    (nil))
+
+(barrier 23 22 24)
+
+;; Insn is not within a basic block
+(code_label 24 23 26 16 "")
+
+(note 26 24 28 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 28 26 30 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 30 28 31 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 31 30 33 (set (reg:SI 16 %l0)
+        (plus:SI (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 33 31 35 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 35 33 37 (set (reg:SI 8 %o0)
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (insn_list:REG_LIBCALL 41 (nil)))
+
+;; Insn is not within a basic block
+(insn 37 35 39 (set (reg:SI 9 %o1)
+        (const_int 27)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn/u 39 37 41 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("*.rem")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 41 39 43 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (insn_list:REG_RETVAL 35 (expr_list:REG_EQUAL (mod:SI (reg:SI 9 %o1)
+                (const_int 27))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 43 41 44 (set (reg:QI 9 %o1)
+        (subreg:QI (reg:SI 8 %o0) 0)) 101 {*movqi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 44 43 46 (set (reg:SI 8 %o0)
+        (plus:SI (subreg:SI (reg:QI 9 %o1) 0)
+            (const_int 65))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 46 44 49 (set (mem/s:QI (reg:SI 16 %l0))
+        (subreg:QI (reg:SI 8 %o0) 0)) 101 {*movqi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 49 46 51 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 51 49 52 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 52 51 54 (set (reg:SI 8 %o0)
+        (plus:SI (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 54 52 55 (set (reg:QI 9 %o1)
+        (mem/s:QI (reg:SI 8 %o0))) 101 {*movqi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 55 54 56 (set (reg:SI 10 %o2)
+        (ashift:SI (subreg:SI (reg:QI 9 %o1) 0)
+            (const_int 24))) 330 {ashlsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 56 55 57 (set (reg:SI 8 %o0)
+        (ashiftrt:SI (reg:SI 10 %o2)
+            (const_int 24))) 334 {ashrsi3} (nil)
+    (expr_list:REG_EQUAL (sign_extend:SI (reg:QI 9 %o1))
+        (nil)))
+
+;; Insn is not within a basic block
+(insn 57 56 58 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 8 %o0)
+            (const_int 91))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 58 57 60 (set (pc)
+        (if_then_else (ne (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 71)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 60 58 62 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 62 60 63 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 63 62 65 (set (reg:SI 8 %o0)
+        (plus:SI (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 65 63 66 (set (reg:QI 9 %o1)
+        (const_int 10)) 101 {*movqi_insn} (nil)
+    (expr_list:REG_EQUAL (const_int 10)
+        (nil)))
+
+;; Insn is not within a basic block
+(insn 66 65 67 (set (mem/s:QI (reg:SI 8 %o0))
+        (reg:QI 9 %o1)) 101 {*movqi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(code_label 67 66 70 17 "")
+
+(note 70 67 71 "" NOTE_INSN_LOOP_CONT)
+
+;; Insn is not within a basic block
+(code_label 71 70 73 15 "")
+
+;; Insn is not within a basic block
+(insn 73 71 74 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 74 73 76 (set (reg:SI 9 %o1)
+        (plus:SI (reg:SI 8 %o0)
+            (const_int 1))) 217 {addsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 76 74 77 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 77 76 78 (set (pc)
+        (label_ref 15)) 338 {jump} (nil)
+    (nil))
+
+(barrier 78 77 79)
+
+(note 79 78 80 "" NOTE_INSN_LOOP_END)
+
+;; Insn is not within a basic block
+(code_label 80 79 82 14 "")
+
+(note 82 80 83 "" NOTE_INSN_BLOCK_END)
+
+(note 83 82 85 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 85 83 86 12 "")
+
+(note 86 85 0 "" NOTE_INSN_DELETED)
+
+
+;; Function interpret_reply
+
+;; Register dispositions:
+105 in 8  106 in 10  107 in 11  108 in 8  109 in 9  110 in 10  
+111 in 11  112 in 12  113 in 13  114 in 8  115 in 9  116 in 2  
+117 in 8  118 in 9  
+
+;; Hard regs used:  2 8 9 10 11 12 13 14 15 24 25 30 100
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 7 (set (mem/u:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 7 6 8 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 8 7 10 "" NOTE_INSN_DELETED)
+
+(note 10 8 77 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 77 10 79 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 79 77 80 (set (reg:SI 9 %o1)
+        (mem/s:SI (plus:SI (reg:SI 8 %o0)
+                (const_int 8)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 80 79 81 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 9 %o1)
+            (const_int 6))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 81 80 82 (set (pc)
+        (if_then_else (eq (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 14)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 82 81 83 (set (pc)
+        (label_ref 71)) 338 {jump} (nil)
+    (nil))
+
+(barrier 83 82 13)
+
+(note 13 83 14 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(code_label 14 13 17 20 "")
+
+;; Insn is not within a basic block
+(insn 17 14 18 (set (reg:SI 8 %o0)
+        (mem/u:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 18 17 21 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 18 23 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 23 21 24 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 24 23 25 (set (reg:SI 11 %o3)
+        (high:SI (symbol_ref:SI ("*.LLC1")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 25 24 27 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 11 %o3)
+            (symbol_ref:SI ("*.LLC1")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 25 29 (set (reg:SI 10 %o2)
+        (mem/s:SI (reg:SI 10 %o2))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 29 27 32 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+;; Insn is not within a basic block
+(insn 32 29 34 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 34 32 35 (set (reg:SI 9 %o1)
+        (mem/s:SI (reg:SI 8 %o0))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 35 34 36 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 9 %o1)
+            (const_int 0))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 36 35 38 (set (pc)
+        (if_then_else (ne (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 67)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+(note 38 36 40 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 40 38 42 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 42 40 44 (set (reg:SI 11 %o3)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 44 42 46 (set (reg:SI 12 %o4)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 46 44 48 (set (reg:SI 13 %o5)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 48 46 50 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 50 48 51 (set (reg:SI 9 %o1)
+        (mem/s:SI (plus:SI (reg:SI 8 %o0)
+                (const_int 116)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 51 50 53 (set (mem:SI (plus:SI (reg:SI 14 %sp)
+                (const_int 92)))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 53 51 54 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 54 53 55 (set (reg:SI 2 %g2)
+        (high:SI (symbol_ref:SI ("*.LLC2")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 55 54 57 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 2 %g2)
+            (symbol_ref:SI ("*.LLC2")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 57 55 59 (set (reg:SI 10 %o2)
+        (mem/s:SI (plus:SI (reg:SI 10 %o2)
+                (const_int 120)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 59 57 61 (set (reg:SI 11 %o3)
+        (mem/s:SI (plus:SI (reg:SI 11 %o3)
+                (const_int 108)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 61 59 63 (set (reg:SI 12 %o4)
+        (mem/s:SI (plus:SI (reg:SI 12 %o4)
+                (const_int 104)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 63 61 65 (set (reg:SI 13 %o5)
+        (mem/s:SI (plus:SI (reg:SI 13 %o5)
+                (const_int 112)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 65 63 67 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 13 %o5))
+        (expr_list (use (reg:SI 12 %o4))
+            (expr_list (use (reg:SI 11 %o3))
+                (expr_list (use (reg:SI 10 %o2))
+                    (expr_list (use (reg:SI 9 %o1))
+                        (expr_list (use (reg:SI 8 %o0))
+                            (nil))))))))
+
+;; Insn is not within a basic block
+(code_label 67 65 69 21 "")
+
+;; Insn is not within a basic block
+(jump_insn 69 67 70 (set (pc)
+        (label_ref 84)) 338 {jump} (nil)
+    (nil))
+
+(barrier 70 69 71)
+
+;; Insn is not within a basic block
+(code_label 71 70 73 22 "")
+
+;; Insn is not within a basic block
+(jump_insn 73 71 74 (set (pc)
+        (label_ref 84)) 338 {jump} (nil)
+    (nil))
+
+(barrier 74 73 84)
+
+;; Insn is not within a basic block
+(code_label 84 74 86 19 "")
+
+(note 86 84 87 "" NOTE_INSN_BLOCK_END)
+
+(note 87 86 89 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 89 87 90 18 "")
+
+(note 90 89 0 "" NOTE_INSN_DELETED)
+
+
+;; Function dispatch_200003
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 8  108 in 8  109 in 10  
+
+;; Hard regs used:  8 9 10 15 24 25 30
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 7 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 7 6 8 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 8 7 10 "" NOTE_INSN_DELETED)
+
+(note 10 8 12 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 12 10 14 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("current_request")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 12 15 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 15 14 18 (set (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("current_request"))))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 18 15 21 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("timestart")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 18 23 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("real_dispatch_200003")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 23 21 25 (set (reg:SI 10 %o2)
+        (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("real_dispatch_200003"))))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 25 23 27 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 25 29 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 29 27 31 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (reg:SI 10 %o2))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 354 {*call_value_address_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 31 29 33 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 33 31 34 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 34 33 35 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 35 34 36 (set (pc)
+        (label_ref 40)) 338 {jump} (nil)
+    (nil))
+
+(barrier 36 35 38)
+
+(note 38 36 40 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 40 38 41 24 "")
+
+(note 41 40 0 "" NOTE_INSN_DELETED)
+
+
+;; Function dispatch_200227
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 8  108 in 8  109 in 10  
+
+;; Hard regs used:  8 9 10 15 24 25 30
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 7 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 7 6 8 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 8 7 10 "" NOTE_INSN_DELETED)
+
+(note 10 8 12 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 12 10 14 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("current_request")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 12 15 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 15 14 18 (set (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("current_request"))))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 18 15 21 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("timestart")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 18 23 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("real_dispatch_200227")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 23 21 25 (set (reg:SI 10 %o2)
+        (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("real_dispatch_200227"))))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 25 23 27 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 25 29 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 29 27 31 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (reg:SI 10 %o2))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 354 {*call_value_address_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 31 29 33 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 33 31 34 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 34 33 35 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 35 34 36 (set (pc)
+        (label_ref 40)) 338 {jump} (nil)
+    (nil))
+
+(barrier 36 35 38)
+
+(note 38 36 40 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 40 38 41 25 "")
+
+(note 41 40 0 "" NOTE_INSN_DELETED)
+
+
+;; Function Xvc_register
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 10  108 in 8  109 in 9  110 in 12  
+111 in 8  112 in 8  113 in 8  114 in 8  115 in 9  116 in 10  
+117 in 8  118 in 9  119 in 12  120 in 8  121 in 8  122 in 8  
+123 in 10  124 in 8  125 in 8  126 in 8  
+
+;; Hard regs used:  8 9 10 11 12 15 24 25 26 27 28 30 100
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 8 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 8 6 10 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))
+        (reg:SI 26 %i2)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 10 8 12 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 80)))
+        (reg:SI 27 %i3)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 10 13 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 84)))
+        (reg:SI 28 %i4)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 13 12 14 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 14 13 16 "" NOTE_INSN_DELETED)
+
+(note 16 14 19 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 19 16 21 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 19 23 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 23 21 27 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("svc_unregister")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 27 23 28 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 28 27 29 (set (reg:SI 10 %o2)
+        (high:SI (const_int 100003))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 29 28 30 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (const_int 100003))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 30 29 31 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 31 30 33 (set (pc)
+        (if_then_else (ne (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 67)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+(note 33 31 35 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 35 33 37 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("real_dispatch_200003")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 37 35 38 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 80)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 38 37 41 (set (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("real_dispatch_200003"))))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 41 38 43 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 43 41 45 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 45 43 46 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 46 45 47 (set (reg:SI 12 %o4)
+        (high:SI (symbol_ref:SI ("dispatch_200003")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 47 46 49 (set (reg:SI 11 %o3)
+        (lo_sum:SI (reg:SI 12 %o4)
+            (symbol_ref:SI ("dispatch_200003")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 49 47 51 (set (reg:SI 12 %o4)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 84)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 51 49 53 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("svc_register")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 12 %o4))
+        (expr_list (use (reg:SI 11 %o3))
+            (expr_list (use (reg:SI 10 %o2))
+                (expr_list (use (reg:SI 9 %o1))
+                    (expr_list (use (reg:SI 8 %o0))
+                        (nil)))))))
+
+;; Insn is not within a basic block
+(insn 53 51 55 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 55 53 58 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 58 55 60 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 60 58 61 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 61 60 62 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 62 61 63 (set (pc)
+        (label_ref 147)) 338 {jump} (nil)
+    (nil))
+
+(barrier 63 62 65)
+
+;; Insn is not within a basic block
+(jump_insn 65 63 66 (set (pc)
+        (label_ref 108)) 338 {jump} (nil)
+    (nil))
+
+(barrier 66 65 67)
+
+;; Insn is not within a basic block
+(code_label 67 66 69 27 "")
+
+;; Insn is not within a basic block
+(insn 69 67 70 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 70 69 71 (set (reg:SI 10 %o2)
+        (high:SI (const_int 100227))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 71 70 72 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (const_int 100227))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 72 71 73 (set (reg:CC 100 %icc)
+        (compare:CC (reg:SI 8 %o0)
+            (reg:SI 9 %o1))) 5 {*cmpsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 73 72 75 (set (pc)
+        (if_then_else (ne (reg:CC 100 %icc)
+                (const_int 0))
+            (label_ref 108)
+            (pc))) 72 {*normal_branch} (nil)
+    (nil))
+
+(note 75 73 77 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 77 75 79 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("real_dispatch_200227")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 79 77 80 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 80)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 80 79 83 (set (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("real_dispatch_200227"))))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 83 80 85 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 85 83 87 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 87 85 88 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 88 87 89 (set (reg:SI 12 %o4)
+        (high:SI (symbol_ref:SI ("dispatch_200227")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 89 88 91 (set (reg:SI 11 %o3)
+        (lo_sum:SI (reg:SI 12 %o4)
+            (symbol_ref:SI ("dispatch_200227")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 91 89 93 (set (reg:SI 12 %o4)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 84)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 93 91 95 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("svc_register")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 12 %o4))
+        (expr_list (use (reg:SI 11 %o3))
+            (expr_list (use (reg:SI 10 %o2))
+                (expr_list (use (reg:SI 9 %o1))
+                    (expr_list (use (reg:SI 8 %o0))
+                        (nil)))))))
+
+;; Insn is not within a basic block
+(insn 95 93 97 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 97 95 100 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 100 97 102 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 102 100 103 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 103 102 104 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 104 103 105 (set (pc)
+        (label_ref 147)) 338 {jump} (nil)
+    (nil))
+
+(barrier 105 104 107)
+
+;; Insn is not within a basic block
+(code_label 107 105 108 29 "")
+
+;; Insn is not within a basic block
+(code_label 108 107 111 28 "")
+
+;; Insn is not within a basic block
+(insn 111 108 112 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 112 111 113 (set (reg:SI 10 %o2)
+        (high:SI (symbol_ref:SI ("*.LLC3")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 113 112 115 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (symbol_ref:SI ("*.LLC3")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 115 113 117 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 117 115 120 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+;; Insn is not within a basic block
+(insn 120 117 122 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 122 120 124 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 124 122 126 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 126 124 128 (set (reg:SI 11 %o3)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 80)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 128 126 130 (set (reg:SI 12 %o4)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 84)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 130 128 132 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("svc_register")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 12 %o4))
+        (expr_list (use (reg:SI 11 %o3))
+            (expr_list (use (reg:SI 10 %o2))
+                (expr_list (use (reg:SI 9 %o1))
+                    (expr_list (use (reg:SI 8 %o0))
+                        (nil)))))))
+
+;; Insn is not within a basic block
+(insn 132 130 134 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 134 132 137 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 137 134 139 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 139 137 140 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 140 139 141 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 141 140 142 (set (pc)
+        (label_ref 147)) 338 {jump} (nil)
+    (nil))
+
+(barrier 142 141 144)
+
+(note 144 142 145 "" NOTE_INSN_BLOCK_END)
+
+(note 145 144 147 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 147 145 148 26 "")
+
+(note 148 147 0 "" NOTE_INSN_DELETED)
+
+
+;; Function Xvc_sendreply
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 10  108 in 8  109 in 8  110 in 8  
+
+
+;; Hard regs used:  8 9 10 15 24 25 26 30
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 8 (set (mem/u:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 8 6 9 (set (mem/u:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))
+        (reg:SI 26 %i2)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 9 8 10 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 10 9 12 "" NOTE_INSN_DELETED)
+
+(note 12 10 15 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 15 12 16 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 16 15 17 (set (reg:SI 10 %o2)
+        (high:SI (const_int 18000))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 17 16 18 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (const_int 18000))) 80 {*lo_sum_si} (nil)
+    (expr_list:REG_EQUAL (const_int 18000)
+        (nil)))
+
+;; Insn is not within a basic block
+(insn 18 17 21 (set (mem/s:SI (plus:SI (reg:SI 8 %o0)
+                (const_int 44)))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 18 23 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 23 21 25 (set (reg:SI 9 %o1)
+        (mem/u:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 25 23 27 (set (reg:SI 10 %o2)
+        (mem/u:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 27 25 29 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("svc_sendreply")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+;; Insn is not within a basic block
+(insn 29 27 31 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 31 29 34 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 34 31 36 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 36 34 37 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 37 36 38 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 38 37 39 (set (pc)
+        (label_ref 44)) 338 {jump} (nil)
+    (nil))
+
+(barrier 39 38 41)
+
+(note 41 39 42 "" NOTE_INSN_BLOCK_END)
+
+(note 42 41 44 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 44 42 45 30 "")
+
+(note 45 44 0 "" NOTE_INSN_DELETED)
+
+
+;; Function Xvc_tli_kcreate
+
+;; Register dispositions:
+105 in 8  
+
+;; Hard regs used:  8 9 10 15 24 25 26 30
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 6 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 6 4 8 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))
+        (reg:SI 25 %i1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 8 6 9 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))
+        (reg:SI 26 %i2)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 9 8 10 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 10 9 12 "" NOTE_INSN_DELETED)
+
+(note 12 10 14 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(call_insn 14 12 17 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("tick_calibrate")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 17 14 19 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 19 17 21 (set (reg:SI 9 %o1)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 72)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 19 23 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 76)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 23 21 25 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("svc_tli_kcreate")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+;; Insn is not within a basic block
+(insn 25 23 27 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 25 28 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 28 27 29 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 29 28 30 (set (pc)
+        (label_ref 34)) 338 {jump} (nil)
+    (nil))
+
+(barrier 30 29 32)
+
+(note 32 30 34 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 34 32 35 31 "")
+
+(note 35 34 0 "" NOTE_INSN_DELETED)
+
+
+;; Function nfs_svc
+
+;; Register dispositions:
+105 in 8  
+
+;; Hard regs used:  8 15 24 30
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 5 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 5 4 6 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 6 5 8 "" NOTE_INSN_DELETED)
+
+(note 8 6 10 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 10 8 12 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 12 10 14 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("Xfs_svc")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 8 %o0))
+        (nil)))
+
+;; Insn is not within a basic block
+(insn 14 12 16 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 16 14 17 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 17 16 18 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 18 17 19 (set (pc)
+        (label_ref 24)) 338 {jump} (nil)
+    (nil))
+
+(barrier 19 18 21)
+
+(note 21 19 22 "" NOTE_INSN_BLOCK_END)
+
+(note 22 21 24 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 24 22 25 32 "")
+
+(note 25 24 0 "" NOTE_INSN_DELETED)
+
+
+;; Function _init
+
+;; Register dispositions:
+105 in 10  106 in 11  107 in 10  108 in 11  109 in 8  
+
+;; Hard regs used:  8 9 10 11 15 24 30
+
+(note 2 0 3 "" NOTE_INSN_DELETED)
+
+(note 3 2 4 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 4 3 6 "" NOTE_INSN_DELETED)
+
+(note 6 4 8 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 8 6 9 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 9 8 10 (set (reg:SI 10 %o2)
+        (high:SI (symbol_ref:SI ("*.LLC4")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 10 9 11 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (symbol_ref:SI ("*.LLC4")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 11 10 12 (set (reg:SI 11 %o3)
+        (high:SI (symbol_ref:SI ("*.LLC5")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 11 14 (set (reg:SI 10 %o2)
+        (lo_sum:SI (reg:SI 11 %o3)
+            (symbol_ref:SI ("*.LLC5")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 12 16 (set (reg:SI 11 %o3)
+        (const_int 220)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 16 14 19 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 11 %o3))
+        (expr_list (use (reg:SI 10 %o2))
+            (expr_list (use (reg:SI 9 %o1))
+                (expr_list (use (reg:SI 8 %o0))
+                    (nil))))))
+
+;; Insn is not within a basic block
+(call_insn 19 16 21 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("nfs3tsize")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 19 23 (set (reg:SI 10 %o2)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 23 21 24 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 24 23 25 (set (reg:SI 11 %o3)
+        (high:SI (symbol_ref:SI ("*.LLC6")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 25 24 27 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 11 %o3)
+            (symbol_ref:SI ("*.LLC6")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 25 29 (set (reg:SI 10 %o2)
+        (reg:SI 10 %o2)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 29 27 32 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+;; Insn is not within a basic block
+(call_insn 32 29 34 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("Xinit")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 34 32 36 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 36 34 37 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 37 36 38 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 38 37 39 (set (pc)
+        (label_ref 44)) 338 {jump} (nil)
+    (nil))
+
+(barrier 39 38 41)
+
+(note 41 39 42 "" NOTE_INSN_BLOCK_END)
+
+(note 42 41 44 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 44 42 45 33 "")
+
+(note 45 44 0 "" NOTE_INSN_DELETED)
+
+
+;; Function _info
+
+;; Register dispositions:
+105 in 10  106 in 11  107 in 8  
+
+;; Hard regs used:  8 9 10 11 15 24 30
+
+(note 2 0 4 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(insn 4 2 5 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))
+        (reg:SI 24 %i0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 5 4 6 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 6 5 8 "" NOTE_INSN_DELETED)
+
+(note 8 6 10 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 10 8 11 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 11 10 12 (set (reg:SI 10 %o2)
+        (high:SI (symbol_ref:SI ("*.LLC4")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 11 13 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (symbol_ref:SI ("*.LLC4")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 13 12 14 (set (reg:SI 11 %o3)
+        (high:SI (symbol_ref:SI ("*.LLC7")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 13 16 (set (reg:SI 10 %o2)
+        (lo_sum:SI (reg:SI 11 %o3)
+            (symbol_ref:SI ("*.LLC7")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 16 14 18 (set (reg:SI 11 %o3)
+        (const_int 235)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 18 16 21 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 11 %o3))
+        (expr_list (use (reg:SI 10 %o2))
+            (expr_list (use (reg:SI 9 %o1))
+                (expr_list (use (reg:SI 8 %o0))
+                    (nil))))))
+
+;; Insn is not within a basic block
+(insn 21 18 23 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int 68)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 23 21 25 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("Xinfo")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 8 %o0))
+        (nil)))
+
+;; Insn is not within a basic block
+(insn 25 23 27 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 25 28 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 28 27 29 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 29 28 30 (set (pc)
+        (label_ref 35)) 338 {jump} (nil)
+    (nil))
+
+(barrier 30 29 32)
+
+(note 32 30 33 "" NOTE_INSN_BLOCK_END)
+
+(note 33 32 35 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 35 33 36 34 "")
+
+(note 36 35 0 "" NOTE_INSN_DELETED)
+
+
+;; Function _fini
+
+;; Register dispositions:
+105 in 10  106 in 11  107 in 8  108 in 10  109 in 8  
+
+;; Hard regs used:  8 9 10 11 15 24 30
+
+(note 2 0 3 "" NOTE_INSN_DELETED)
+
+(note 3 2 4 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 4 3 6 "" NOTE_INSN_DELETED)
+
+(note 6 4 9 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn 9 6 10 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 10 9 11 (set (reg:SI 10 %o2)
+        (high:SI (symbol_ref:SI ("*.LLC4")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 11 10 12 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (symbol_ref:SI ("*.LLC4")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 11 13 (set (reg:SI 11 %o3)
+        (high:SI (symbol_ref:SI ("*.LLC8")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 13 12 15 (set (reg:SI 10 %o2)
+        (lo_sum:SI (reg:SI 11 %o3)
+            (symbol_ref:SI ("*.LLC8")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 15 13 17 (set (reg:SI 11 %o3)
+        (const_int 242)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 17 15 20 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 11 %o3))
+        (expr_list (use (reg:SI 10 %o2))
+            (expr_list (use (reg:SI 9 %o1))
+                (expr_list (use (reg:SI 8 %o0))
+                    (nil))))))
+
+;; Insn is not within a basic block
+(call_insn 20 17 22 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("Xfini")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 22 20 24 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 24 22 27 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 27 24 28 (set (reg:SI 8 %o0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 28 27 29 (set (reg:SI 10 %o2)
+        (high:SI (symbol_ref:SI ("*.LLC9")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 29 28 31 (set (reg:SI 9 %o1)
+        (lo_sum:SI (reg:SI 10 %o2)
+            (symbol_ref:SI ("*.LLC9")))) 80 {*lo_sum_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 31 29 33 (set (reg:SI 10 %o2)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn 33 31 36 (parallel[ 
+            (call (mem:SI (symbol_ref:SI ("cmn_err")))
+                (const_int 0))
+            (clobber (reg:SI 15 %o7))
+        ] ) 346 {*call_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 10 %o2))
+        (expr_list (use (reg:SI 9 %o1))
+            (expr_list (use (reg:SI 8 %o0))
+                (nil)))))
+
+;; Insn is not within a basic block
+(insn 36 33 37 (set (reg/i:SI 24 %i0)
+        (const_int 0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 37 36 38 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 38 37 39 (set (pc)
+        (label_ref 44)) 338 {jump} (nil)
+    (nil))
+
+(barrier 39 38 41)
+
+(note 41 39 42 "" NOTE_INSN_BLOCK_END)
+
+(note 42 41 44 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 44 42 45 35 "")
+
+(note 45 44 0 "" NOTE_INSN_DELETED)
+
+
+;; Function timestart
+
+;; Register dispositions:
+105 in 8  106 in 9  
+
+;; Hard regs used:  8 9 15 30
+
+(note 2 0 3 "" NOTE_INSN_DELETED)
+
+(note 3 2 4 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 4 3 6 "" NOTE_INSN_DELETED)
+
+(note 6 4 8 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(call_insn 8 6 10 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("gettick")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 10 8 12 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 10 14 (set (reg:SI 9 %o1)
+        (high:SI (symbol_ref:SI ("tick1")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 12 16 (set (mem:SI (lo_sum:SI (reg:SI 9 %o1)
+                (symbol_ref:SI ("tick1"))))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+(note 16 14 18 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 18 16 19 2 "")
+
+(note 19 18 0 "" NOTE_INSN_DELETED)
+
+
+;; Function timediff
+
+;; Register dispositions:
+105 in 8  106 in 9  107 in 9  108 in 8  109 in 9  110 in 8  
+111 in 10  112 in 8  113 in 8  114 in 8  115 in 8  116 in 8  
+
+
+;; Hard regs used:  8 9 10 15 24 30
+
+(note 2 0 3 "" NOTE_INSN_DELETED)
+
+(note 3 2 4 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 4 3 6 "" NOTE_INSN_DELETED)
+
+(note 6 4 8 "" NOTE_INSN_DELETED)
+
+;; Insn is not within a basic block
+(call_insn 8 6 10 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("gettick")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 10 8 12 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 12 10 14 (set (reg:SI 9 %o1)
+        (high:SI (symbol_ref:SI ("tick2")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 12 17 (set (mem:SI (lo_sum:SI (reg:SI 9 %o1)
+                (symbol_ref:SI ("tick2"))))
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 17 14 19 (set (reg:SI 8 %o0)
+        (high:SI (symbol_ref:SI ("tick2")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 19 17 21 (set (reg:SI 9 %o1)
+        (high:SI (symbol_ref:SI ("tick1")))) 90 {*sethi_si} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 21 19 23 (set (reg:SI 8 %o0)
+        (mem:SI (lo_sum:SI (reg:SI 8 %o0)
+                (symbol_ref:SI ("tick2"))))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 23 21 24 (set (reg:SI 10 %o2)
+        (mem:SI (lo_sum:SI (reg:SI 9 %o1)
+                (symbol_ref:SI ("tick1"))))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 24 23 26 (set (reg:SI 9 %o1)
+        (minus:SI (reg:SI 8 %o0)
+            (reg:SI 10 %o2))) 225 {subsi3} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 26 24 28 (set (reg:SI 8 %o0)
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (insn_list:REG_LIBCALL 32 (nil)))
+
+;; Insn is not within a basic block
+(insn 28 26 30 (set (reg:SI 9 %o1)
+        (const_int 167)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(call_insn/u 30 28 32 (parallel[ 
+            (set (reg:SI 8 %o0)
+                (call (mem:SI (symbol_ref:SI ("*.udiv")))
+                    (const_int 0)))
+            (clobber (reg:SI 15 %o7))
+        ] ) 355 {*call_value_symbolic_sp32} (nil)
+    (nil)
+    (expr_list (use (reg:SI 9 %o1))
+        (expr_list (use (reg:SI 8 %o0))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 32 30 34 (set (reg:SI 8 %o0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (insn_list:REG_RETVAL 26 (expr_list:REG_EQUAL (udiv:SI (reg:SI 9 %o1)
+                (const_int 167))
+            (nil))))
+
+;; Insn is not within a basic block
+(insn 34 32 35 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 35 34 36 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 36 35 37 (set (pc)
+        (label_ref 41)) 338 {jump} (nil)
+    (nil))
+
+(barrier 37 36 39)
+
+(note 39 37 41 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 41 39 42 3 "")
+
+(note 42 41 0 "" NOTE_INSN_DELETED)
+
+
+;; Function gettick
+
+;; Need 1 reg of class GENERAL_REGS (for insn 8).
+;; Need 1 reg of class GENERAL_OR_FP_REGS (for insn 8).
+;; Need 1 reg of class GENERAL_OR_EXTRA_FP_REGS (for insn 8).
+;; Need 1 reg of class ALL_REGS (for insn 8).
+Spilling reg 9.
+;; Register dispositions:
+105 in 8  106 in 8  
+
+;; Hard regs used:  8 9 24 30
+
+(note 2 0 3 "" NOTE_INSN_DELETED)
+
+(note 3 2 4 "" NOTE_INSN_FUNCTION_BEG)
+
+(note 4 3 6 "" NOTE_INSN_DELETED)
+
+(note 6 4 8 "" NOTE_INSN_BLOCK_BEG)
+
+;; Insn is not within a basic block
+(insn:HI 8 6 25 (set (reg:SI 9 %o1)
+        (asm_operands/v ("
+                              rd %%tick, %0
+                             ") ("=r") 0[ ] 
+            [ ]  ("hack.c") 43)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 25 8 11 (set (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))
+        (reg:SI 9 %o1)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 11 25 13 (set (reg:SI 8 %o0)
+        (mem:SI (plus:SI (reg:SI 30 %fp)
+                (const_int -20)))) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 13 11 14 (set (reg/i:SI 24 %i0)
+        (reg:SI 8 %o0)) 111 {*movsi_insn} (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(insn 14 13 15 (use (reg/i:SI 24 %i0)) -1 (nil)
+    (nil))
+
+;; Insn is not within a basic block
+(jump_insn 15 14 16 (set (pc)
+        (label_ref 21)) 338 {jump} (nil)
+    (nil))
+
+(barrier 16 15 18)
+
+(note 18 16 19 "" NOTE_INSN_BLOCK_END)
+
+(note 19 18 21 "" NOTE_INSN_FUNCTION_END)
+
+;; Insn is not within a basic block
+(code_label 21 19 22 1 "")
+
+(note 22 21 0 "" NOTE_INSN_DELETED)
+

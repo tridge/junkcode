@@ -1,0 +1,4 @@
+#!/bin/sh
+
+dd if=/mnt/d1 of=/dev/null bs=1024k
+wait

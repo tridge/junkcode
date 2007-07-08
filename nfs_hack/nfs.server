@@ -1,0 +1,71 @@
+#!/bin/sh
+#ident	"@(#)nfs.server	1.14	94/07/07 SMI"	/* SVr4.0 1.1.13.1	*/
+
+if [ ! -d /usr/bin ]
+then			# /usr not mounted
+	exit
+fi
+
+killproc() {		# kill the named process(es)
+	pid=`/usr/bin/ps -e |
+	     /usr/bin/grep -w $1 |
+	     /usr/bin/sed -e 's/^  *//' -e 's/ .*//'`
+	[ "$pid" != "" ] && kill $pid
+}
+
+
+# Start/stop processes required for server NFS
+
+case "$1" in
+'start')
+
+	# Clean up /etc/dfs/sharetab - remove all nfs entries
+	#
+	if [ -f /etc/dfs/sharetab ] ; then
+		/usr/bin/awk '$3 != "nfs"' /etc/dfs/sharetab |
+		/usr/bin/sed -e 's/ /	/' > /tmp/sharetab
+		mv /tmp/sharetab /etc/dfs/sharetab
+		chmod 644 /etc/dfs/sharetab
+	fi
+
+	[ -f /etc/dfs/dfstab ] && /usr/sbin/shareall -F nfs
+
+	if grep -s nfs /etc/dfs/sharetab >/dev/null ; then
+		/usr/lib/nfs/nfsd -a 16
+		/usr/lib/nfs/mountd
+	fi
+
+	#
+	# if /tftpboot exists become a boot server
+	#
+	if [ -d /tftpboot ] ; then
+		/usr/sbin/in.rarpd -a
+		/usr/sbin/rpc.bootparamd
+	fi
+
+	#
+	# if /rplboot exists become a boot server for x86 clients
+	#
+	if [ -d /rplboot ] ; then
+		/usr/sbin/rpld -a
+		if [ ! -d /tftpboot ] ; then
+			/usr/sbin/in.rarpd -a
+			/usr/sbin/rpc.bootparamd
+		fi
+	fi
+	;;
+
+'stop')
+	killproc nfsd
+	killproc mountd
+	killproc rpc.boot
+	killproc in.rarpd
+	killproc rpld
+	if grep -s nfs /etc/dfs/sharetab >/dev/null ; then
+		/usr/sbin/unshareall -F nfs
+	fi
+	;;
+*)
+	echo "Usage: /etc/init.d/nfs.server { start | stop }"
+	;;
+esac

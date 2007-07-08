@@ -1,0 +1,8 @@
+svc_sendreply
+nfs_svc
+svc_register
+svc_tli_kcreate
+nfssrv
+_fini
+_init
+_info

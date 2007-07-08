@@ -1,0 +1,14 @@
+#!/bin/sh
+
+ORIG=$1
+HACKED=$2
+FNLIST=$3
+HOOKS=$4
+
+cp $ORIG $HACKED
+
+cat $HACKED | ./substr $HOOKS X > $HACKED.$$
+mv $HACKED.$$ $HACKED
+
+cat $HACKED | ./substr $FNLIST Y > $HACKED.$$
+mv  $HACKED.$$ $HACKED

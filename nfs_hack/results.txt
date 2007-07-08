@@ -1,0 +1,14 @@
+TCP on apnet. best is 38MB/sec 
+
+NFS on apnet with ramdisk, best is 11MB/sec
+
+time for NFS server module to supply 32k from ramdisk: 350us
+
+minimum latency for nfssrv call within nfssrv (from dispatch to
+sendreply) is 28us
+
+minimum read latency (for 1 8k page) is 71us
+
+the NFS server itself is not the problem - it can deliver 90+
+MB/sec. Perhaps the problem is the rpc layer?
+
