@@ -29,8 +29,8 @@ responsive.<p>
 
 <h2>Downloading</h2>
 
-Most of this code can be downloaded using anonymous cvs, rsync, ftp or
-http. I leave it as a challenge to the reader to work out how.
+Most of this code can be downloaded using anonymous cvs, bzr, rsync,
+ftp or http. I leave it as a challenge to the reader to work out how.
 
 <h2>License</h2>
 
