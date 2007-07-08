@@ -21,7 +21,7 @@
 
   The basic aims of this allocator are:
 
-     - fast
+     - fast for small allocations
      - all memory comes from anonymous mmap
      - releases memory back to the OS as much as possible
      - no per-block prefix (so extremely low overhead)
@@ -30,7 +30,7 @@
 
   Design:
 
-      allocations are either 'small' or 'large'. 
+      allocations are either 'small' or 'large' or 'memalign'
 
       'large' allocations do a plain mmap, one per allocation. When
       you free you munmap. The 'large' allocations have a struct
@@ -45,6 +45,10 @@
       The meta-data for the small allocations comes at the start of
       the page. This meta-data contains a bitmap of what pieces of the
       page are currently used.
+
+      'memalign' allocations are for handling memlign()
+      requests. These are horribly inefficient, using a singly linked
+      list. Best to avoid this function.
       
  */
 #include <stdio.h>
@@ -67,10 +71,13 @@
 #endif
 
 #define MAX_BUCKETS     15
-#define BASE_BUCKET     32
+#define BASE_BUCKET     16
 #define FREE_PAGE_LIMIT  2
 #define ALLOC_ALIGNMENT 16
-#define BUCKET_NEXT(prev) ((3*(prev))/2)
+#define BUCKET_NEXT_SIZE(prev) ((3*(prev))/2)
+#define PID_CHECK        0
+#define BUCKET_LOOKUP_SIZE 128
+#define ALLOC_PARANOIA   0
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -124,6 +131,9 @@ struct page_header {
 	uint32_t num_pages; /* maps to num_pages in struct large_header */
 	uint16_t elements_used;
 	uint16_t num_elements;
+#if PID_CHECK
+	pid_t pid;
+#endif
 	struct page_header *next, *prev;
 	struct bucket_state *bucket;
 	uint32_t used[1];
@@ -142,6 +152,10 @@ struct memalign_header {
 struct bucket_state {
 	uint32_t alloc_limit;
 	uint16_t elements_per_page;
+	uint32_t total_pages;
+#if PID_CHECK
+	uint32_t total_pages_at_fork;
+#endif
 	struct page_header *page_list;
 	struct page_header *full_list;
 };
@@ -152,9 +166,19 @@ struct alloc_state {
 	uint32_t num_empty_pages;
 	uint32_t largest_bucket;
 	uint32_t max_bucket;
+	uint32_t total_pages;
+	uint32_t large_pages;
+#if PID_CHECK
+	uint32_t total_pages_at_fork;
+	uint32_t large_pages_at_fork;
+	pid_t pid;
+#endif
 	struct page_header *empty_list;
 	struct memalign_header *memalign_list;
 	struct bucket_state buckets[MAX_BUCKETS];
+
+	/* this is a lookup table that maps size/ALLOC_ALIGNMENT to the right bucket */
+	uint8_t bucket_lookup[BUCKET_LOOKUP_SIZE];
 };
 
 /* static state of the allocator */
@@ -165,31 +189,68 @@ static struct alloc_state state;
  */
 static void alloc_initialise(void)
 {
-	int i;
+	int i, b=0, n;
 	state.page_size = getpagesize();
-	state.buckets[0].alloc_limit = BASE_BUCKET;
 	for (i=0;i<MAX_BUCKETS;i++) {
 		struct bucket_state *bs = &state.buckets[i];
 
-		if (i != 0) {
-			bs->alloc_limit = ALIGN_SIZE(BUCKET_NEXT(state.buckets[i-1].alloc_limit));
+		if (i == 0) {
+			int n;
+			bs->alloc_limit = BASE_BUCKET;
+			n = bs->alloc_limit/ALLOC_ALIGNMENT;
+			if (n > BUCKET_LOOKUP_SIZE) {
+				n = BUCKET_LOOKUP_SIZE;
+			}
+			memset(&state.bucket_lookup[0], i, n);
+			b = n;
+		} else {
+			struct bucket_state *bs0 = &state.buckets[i-1];
+			bs->alloc_limit = ALIGN_SIZE(BUCKET_NEXT_SIZE(bs0->alloc_limit));
+
+			/* squeeze in one more bucket if possible */
+			if (bs->alloc_limit > state.page_size - PAGE_HEADER_SIZE(1)) {
+				bs->alloc_limit = state.page_size - PAGE_HEADER_SIZE(1);
+				if (bs->alloc_limit == bs0->alloc_limit) break;
+			}
+
+			n = (bs->alloc_limit - bs0->alloc_limit)/ALLOC_ALIGNMENT;
+			if (n + b > BUCKET_LOOKUP_SIZE) {
+				n = BUCKET_LOOKUP_SIZE - b;
+			}
+			memset(&state.bucket_lookup[b], i, n);
+			b += n;
 		}
 
 		/* work out how many elements can be put on each page */
-		bs->elements_per_page = state.page_size/bs->alloc_limit;
+		bs->elements_per_page = (state.page_size-PAGE_HEADER_SIZE(1))/bs->alloc_limit;
 		while (bs->elements_per_page*bs->alloc_limit + PAGE_HEADER_SIZE(bs->elements_per_page) >
 		       state.page_size) {
 			bs->elements_per_page--;
 		}
-		if (unlikely(bs->elements_per_page <= 1)) {
+		if (unlikely(bs->elements_per_page < 1)) {
 			break;
 		}
 	}
 	state.max_bucket = i-1;
 	state.largest_bucket = state.buckets[state.max_bucket].alloc_limit;
 	state.initialised = true;
+#if PID_CHECK
+	state.pid = getpid();
+#endif
 }
 
+#if PID_CHECK
+static void alloc_pid_handler(void)
+{
+	int i;
+	state.pid = getpid();
+	state.total_pages_at_fork = state.total_pages;
+	state.large_pages_at_fork = state.large_pages;
+	for (i=0;i<=state.max_bucket;i++) {
+		state.buckets[i].total_pages_at_fork = state.buckets[i].total_pages;
+	}
+}
+#endif
 
 /*
   large allocation function - use mmap per allocation
@@ -214,6 +275,9 @@ static void *alloc_large(size_t size)
 
 	lh->num_pages = num_pages;
 
+	state.large_pages += num_pages;
+	state.total_pages += num_pages;
+
 	return (void *)ALIGN_UP(lh, struct large_header);
 }
 
@@ -224,6 +288,8 @@ static void *alloc_large(size_t size)
 static void alloc_large_free(void *ptr)
 {
 	struct large_header *lh = ALIGN_DOWN_PAGE(ptr, struct large_header);
+	state.large_pages -= lh->num_pages;
+	state.total_pages -= lh->num_pages;
 	munmap((void *)lh, lh->num_pages*state.page_size);
 }
 
@@ -240,7 +306,11 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 		MOVE_LIST_FRONT(state.empty_list, bs->page_list, ph);
 		ph->num_elements = bs->elements_per_page;
 		ph->bucket = bs;
+#if PID_CHECK
+		ph->pid = getpid();
+#endif
 		memset(ph->used, 0, (ph->num_elements+7)/8);
+		bs->total_pages++;
 		state.num_empty_pages--;
 		return;
 	}
@@ -255,11 +325,16 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 	/* we rely on mmap() giving us initially zero memory */
 	ph->bucket = bs;
 	ph->num_elements = bs->elements_per_page;
+#if PID_CHECK
+	ph->pid = getpid();
+#endif
 
 	/* link it into the page_list */
 	ph->next = bs->page_list;
 	if (ph->next) ph->next->prev = ph;
 	bs->page_list = ph;
+	bs->total_pages++;
+	state.total_pages++;
 }
 
 
@@ -293,19 +368,39 @@ static void *alloc_malloc(size_t size)
 		alloc_initialise();
 	}
 
+#if PID_CHECK
+	if (unlikely(state.pid != getpid())) {
+		alloc_pid_handler();
+	}
+#endif
+
 	/* is it a large allocation? */
 	if (unlikely(size > state.largest_bucket)) {
 		return alloc_large(size);
 	}
 
 	/* find the right bucket */
-	for (i=0;i<=state.max_bucket;i++) {
-		if (state.buckets[i].alloc_limit >= size) {
-			break;
+	if (likely(size / ALLOC_ALIGNMENT < BUCKET_LOOKUP_SIZE)) {
+		if (size == 0) {
+			i = 0;
+		} else {
+			i = state.bucket_lookup[(size-1) / ALLOC_ALIGNMENT];
+		}
+	} else {
+		for (i=state.bucket_lookup[BUCKET_LOOKUP_SIZE-1];i<=state.max_bucket;i++) {
+			if (state.buckets[i].alloc_limit >= size) {
+				break;
+			}
 		}
 	}
 
 	bs = &state.buckets[i];
+
+#if ALLOC_PARANOIA
+	if (size > bs->alloc_limit) {
+		abort();
+	}
+#endif
 
 	/* it might be empty. If so, refill it */
 	if (unlikely(bs->page_list == NULL)) {
@@ -315,13 +410,21 @@ static void *alloc_malloc(size_t size)
 		}
 	}
 
+#if PID_CHECK
+	if (unlikely(bs->page_list->pid != getpid() && 
+		     bs->page_list->elements_used >= bs->page_list->num_elements/2)) {
+		alloc_refill_bucket(bs);
+	}
+#endif
+
 	/* take the first one */
 	ph = bs->page_list;
 	i = alloc_find_free_bit(ph->used, ph->num_elements);
+#if ALLOC_PARANOIA
 	if (unlikely(i >= ph->num_elements)) {
 		abort();
 	}
-
+#endif
 	ph->elements_used++;
 
 	/* mark this element as used */
@@ -348,6 +451,7 @@ static void alloc_release(void)
 	for (ph=state.empty_list;ph;ph=next) {
 		next = ph->next;
 		munmap((void *)ph, state.page_size);
+		state.total_pages--;
 	}
 	state.empty_list = NULL;
 	state.num_empty_pages = 0;
@@ -359,16 +463,19 @@ static void alloc_release(void)
 static void alloc_memalign_free(void *ptr)
 {
 	struct memalign_header *mh;
-	
+
+#if ALLOC_PARANOIA	
 	if (state.memalign_list == NULL) {
 		abort();
 	}
+#endif
 
 	/* see if its the top one */
 	mh = state.memalign_list;
 	if (mh->p == ptr) {
 		state.memalign_list = mh->next;
 		munmap(ptr, mh->num_pages*state.page_size);
+		state.total_pages -= mh->num_pages;
 		free(mh);
 		return;
 	}
@@ -379,14 +486,17 @@ static void alloc_memalign_free(void *ptr)
 		if (mh2->p == ptr) {
 			mh->next = mh2->next;
 			munmap(ptr, mh2->num_pages);
+			state.total_pages -= mh2->num_pages;
 			free(mh2);
 			return;
 		}
 		mh = mh->next;
 	}
 
+#if ALLOC_PARANOIA
 	/* it wasn't there ... */
 	abort();
+#endif
 }
 
 
@@ -401,9 +511,11 @@ static void *alloc_memalign_realloc(void *ptr, size_t size)
 	for (mh=state.memalign_list;mh;mh=mh->next) {
 		if (mh->p == ptr) break;
 	}
+#if ALLOC_PARANOIA
 	if (mh == NULL) {
 		abort();
 	}
+#endif
 
 	ptr2 = malloc(size);
 	if (ptr2 == NULL) {
@@ -443,6 +555,11 @@ static void alloc_free(void *ptr)
 	/* mark the block as being free in the page bitmap */
 	i = ((((intptr_t)ptr) - (intptr_t)ph) - PAGE_HEADER_SIZE(ph->num_elements)) / 
 		bs->alloc_limit;
+#if ALLOC_PARANOIA
+	if ((ph->used[i/32] & (1<<(i%32))) == 0) {
+		abort();
+	}
+#endif
 	ph->used[i/32] &= ~(1<<(i%32));
 
 	/* if all blocks in this page were previously used, then move
@@ -459,6 +576,7 @@ static void alloc_free(void *ptr)
 	if (unlikely(ph->elements_used == 0)) {
 		MOVE_LIST(bs->page_list, state.empty_list, ph);
 		state.num_empty_pages++;
+		bs->total_pages--;
 		if (state.num_empty_pages == FREE_PAGE_LIMIT) {
 			alloc_release();
 		}
@@ -550,6 +668,11 @@ static void *alloc_calloc(size_t nmemb, size_t size)
 	if (unlikely(size != 0 && total_size / size != nmemb)) {
 		return NULL;
 	}
+#if PID_CHECK
+	if (unlikely(state.pid != getpid())) {
+		alloc_pid_handler();
+	}
+#endif
 	if (unlikely(total_size > state.largest_bucket)) {
 		if (unlikely(state.initialised == false)) {
 			alloc_initialise();
@@ -574,6 +697,12 @@ static void *alloc_memalign(size_t boundary, size_t size)
 {
 	struct memalign_header *mh;
 	
+#if PID_CHECK
+	if (unlikely(state.pid != getpid())) {
+		alloc_pid_handler();
+	}
+#endif
+
 	if (unlikely(state.initialised == false)) {
 		alloc_initialise();
 	}
@@ -613,6 +742,7 @@ static void *alloc_memalign(size_t boundary, size_t size)
 	
 	mh->next = state.memalign_list;
 	state.memalign_list = mh;
+	state.total_pages += mh->num_pages;
 
 	return mh->p;
 }
@@ -667,5 +797,18 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
 	}
 	return 0;
 }
+
+/* try to catch the internal entry points too */
+#if (__GNUC__ >= 3)
+void *__libc_malloc(size_t size)                                     __attribute__((weak, alias("malloc")));
+void *__libc_calloc(size_t nmemb, size_t size)                       __attribute__((weak, alias("calloc")));
+void __libc_free(void *ptr)                                          __attribute__((weak, alias("free")));
+void __libc_cfree(void *ptr)                                         __attribute__((weak, alias("cfree")));
+void *__libc_realloc(void *ptr, size_t size)                         __attribute__((weak, alias("realloc")));
+void *__libc_memalign(size_t boundary, size_t size)                  __attribute__((weak, alias("memalign")));
+void *__libc_valloc(size_t size)                                     __attribute__((weak, alias("valloc")));
+void *__libc_pvalloc(size_t size)                                    __attribute__((weak, alias("pvalloc")));
+int __posix_memalign(void **memptr, size_t alignment, size_t size)   __attribute__((weak, alias("posix_memalign")));
+#endif
 
 #endif
