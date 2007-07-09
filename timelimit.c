@@ -1,5 +1,6 @@
 /* run a command with a limited timeout
    tridge@samba.org, June 2005
+   metze@samba.org, March 2006
 
    attempt to be as portable as possible (fighting posix all the way)
 */
@@ -12,17 +13,52 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+static pid_t child_pid;
+
 static void usage(void)
 {
 	printf("usage: timelimit <time> <command>\n");
+	printf("   SIGUSR1 - passes SIGTERM to command's process group\n");
+	printf("   SIGALRM - passes SIGTERM to command's process group\n");
+	printf("             after 5s SIGKILL will be passed and exit(1)\n");
+	printf("   SIGTERM - passes SIGTERM to command's process group\n");
+	printf("             after 1s SIGKILL will be passed and exit(1)\n");
 }
 
-static void sig_alrm(int sig)
+static void sig_alrm_kill(int sig)
 {
 	fprintf(stderr, "\nMaximum time expired in timelimit - killing\n");
-	kill(0, SIGKILL);
+	kill(-child_pid, SIGKILL);
 	exit(1);
 }
+
+static void sig_alrm_term(int sig)
+{
+	kill(-child_pid, SIGTERM);
+	alarm(5);
+	signal(SIGALRM, sig_alrm_kill);
+}
+
+static void sig_term(int sig)
+{
+	kill(-child_pid, SIGTERM);
+	alarm(1);
+	signal(SIGALRM, sig_alrm_kill);
+}
+
+static void sig_usr1(int sig)
+{
+	kill(-child_pid, SIGTERM);
+}
+
+static void new_process_group(void)
+{
+	if (setpgid(0,0) == -1) {
+		perror("setpgid");
+		exit(1);
+	}
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -33,27 +69,20 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-#ifdef BSD_SETPGRP
-	if (setpgrp(0,0) == -1) {
-		perror("setpgrp");
-		exit(1);
-	}
-#else
-	if (setpgrp() == -1) {
-		perror("setpgrp");
-		exit(1);
-	}
-#endif
-
 	maxtime = atoi(argv[1]);
-	signal(SIGALRM, sig_alrm);
-	alarm(maxtime);
 
-	if (fork() == 0) {
+	child_pid = fork();
+	if (child_pid == 0) {
+		new_process_group();
 		execvp(argv[2], argv+2);
 		perror(argv[2]);
 		exit(1);
 	}
+
+	signal(SIGTERM, sig_term);
+	signal(SIGUSR1, sig_usr1);
+	signal(SIGALRM, sig_alrm_term);
+	alarm(maxtime);
 
 	do {
 		int status;
@@ -64,6 +93,8 @@ int main(int argc, char *argv[])
 			break;
 		}
 	} while (1);
+
+	kill(-child_pid, SIGKILL);
 
 	exit(ret);
 }

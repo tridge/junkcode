@@ -25,8 +25,8 @@
      - all memory comes from anonymous mmap
      - releases memory back to the OS as much as possible
      - no per-block prefix (so extremely low overhead)
-     - no safety checking at all
-     - no attempt at thread safety. Threads will cause crashes
+     - very little paranoid checking in the code
+     - thread safety optional at compile time 
 
   Design:
 
@@ -61,6 +61,9 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <sys/mman.h>
+#ifdef THREAD_SAFE
+#include <pthread.h>
+#endif
 
 #if (__GNUC__ >= 3)
 #define likely(x)   __builtin_expect(!!(x), 1)
@@ -79,6 +82,11 @@
 #define BUCKET_LOOKUP_SIZE 128
 #define ALLOC_PARANOIA   0
 
+/* you can hard code the page size in the Makefile for more speed */
+#ifndef PAGE_SIZE
+#define PAGE_SIZE state.page_size
+#endif
+
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #endif
@@ -94,13 +102,13 @@
 #define ALIGN_UP(ptr, type) ((ALIGN_COST(type)+(intptr_t)(ptr)))
 
 /* align to the start of the page, and return a type* */
-#define ALIGN_DOWN_PAGE(ptr, type) (type *)((~(intptr_t)(state.page_size-1)) & (intptr_t)(ptr))
+#define ALIGN_DOWN_PAGE(ptr, type) (type *)((~(intptr_t)(PAGE_SIZE-1)) & (intptr_t)(ptr))
 
 /* work out the aligned size of a page header, given the size of the used[] array */
 #define PAGE_HEADER_SIZE(n) ALIGN_SIZE(offsetof(struct page_header, used) + 4*(((n)+31)/32))
 
 /* see if a pointer is page aligned. This detects large memalign() pointers */
-#define IS_PAGE_ALIGNED(ptr) (((state.page_size-1) & (intptr_t)ptr) == 0)
+#define IS_PAGE_ALIGNED(ptr) (((PAGE_SIZE-1) & (intptr_t)ptr) == 0)
 
 /* move an element from the front of list1 to the front of list2 */
 #define MOVE_LIST_FRONT(list1, list2, p) \
@@ -152,9 +160,8 @@ struct memalign_header {
 struct bucket_state {
 	uint32_t alloc_limit;
 	uint16_t elements_per_page;
-	uint32_t total_pages;
-#if PID_CHECK
-	uint32_t total_pages_at_fork;
+#ifdef THREAD_SAFE
+	pthread_mutex_t mutex;
 #endif
 	struct page_header *page_list;
 	struct page_header *full_list;
@@ -163,26 +170,42 @@ struct bucket_state {
 struct alloc_state {
 	bool initialised;
 	uint32_t page_size;
-	uint32_t num_empty_pages;
 	uint32_t largest_bucket;
 	uint32_t max_bucket;
-	uint32_t total_pages;
-	uint32_t large_pages;
 #if PID_CHECK
-	uint32_t total_pages_at_fork;
-	uint32_t large_pages_at_fork;
 	pid_t pid;
 #endif
+	/* this is a lookup table that maps size/ALLOC_ALIGNMENT to the right bucket */
+	uint8_t bucket_lookup[BUCKET_LOOKUP_SIZE];
+
+	/* the rest of the structure may be written to after initialisation,
+	   so all accesses need to hold the mutex */
+#ifdef THREAD_SAFE
+	pthread_mutex_t mutex;
+#endif
+	uint32_t num_empty_pages;
 	struct page_header *empty_list;
 	struct memalign_header *memalign_list;
 	struct bucket_state buckets[MAX_BUCKETS];
 
-	/* this is a lookup table that maps size/ALLOC_ALIGNMENT to the right bucket */
-	uint8_t bucket_lookup[BUCKET_LOOKUP_SIZE];
 };
 
 /* static state of the allocator */
+#ifndef THREAD_SAFE
 static struct alloc_state state;
+#else
+static struct alloc_state state = {
+	.mutex = PTHREAD_MUTEX_INITIALIZER
+};
+#endif
+
+#ifdef THREAD_SAFE
+#define THREAD_LOCK(mutexp) do { if (pthread_mutex_lock(mutexp) != 0) abort(); } while (0);
+#define THREAD_UNLOCK(mutexp) do { if (pthread_mutex_unlock(mutexp) != 0) abort(); } while (0);
+#else
+#define THREAD_LOCK(mutexp) 
+#define THREAD_UNLOCK(mutexp) 
+#endif
 
 /*
   initialise the allocator
@@ -190,9 +213,17 @@ static struct alloc_state state;
 static void alloc_initialise(void)
 {
 	int i, b=0, n;
+	THREAD_LOCK(&state.mutex);
 	state.page_size = getpagesize();
+	if (PAGE_SIZE != state.page_size) {
+		abort();
+	}
 	for (i=0;i<MAX_BUCKETS;i++) {
 		struct bucket_state *bs = &state.buckets[i];
+
+#ifdef THREAD_SAFE
+		pthread_mutex_init(&bs->mutex, NULL);
+#endif
 
 		if (i == 0) {
 			int n;
@@ -208,8 +239,8 @@ static void alloc_initialise(void)
 			bs->alloc_limit = ALIGN_SIZE(BUCKET_NEXT_SIZE(bs0->alloc_limit));
 
 			/* squeeze in one more bucket if possible */
-			if (bs->alloc_limit > state.page_size - PAGE_HEADER_SIZE(1)) {
-				bs->alloc_limit = state.page_size - PAGE_HEADER_SIZE(1);
+			if (bs->alloc_limit > PAGE_SIZE - PAGE_HEADER_SIZE(1)) {
+				bs->alloc_limit = PAGE_SIZE - PAGE_HEADER_SIZE(1);
 				if (bs->alloc_limit == bs0->alloc_limit) break;
 			}
 
@@ -222,9 +253,9 @@ static void alloc_initialise(void)
 		}
 
 		/* work out how many elements can be put on each page */
-		bs->elements_per_page = (state.page_size-PAGE_HEADER_SIZE(1))/bs->alloc_limit;
+		bs->elements_per_page = (PAGE_SIZE-PAGE_HEADER_SIZE(1))/bs->alloc_limit;
 		while (bs->elements_per_page*bs->alloc_limit + PAGE_HEADER_SIZE(bs->elements_per_page) >
-		       state.page_size) {
+		       PAGE_SIZE) {
 			bs->elements_per_page--;
 		}
 		if (unlikely(bs->elements_per_page < 1)) {
@@ -237,18 +268,13 @@ static void alloc_initialise(void)
 #if PID_CHECK
 	state.pid = getpid();
 #endif
+	THREAD_UNLOCK(&state.mutex);
 }
 
 #if PID_CHECK
 static void alloc_pid_handler(void)
 {
-	int i;
 	state.pid = getpid();
-	state.total_pages_at_fork = state.total_pages;
-	state.large_pages_at_fork = state.large_pages;
-	for (i=0;i<=state.max_bucket;i++) {
-		state.buckets[i].total_pages_at_fork = state.buckets[i].total_pages;
-	}
 }
 #endif
 
@@ -260,23 +286,20 @@ static void *alloc_large(size_t size)
 	uint32_t num_pages;
 	struct large_header *lh;
 
-	num_pages = (size+ALIGN_COST(struct large_header)+(state.page_size-1))/state.page_size;
+	num_pages = (size+ALIGN_COST(struct large_header)+(PAGE_SIZE-1))/PAGE_SIZE;
 
 	/* check for wrap */
-	if (unlikely(num_pages < size/state.page_size)) {
+	if (unlikely(num_pages < size/PAGE_SIZE)) {
 		return NULL;
 	}
 
-	lh = (struct large_header *)mmap(0, num_pages*state.page_size, PROT_READ | PROT_WRITE, 
+	lh = (struct large_header *)mmap(0, num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, 
 					 MAP_ANON | MAP_PRIVATE, -1, 0);
 	if (unlikely(lh == (struct large_header *)-1)) {
 		return NULL;
 	}
 
 	lh->num_pages = num_pages;
-
-	state.large_pages += num_pages;
-	state.total_pages += num_pages;
 
 	return (void *)ALIGN_UP(lh, struct large_header);
 }
@@ -288,19 +311,19 @@ static void *alloc_large(size_t size)
 static void alloc_large_free(void *ptr)
 {
 	struct large_header *lh = ALIGN_DOWN_PAGE(ptr, struct large_header);
-	state.large_pages -= lh->num_pages;
-	state.total_pages -= lh->num_pages;
-	munmap((void *)lh, lh->num_pages*state.page_size);
+	munmap((void *)lh, lh->num_pages*PAGE_SIZE);
 }
 
 /*
   refill a bucket
+  called with the bucket lock held
  */
 static void alloc_refill_bucket(struct bucket_state *bs)
 {
 	struct page_header *ph;
 
 	/* see if we can get a page from the global empty list */
+	THREAD_LOCK(&state.mutex);
 	ph = state.empty_list;
 	if (ph != NULL) {
 		MOVE_LIST_FRONT(state.empty_list, bs->page_list, ph);
@@ -310,15 +333,16 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 		ph->pid = getpid();
 #endif
 		memset(ph->used, 0, (ph->num_elements+7)/8);
-		bs->total_pages++;
 		state.num_empty_pages--;
+		THREAD_UNLOCK(&state.mutex);
 		return;
 	}
 
 	/* we need to allocate a new page */
-	ph = (struct page_header *)mmap(0, state.page_size, PROT_READ | PROT_WRITE, 
+	ph = (struct page_header *)mmap(0, PAGE_SIZE, PROT_READ | PROT_WRITE, 
 					MAP_ANON | MAP_PRIVATE, -1, 0);
 	if (unlikely(ph == (struct page_header *)-1)) {
+		THREAD_UNLOCK(&state.mutex);
 		return;
 	}
 
@@ -333,8 +357,7 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 	ph->next = bs->page_list;
 	if (ph->next) ph->next->prev = ph;
 	bs->page_list = ph;
-	bs->total_pages++;
-	state.total_pages++;
+	THREAD_UNLOCK(&state.mutex);
 }
 
 
@@ -396,6 +419,8 @@ static void *alloc_malloc(size_t size)
 
 	bs = &state.buckets[i];
 
+	THREAD_LOCK(&bs->mutex);
+
 #if ALLOC_PARANOIA
 	if (size > bs->alloc_limit) {
 		abort();
@@ -406,6 +431,7 @@ static void *alloc_malloc(size_t size)
 	if (unlikely(bs->page_list == NULL)) {
 		alloc_refill_bucket(bs);
 		if (unlikely(bs->page_list == NULL)) {
+			THREAD_UNLOCK(&bs->mutex);
 			return NULL;
 		}
 	}
@@ -435,6 +461,8 @@ static void *alloc_malloc(size_t size)
 		MOVE_LIST_FRONT(bs->page_list, bs->full_list, ph);
 	}
 
+	THREAD_UNLOCK(&bs->mutex);
+
 	/* return the element within the page */
 	return (void *)((i*bs->alloc_limit)+PAGE_HEADER_SIZE(ph->num_elements)+(intptr_t)ph);
 }
@@ -442,6 +470,7 @@ static void *alloc_malloc(size_t size)
 
 /*
   release all completely free pages
+  called with state.mutex held
  */
 static void alloc_release(void)
 {
@@ -450,8 +479,7 @@ static void alloc_release(void)
 	/* release all the empty pages */
 	for (ph=state.empty_list;ph;ph=next) {
 		next = ph->next;
-		munmap((void *)ph, state.page_size);
-		state.total_pages--;
+		munmap((void *)ph, PAGE_SIZE);
 	}
 	state.empty_list = NULL;
 	state.num_empty_pages = 0;
@@ -464,6 +492,8 @@ static void alloc_memalign_free(void *ptr)
 {
 	struct memalign_header *mh;
 
+	THREAD_LOCK(&state.mutex);
+
 #if ALLOC_PARANOIA	
 	if (state.memalign_list == NULL) {
 		abort();
@@ -474,9 +504,9 @@ static void alloc_memalign_free(void *ptr)
 	mh = state.memalign_list;
 	if (mh->p == ptr) {
 		state.memalign_list = mh->next;
-		munmap(ptr, mh->num_pages*state.page_size);
-		state.total_pages -= mh->num_pages;
+		munmap(ptr, mh->num_pages*PAGE_SIZE);
 		free(mh);
+		THREAD_UNLOCK(&state.mutex);
 		return;
 	}
 
@@ -486,8 +516,8 @@ static void alloc_memalign_free(void *ptr)
 		if (mh2->p == ptr) {
 			mh->next = mh2->next;
 			munmap(ptr, mh2->num_pages);
-			state.total_pages -= mh2->num_pages;
 			free(mh2);
+			THREAD_UNLOCK(&state.mutex);
 			return;
 		}
 		mh = mh->next;
@@ -508,6 +538,7 @@ static void *alloc_memalign_realloc(void *ptr, size_t size)
 	struct memalign_header *mh;
 	void *ptr2;
 
+	THREAD_LOCK(&state.mutex);
 	for (mh=state.memalign_list;mh;mh=mh->next) {
 		if (mh->p == ptr) break;
 	}
@@ -516,13 +547,14 @@ static void *alloc_memalign_realloc(void *ptr, size_t size)
 		abort();
 	}
 #endif
+	THREAD_UNLOCK(&state.mutex);
 
 	ptr2 = malloc(size);
 	if (ptr2 == NULL) {
 		return NULL;
 	}
 
-	memcpy(ptr2, ptr, MIN(size, mh->num_pages*state.page_size));
+	memcpy(ptr2, ptr, MIN(size, mh->num_pages*PAGE_SIZE));
 	free(ptr);
 	return ptr2;
 }
@@ -551,6 +583,7 @@ static void alloc_free(void *ptr)
 	}
 
 	bs = ph->bucket;
+	THREAD_LOCK(&bs->mutex);
 
 	/* mark the block as being free in the page bitmap */
 	i = ((((intptr_t)ptr) - (intptr_t)ph) - PAGE_HEADER_SIZE(ph->num_elements)) / 
@@ -574,13 +607,15 @@ static void alloc_free(void *ptr)
 	   page, and can be added to the global pool of empty
 	   pages. When that gets too large, release them completely */
 	if (unlikely(ph->elements_used == 0)) {
+		THREAD_LOCK(&state.mutex);
 		MOVE_LIST(bs->page_list, state.empty_list, ph);
 		state.num_empty_pages++;
-		bs->total_pages--;
 		if (state.num_empty_pages == FREE_PAGE_LIMIT) {
 			alloc_release();
 		}
+		THREAD_UNLOCK(&state.mutex);
 	}
+	THREAD_UNLOCK(&bs->mutex);
 }
 
 
@@ -598,7 +633,7 @@ static void *alloc_realloc_large(void *ptr, size_t size)
 	}
 
 	/* if it fits in the current pointer, keep it there */
-	if (lh->num_pages*state.page_size >= (size + ALIGN_COST(struct large_header))) {
+	if (lh->num_pages*PAGE_SIZE >= (size + ALIGN_COST(struct large_header))) {
 		return ptr;
 	}
 
@@ -608,7 +643,7 @@ static void *alloc_realloc_large(void *ptr, size_t size)
 	}
 
 	memcpy(ptr2, ptr, 
-	       MIN(size, (lh->num_pages*state.page_size)-ALIGN_COST(struct large_header)));
+	       MIN(size, (lh->num_pages*PAGE_SIZE)-ALIGN_COST(struct large_header)));
 	alloc_large_free(ptr);
 	return ptr2;
 }
@@ -707,8 +742,8 @@ static void *alloc_memalign(size_t boundary, size_t size)
 		alloc_initialise();
 	}
 	if (boundary == 0 || 
-	    boundary > state.page_size ||
-	    (size+state.page_size-1 < size)) {
+	    boundary > PAGE_SIZE ||
+	    (size+PAGE_SIZE-1 < size)) {
 		return NULL;
 	}
 
@@ -729,20 +764,21 @@ static void *alloc_memalign(size_t boundary, size_t size)
 	}
 
 	/* give them a page aligned allocation */
-	mh->num_pages = (size + state.page_size-1) / state.page_size;
+	mh->num_pages = (size + PAGE_SIZE-1) / PAGE_SIZE;
 	if (mh->num_pages == 0) {
 		mh->num_pages = 1;
 	}
-	mh->p = mmap(0, mh->num_pages*state.page_size, PROT_READ | PROT_WRITE, 
+	mh->p = mmap(0, mh->num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, 
 		     MAP_ANON | MAP_PRIVATE, -1, 0);
 	if (mh->p == (void *)-1) {
 		free(mh);
 		return NULL;
 	}
-	
+
+	THREAD_LOCK(&state.mutex);
 	mh->next = state.memalign_list;
 	state.memalign_list = mh;
-	state.total_pages += mh->num_pages;
+	THREAD_UNLOCK(&state.mutex);
 
 	return mh->p;
 }
