@@ -71,7 +71,10 @@ static int test_random(size_t maxsize, int n)
 			case 4:
 				free(p[i]);
 				if (random() % 100 == 0) {
-					int ret = posix_memalign(&p[i], 4096, r[(i*7)%numrand]);
+					int boundary = (1<<r[(i*7)%numrand]%3)*4096;
+					int ret = posix_memalign(&p[i], 
+								 boundary,
+								 r[(i*7)%numrand]);
 					assert(ret==0);
 				} else {
 					p[i] = memalign((1<<(i%5)), r[(i*7)%numrand]);

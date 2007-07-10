@@ -731,7 +731,8 @@ static void *alloc_calloc(size_t nmemb, size_t size)
 static void *alloc_memalign(size_t boundary, size_t size)
 {
 	struct memalign_header *mh;
-	
+	uint32_t extra_pages=0;
+
 #if PID_CHECK
 	if (unlikely(state.pid != getpid())) {
 		alloc_pid_handler();
@@ -741,9 +742,12 @@ static void *alloc_memalign(size_t boundary, size_t size)
 	if (unlikely(state.initialised == false)) {
 		alloc_initialise();
 	}
-	if (boundary == 0 || 
-	    boundary > PAGE_SIZE ||
-	    (size+PAGE_SIZE-1 < size)) {
+
+	/* must be power of 2, and no overflow on page alignment */
+	if (boundary & (boundary-1)) {
+		return NULL;
+	}
+	if (boundary == 0 || (size+PAGE_SIZE-1 < size)) {
 		return NULL;
 	}
 
@@ -763,16 +767,41 @@ static void *alloc_memalign(size_t boundary, size_t size)
 		return NULL;
 	}
 
+	/* need to overallocate to guarantee alignment of larger than
+	   a page */
+	if (boundary > PAGE_SIZE) {
+		extra_pages = boundary / PAGE_SIZE;
+	}
+
 	/* give them a page aligned allocation */
 	mh->num_pages = (size + PAGE_SIZE-1) / PAGE_SIZE;
+
 	if (mh->num_pages == 0) {
 		mh->num_pages = 1;
 	}
-	mh->p = mmap(0, mh->num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, 
+
+	/* check for overflow due to large boundary */
+	if (mh->num_pages + extra_pages < mh->num_pages) {
+		free(mh);
+		return NULL;
+	}
+
+	mh->p = mmap(0, (extra_pages+mh->num_pages)*PAGE_SIZE, PROT_READ | PROT_WRITE, 
 		     MAP_ANON | MAP_PRIVATE, -1, 0);
 	if (mh->p == (void *)-1) {
 		free(mh);
 		return NULL;
+	}
+	if (extra_pages) {
+		while (((intptr_t)mh->p) % boundary) {
+			munmap(mh->p, PAGE_SIZE);
+			mh->p = (void *)(PAGE_SIZE + (intptr_t)mh->p);
+			extra_pages--;
+		}
+		if (extra_pages) {
+			munmap((void *)(mh->num_pages*PAGE_SIZE + (intptr_t)mh->p), 
+			       extra_pages*PAGE_SIZE);
+		}
 	}
 
 	THREAD_LOCK(&state.mutex);
