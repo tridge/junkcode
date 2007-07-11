@@ -22,44 +22,6 @@
 #define FILE_IS_ONLINE_ATIME      60
 
 
-/* these typedefs and structures from Martin Petermann
-   <martin.petermann@de.ibm.com> */
-#define MID_EXTOBJID_LEN         28
-
-typedef struct s_midExtObjId
-{
-	unsigned char id[MID_EXTOBJID_LEN];
-} midExtObjId_t;
-
-typedef struct mi_flags
-{
-    unsigned int  f1;            /* flags field #1 */
-    unsigned int  f2;            /* flags field #2 */
-} mi_flags_t;
-
-typedef uint32_t dsUint32_t;
-typedef int32_t dsInt32_t;
-
-struct dmiInfo {
-   midExtObjId_t mi_extObjId;    /* External Object ID */
-   dm_size_t     mi_logicalSize; /* Resident File's logical size */
-   dm_size_t     mi_blkCnt;      /* Resident File's block count */
-   dsUint32_t    mi_dataSizeHi;  /* High 32-bit of size of file data for this stub */
-   dsUint32_t    mi_dataSize;    /* Size of file data for this stub */
-   dsUint32_t    mi_serverNum;   /* Server number as per location srvc*/
-   mi_flags_t    mi_flags;       /* miginfo's flag fields */
-   dsUint32_t    mi_data;        /* not used for DMAPI     */
-   dsUint32_t    mi_chkSum;      /* not used for DMAPI     */
-   dsInt32_t     resStat;        /* migration status of the file */
-   /* remaining fields deleted - not needed for this code */
-};
-
-#define FSM_MIG_NONRES_FLAG  2  /* File is non-resident (stub) */
-
-#define DM_ATTRIB_OBJECT "IBMObj"
-
-
-
 /*
   see if a file is offline
 
@@ -72,9 +34,8 @@ static int is_offline(char *fname, time_t now, bool *offline)
 	void *handle;
 	size_t handle_len;
 	size_t rlen;
-	struct dm_attrlist *a;
 	int ret;
-	uint32_t resStat;
+	dm_attrname_t dmAttrName;
 	/* keep some state between calls, to save on session creation calls */
 	static struct dmapi_state {
 		dm_sessid_t sid;
@@ -116,13 +77,15 @@ static int is_offline(char *fname, time_t now, bool *offline)
 		return -1;
 	}
 
+	memset(&dmAttrName, 0, sizeof(dmAttrName));
+	strcpy((char *)&dmAttrName.an_chars[0], "IBMObj");
+
 	/* we need to keep looping while the memory we pass is too small */
 	do {
-		ret = dm_getall_dmattr(state.sid, handle, handle_len, 
-				       DM_NO_TOKEN, state.buflen,
-				       state.buf, &rlen);
+		ret = dm_get_dmattr(state.sid, handle, handle_len, 
+				    DM_NO_TOKEN, &dmAttrName, state.buflen, state.buf, &rlen);
 		if (ret == -1 && errno == E2BIG) {
-			size_t newlen = 2*(state.buflen+512);
+			size_t newlen = 1.5*(state.buflen+32);
 			void *newbuf = realloc(state.buf, newlen);
 			if (newbuf == NULL) {
 				errno = ENOMEM;				
@@ -134,21 +97,10 @@ static int is_offline(char *fname, time_t now, bool *offline)
 		}
 	} while (ret == -1 && errno == E2BIG);
 
-	/* walk the list of attributes, trying to find the IBMObj one */
-	for (a=state.buf;a;a=DM_STEP_TO_NEXT(a, struct dm_attrlist *)) {
-		if (strcmp(a->al_name.an_chars, DM_ATTRIB_OBJECT) == 0) {
-			/* found it, get the offline bit, and we're done */
-			struct dmiInfo *dmi = DM_GET_VALUE(a, al_data, struct dmiInfo *);
-			resStat = dmi->resStat;
-			dm_handle_free(handle, handle_len);
-			*offline = ((resStat & FSM_MIG_NONRES_FLAG) != 0);
-			return 0;
-		}
-	}
+	/* its offline if the IBMObj attribute exists */
+	*offline = (ret == 0);
 
-	/* didn't find the IBMObj attribute, must be online */
 	dm_handle_free(handle, handle_len);
-	*offline = false;
 	return 0;	
 }
 
