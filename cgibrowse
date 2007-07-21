@@ -1,0 +1,62 @@
+#!/bin/sh
+# file browser in shell
+# tridge@samba.org, July 2007
+
+#######################
+# spit out a http header
+http_header() {
+ctype="$1"
+    cat <<EOF
+Content-Type: $ctype; charset=iso-8859-1
+
+EOF
+}
+
+#######################
+# called on fatal error
+fatal() {
+ecode="$1"
+http_header "text/html";
+    cat <<EOF
+<HTML><HEAD><TITLE>$ecode</TITLE></HEAD>
+<BODY>
+<H1>$ecode</H1>
+Server error
+</BODY></HTML>
+EOF
+exit 0
+}
+
+###################
+# directory listing
+directory_list() {
+    http_header "text/html";
+    cat <<EOF
+Index of $1<p>
+<ul>
+EOF
+    /bin/ls "$1" | while read fname; do
+	echo "<li><a href=\"$1/$fname\"> $fname</a>"
+    done
+    cat <<EOF
+</ul></body></html>
+EOF
+    exit 0
+}
+
+[ -z "$REQUEST_URI" ] && {
+    fatal "404 REQUEST_URI not set";
+}
+
+
+[ -d "$REQUEST_URI" ] && {
+    directory_list "$REQUEST_URI";
+}
+
+[ -r "$REQUEST_URI" ] || {
+    fatal "500 access denied";
+}
+
+# its a file download
+http_header "text/plain";
+/bin/cat "$REQUEST_URI"
