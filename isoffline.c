@@ -41,8 +41,6 @@ static int is_offline(char *fname, time_t now, bool *offline)
 		dm_sessid_t sid;
 		void *handle;
 		size_t handle_len;
-		void *buf;
-		size_t buflen;	
 	} state;
 
 	if (state.sid == 0) {
@@ -64,14 +62,6 @@ static int is_offline(char *fname, time_t now, bool *offline)
 		return 0;
 	}
 
-	/* if the file was very recently accessed, assume its
-	   online. This prevents us doing the expensive DMAPI calls a
-	   lot on sparse files that are online */
-	if (st.st_atime + FILE_IS_ONLINE_ATIME > now) {
-		*offline = false;
-		return 0;
-	}
-
 	/* go the slow DMAPI route */
 	if (dm_path_to_handle(fname, &handle, &handle_len) != 0) {
 		return -1;
@@ -80,25 +70,11 @@ static int is_offline(char *fname, time_t now, bool *offline)
 	memset(&dmAttrName, 0, sizeof(dmAttrName));
 	strcpy((char *)&dmAttrName.an_chars[0], "IBMObj");
 
-	/* we need to keep looping while the memory we pass is too small */
-	do {
-		ret = dm_get_dmattr(state.sid, handle, handle_len, 
-				    DM_NO_TOKEN, &dmAttrName, state.buflen, state.buf, &rlen);
-		if (ret == -1 && errno == E2BIG) {
-			size_t newlen = 1.5*(state.buflen+32);
-			void *newbuf = realloc(state.buf, newlen);
-			if (newbuf == NULL) {
-				errno = ENOMEM;				
-				dm_handle_free(handle, handle_len);
-				return -1;
-			}
-			state.buf = newbuf;
-			state.buflen = newlen;
-		}
-	} while (ret == -1 && errno == E2BIG);
+	ret = dm_get_dmattr(state.sid, handle, handle_len, 
+			    DM_NO_TOKEN, &dmAttrName, 0, NULL, &rlen);
 
 	/* its offline if the IBMObj attribute exists */
-	*offline = (ret == 0);
+	*offline = (ret == 0 || (ret == -1 && errno == E2BIG));
 
 	dm_handle_free(handle, handle_len);
 	return 0;	
