@@ -6,7 +6,10 @@
   Released under the GNU GPL version 2 or later
 */
 
-#define _XOPEN_SOURCE 500
+#define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
+#define _LARGEFILE64_SOURCE
+#define _LARGE_FILES
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -22,6 +25,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 static size_t block_size = 8192;
 static off_t file_size = 1024*1024*(1024LL);
@@ -30,28 +34,56 @@ static const char *fname;
 static volatile unsigned *io_count;
 static volatile int run_finished;
 static unsigned runtime = 20;
+static bool sync_io;
+static bool direct_io;
+static int flush_blocks;
+static bool one_fd;
 
-static void run_child(int id)
+static int shared_fd;
+
+static int open_file(void) 
 {
+	unsigned flags = O_RDWR|O_CREAT|O_LARGEFILE;
 	int fd;
-	unsigned num_blocks = file_size / block_size;
-	char *buf;
 
-	buf = malloc(block_size);
-	memset(buf, 1, block_size);
-	
-	fd = open(fname, O_RDWR|O_CREAT, 0644);
+	if (sync_io) flags |= O_SYNC;
+	if (direct_io) flags |= O_DIRECT;
+	fd = open(fname, flags, 0644);
 	if (fd == -1) {
 		perror(fname);
 		exit(1);
 	}
+	return fd;
+}
 
-	srandom(id);
+static void run_child(int id)
+{
+	unsigned num_blocks = file_size / block_size;
+	char *buf;
+	int fd;
+
+	if (!one_fd) {
+		fd = open_file();
+	} else {
+		fd = shared_fd;
+	}
+
+	buf = malloc(block_size);
+	memset(buf, 1, block_size);
+	
+	srandom(id ^ random());
 
 	while (!run_finished) {
 		unsigned offset = random() % num_blocks;
-		pwrite(fd, buf, block_size, offset*(off_t)block_size);
+		if (pwrite(fd, buf, block_size, offset*(off_t)block_size) != block_size) {
+			perror("pwrite");
+			printf("pwrite failed!\n");
+			exit(1);
+		}
 		io_count[id]++;
+		if (flush_blocks && io_count[id] % flush_blocks == 0) {
+			fsync(fd);
+		}
 	}
 
 	close(fd);
@@ -98,19 +130,24 @@ static void run_test(void)
 	tids = calloc(num_threads, sizeof(pthread_t));
 	io_count = calloc(num_threads, sizeof(unsigned));
 
+	if (one_fd) {
+		shared_fd = open_file();
+	}
+
+
 	for (i=0;i<num_threads;i++) {
 		tids[i] = thread_start(run_child, i);
 	}
 	
 	while (1) {
 		int in_warmup=0;
-
+		time_t t = time(NULL);
 		total = 0;
 
 		sleep(1);
 		if (started == 0) {
 			in_warmup = 1;
-			started = time(NULL);
+			started = t;
 		}
 		for (i=0;i<num_threads;i++) {
 			unsigned count = io_count[i];
@@ -120,7 +157,14 @@ static void run_test(void)
 			}
 			total += count;
 		}
-		printf("\n");
+		printf("    total: %6u ", total);
+		if (started != 0 && started != t) {
+			printf(" %3u seconds  %.0f kbytes/s\n", 
+			       (unsigned)(t - started),
+			       block_size*(total-warmup_count)/(1024.0*(t-started)));
+		} else {
+			printf("warmup\n");
+		}
 		if (started != 0) {
 			if (in_warmup) {
 				printf("Starting run\n");
@@ -151,16 +195,20 @@ static void usage(void)
 	printf(" -f <size>     file size\n");
 	printf(" -n <number>   number of threads\n");	
 	printf(" -t <time>     runtime in seconds\n");
+	printf(" -F <numios>   fsync every numios blocks per thread\n");
+	printf(" -S            use O_SYNC on open\n");
+	printf(" -D            use O_DIRECT on open\n");
+	printf(" -1            use one file descriptor for all threads\n");
 }
 
 
-int main(int argc, const char *argv[])
+int main(int argc, char * const argv[])
 {
 	int opt;
 
 	setlinebuf(stdout);
 	
-	while ((opt = getopt(argc, argv, "b:f:n:t:")) != -1) {
+	while ((opt = getopt(argc, argv, "b:f:n:t:1F:SD")) != -1) {
 		switch (opt) {
 		case 'b':
 			block_size = strtoul(optarg, NULL, 0);
@@ -173,6 +221,18 @@ int main(int argc, const char *argv[])
 			break;
 		case 't':
 			runtime = strtoul(optarg, NULL, 0);
+			break;
+		case 'S':
+			sync_io = true;
+			break;
+		case 'D':
+			direct_io = true;
+			break;
+		case 'F':
+			flush_blocks = strtoul(optarg, NULL, 0);
+			break;
+		case '1':
+			one_fd = true;
 			break;
 		default:
 			printf("Invalid option '%c'\n", opt);
@@ -190,6 +250,8 @@ int main(int argc, const char *argv[])
 	}
 
 	fname = argv[0];
+
+	srandom(time(NULL));
 
 	run_test();
 	return 0;
