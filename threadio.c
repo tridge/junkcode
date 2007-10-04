@@ -38,21 +38,29 @@ static bool sync_io;
 static bool direct_io;
 static int flush_blocks;
 static bool one_fd;
+static bool reopen;
 
 static int shared_fd;
 
-static int open_file(void) 
+static int open_file(int id) 
 {
 	unsigned flags = O_RDWR|O_CREAT|O_LARGEFILE;
 	int fd;
+	char *name;
 
 	if (sync_io) flags |= O_SYNC;
 	if (direct_io) flags |= O_DIRECT;
-	fd = open(fname, flags, 0644);
+	if (id != -1 && strchr(fname, '%')) {
+		asprintf(&name, fname, id);
+	} else {
+		name = strdup(fname);
+	}
+	fd = open(name, flags, 0644);
 	if (fd == -1) {
 		perror(fname);
 		exit(1);
 	}
+	free(name);
 	return fd;
 }
 
@@ -62,8 +70,8 @@ static void run_child(int id)
 	char *buf;
 	int fd;
 
-	if (!one_fd) {
-		fd = open_file();
+	if (!one_fd && !reopen) {
+		fd = open_file(id);
 	} else {
 		fd = shared_fd;
 	}
@@ -75,6 +83,9 @@ static void run_child(int id)
 
 	while (!run_finished) {
 		unsigned offset = random() % num_blocks;
+		if (reopen) {
+			fd = open_file(id);
+		}
 		if (pwrite(fd, buf, block_size, offset*(off_t)block_size) != block_size) {
 			perror("pwrite");
 			printf("pwrite failed!\n");
@@ -83,6 +94,9 @@ static void run_child(int id)
 		io_count[id]++;
 		if (flush_blocks && io_count[id] % flush_blocks == 0) {
 			fsync(fd);
+		}
+		if (reopen) {
+			close(fd);
 		}
 	}
 
@@ -131,7 +145,7 @@ static void run_test(void)
 	io_count = calloc(num_threads, sizeof(unsigned));
 
 	if (one_fd) {
-		shared_fd = open_file();
+		shared_fd = open_file(-1);
 	}
 
 
@@ -198,7 +212,9 @@ static void usage(void)
 	printf(" -F <numios>   fsync every numios blocks per thread\n");
 	printf(" -S            use O_SYNC on open\n");
 	printf(" -D            use O_DIRECT on open\n");
+	printf(" -R            reopen the file on every write\n");
 	printf(" -1            use one file descriptor for all threads\n");
+	printf("\nNote: when not using -1, filename may contain %%d for thread id\n");
 }
 
 
@@ -208,7 +224,7 @@ int main(int argc, char * const argv[])
 
 	setlinebuf(stdout);
 	
-	while ((opt = getopt(argc, argv, "b:f:n:t:1F:SD")) != -1) {
+	while ((opt = getopt(argc, argv, "b:f:n:t:1F:SDsR")) != -1) {
 		switch (opt) {
 		case 'b':
 			block_size = strtoul(optarg, NULL, 0);
@@ -233,6 +249,9 @@ int main(int argc, char * const argv[])
 			break;
 		case '1':
 			one_fd = true;
+			break;
+		case 'R':
+			reopen = true;
 			break;
 		default:
 			printf("Invalid option '%c'\n", opt);
