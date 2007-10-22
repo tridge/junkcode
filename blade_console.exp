@@ -1,0 +1,12 @@
+#!/usr/bin/expect -f
+
+set node "[lrange $argv 1 1]"
+
+spawn telnet 9.155.61.31
+expect "username: "
+send -- "tridge\r"
+expect "password: "
+send -- "PASSW0RD\r"
+expect "system> "
+send -- "console -T system:blade\[$node\]\r"
+interact
