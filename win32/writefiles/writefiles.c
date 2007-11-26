@@ -13,21 +13,21 @@
 #include "winbase.h"
 #include "writefiles.h"
 
-#define WRITE_SIZE 61440
-
 static double total_time, min_time, max_time, total_bytes;
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 
-static void test_file(const char *fname, unsigned long filesize)
+static void test_file(const char *fname, unsigned long filesize, unsigned writesize)
 {
 	int fd;
-	unsigned char buf[WRITE_SIZE];
+	unsigned char *buf;
 	LARGE_INTEGER counter1, counter2, freq;
 	double t;
 	int n;
 	HANDLE h;
 	DWORD nwritten;
+
+	buf = malloc(writesize);
 
 	QueryPerformanceCounter(&counter1);
 
@@ -42,12 +42,13 @@ static void test_file(const char *fname, unsigned long filesize)
 
 	if (h == INVALID_HANDLE_VALUE) {
 		printf("Failed to open %s\n", fname);
+		free(buf);
 		return;
 	}
 
-	memset(buf, 0x42, WRITE_SIZE);
+	memset(buf, 0x42, writesize);
 
-	while (WriteFile(h, buf, MIN(WRITE_SIZE, filesize), &nwritten, NULL) && 
+	while (WriteFile(h, buf, MIN(writesize, filesize), &nwritten, NULL) && 
 	       nwritten != 0 &&
 	       filesize >= 0) {
 		total_bytes += nwritten;
@@ -65,6 +66,7 @@ static void test_file(const char *fname, unsigned long filesize)
 	total_time += t;
 
 	printf("%6.2fms %s\n", t*1000.0, fname);
+	free(buf);
 }
 
 
@@ -74,24 +76,26 @@ int main(int argc, char* argv[])
 	const char *dir;
 	unsigned long filesize;
 	unsigned numfiles;
+	unsigned writesize;
 
 	printf("writefiles tester - tridge@samba.org\n");
 
-	if (argc < 4) {
-		printf("Usage: writefiles <directory> <filesize> <numfiles>\n");
+	if (argc < 5) {
+		printf("Usage: writefiles <directory> <filesize> <numfiles> <writesize>\n");
 		exit(1);
 	}
 
 	dir = argv[1];
 	filesize = strtoul(argv[2], NULL, 0);
 	numfiles = strtoul(argv[3], NULL, 0);
+	writesize = strtoul(argv[4], NULL, 0);
 
 	printf("writing %u files in %s\n", numfiles, dir);
 
 	for (i=0;i<numfiles;i++) {
 		char fname[1024];
 		sprintf(fname, "%s\\file%u.dat", dir, i);
-		test_file(fname, filesize);
+		test_file(fname, filesize, writesize);
 	}
 
 	printf("\nProcessed %d files totalling %.2f MBytes at %.2f MByte/s\n", 
