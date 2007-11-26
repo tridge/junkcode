@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 #include <sys/stat.h>
 
 /* optimisation tunables - used to avoid the DMAPI slow path */
@@ -31,8 +32,8 @@
 static int is_offline(char *fname, time_t now, bool *offline)
 {
 	struct stat st;
-	void *handle;
-	size_t handle_len;
+	void *handle=NULL;
+	size_t handle_len=0;
 	size_t rlen;
 	int ret;
 	dm_attrname_t dmAttrName;
