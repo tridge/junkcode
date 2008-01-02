@@ -7,11 +7,11 @@
   released under GNU GPLv3 or later
   
   to compile on MacOSX:
-    gcc pread.c -Wall -g -o pread.dylib -dynamiclib 
+    gcc pread_cache.c -Wall -g -o pread_cache.dylib -dynamiclib 
 
   usage:
 
-    DYLD_INSERT_LIBRARIES=/Users/tridge/pread.dylib DYLD_FORCE_FLAT_NAMESPACE=1 command
+    DYLD_INSERT_LIBRARIES=$PWD/pread_cache.dylib DYLD_FORCE_FLAT_NAMESPACE=1 command
 
 */
 #include <sys/types.h>
