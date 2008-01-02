@@ -2,6 +2,9 @@
   pread_cache.c: a cache to map pread() calls to fread() to prevent small
   reads on MacOSX network filesystems that don't do block cacheing
 
+  This is useful for Maya, which does very small reads (often 2 bytes or 4 bytes)
+  which when used with smbfs on MacOSX gives extremely poor performance. 
+
   tridge@samba.org January 2008
 
   released under GNU GPLv3 or later
