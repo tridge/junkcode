@@ -1,4 +1,4 @@
-CFLAGS=-Wall -O3 -DPAGE_SIZE=4096
+CFLAGS=-Wall -O3 
 
 .SUFFIXES: .po .o .c .so .to
 
