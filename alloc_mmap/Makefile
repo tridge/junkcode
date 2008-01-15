@@ -29,4 +29,6 @@ testsuite_thread_safe: testsuite.o alloc_mmap.to
 	$(CC) $(CFLAGS) -o testsuite_thread_safe alloc_mmap.to testsuite.o -lpthread
 
 clean:
-	/bin/rm -f *.o *.so *.to *.po *~ *.gc??
+	/bin/rm -f *.o *.so *.to *.po *~ *.gc?? testsuite_thread_safe testsuite_malloc testsuite_pthread testsuite
+
+
