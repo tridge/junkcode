@@ -46,6 +46,7 @@ static int read_file(const char *fname, bool use_lease, bool use_sharemode)
 {
 	int fd;
 	char c;
+	struct stat st;
 
 	printf("Reading '%s' with use_lease=%s use_sharemode=%s\n",
 	       fname, use_lease?"yes":"no", use_sharemode?"yes":"no");
@@ -56,6 +57,10 @@ static int read_file(const char *fname, bool use_lease, bool use_sharemode)
 	if (fd == -1) {
 		perror(fname);
 		return -1;
+	}
+
+	if (fstat(fd, &st) != 0 || st.st_blocks != 0 || st.st_size == 0) {
+		printf("WARNING: file is not offline - test INVALID\n");
 	}
 
 	if (use_lease && gpfs_set_lease(fd, GPFS_LEASE_READ) != 0) {
@@ -97,6 +102,11 @@ int main(int argc, char * const argv[])
 {
 	int opt, i;
 	bool use_lease = false, use_sharemode = false;
+	const char *progname = argv[0];
+
+	if (strstr(progname, "smbd") == NULL) {
+		printf("WARNING: you should invoke as smbd - use a symlink\n");
+	}
 	
 	/* parse command-line options */
 	while ((opt = getopt(argc, argv, "LSh")) != -1) {
