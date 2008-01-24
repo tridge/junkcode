@@ -42,10 +42,10 @@ static void sigio_handler(int sig)
 	printf("Got SIGIO\n");
 }
 
-static int read_file(const char *fname, bool use_lease, bool use_sharemode)
+static int read_file(const char *fname, bool use_lease, bool use_sharemode, bool do_write)
 {
 	int fd;
-	char c;
+	char c = 42;
 	struct stat st;
 
 	printf("Reading '%s' with use_lease=%s use_sharemode=%s\n",
@@ -53,7 +53,7 @@ static int read_file(const char *fname, bool use_lease, bool use_sharemode)
 
 	signal(SIGIO, sigio_handler);
 
-	fd = open(fname, O_RDONLY);
+	fd = open(fname, do_write?O_RDWR:O_RDONLY);
 	if (fd == -1) {
 		perror(fname);
 		return -1;
@@ -63,7 +63,7 @@ static int read_file(const char *fname, bool use_lease, bool use_sharemode)
 		printf("WARNING: file is not offline - test INVALID\n");
 	}
 
-	if (use_lease && gpfs_set_lease(fd, GPFS_LEASE_READ) != 0) {
+	if (use_lease && gpfs_set_lease(fd, do_write?GPFS_LEASE_WRITE:GPFS_LEASE_READ) != 0) {
 		perror("gpfs_set_lease");
 		close(fd);
 		return -1;
@@ -73,6 +73,12 @@ static int read_file(const char *fname, bool use_lease, bool use_sharemode)
 		perror("gpfs_set_share");
 		close(fd);
 		return -1;
+	}
+
+	if (do_write && pwrite(fd, &c, 1, 0) != 1) {
+		perror("pwrite");
+		close(fd);
+		return -1;		
 	}
 
 	if (pread(fd, &c, 1, 0) != 1) {
@@ -95,13 +101,14 @@ static void usage(void)
 	printf("Options:\n");
 	printf("  -L    use gpfs leases\n");
 	printf("  -S    use gpfs sharemodes\n");
+	printf("  -W    do a write before a read\n");
 	exit(0);
 }
 
 int main(int argc, char * const argv[])
 {
 	int opt, i;
-	bool use_lease = false, use_sharemode = false;
+	bool use_lease = false, use_sharemode = false, do_write=false;
 	const char *progname = argv[0];
 
 	if (strstr(progname, "smbd") == NULL) {
@@ -109,13 +116,16 @@ int main(int argc, char * const argv[])
 	}
 	
 	/* parse command-line options */
-	while ((opt = getopt(argc, argv, "LSh")) != -1) {
+	while ((opt = getopt(argc, argv, "LSWh")) != -1) {
 		switch (opt){
 		case 'L':
 			use_lease = true;
 			break;
 		case 'S':
 			use_sharemode = true;
+			break;
+		case 'W':
+			do_write = true;
 			break;
 		default:
 			usage();
@@ -132,7 +142,7 @@ int main(int argc, char * const argv[])
 
 	for (i=0;i<argc;i++) {
 		const char *fname = argv[i];
-		if (read_file(fname, use_lease, use_sharemode) != 0) {
+		if (read_file(fname, use_lease, use_sharemode, do_write) != 0) {
 			printf("Failed to read '%s'\n", fname);
 		}
 	}
