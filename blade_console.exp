@@ -1,6 +1,6 @@
 #!/usr/bin/expect -f
 
-set node "[lrange $argv 1 1]"
+set node "[lrange $argv 0 1]"
 
 spawn telnet 9.155.61.31
 expect "username: "
