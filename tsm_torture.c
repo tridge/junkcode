@@ -392,7 +392,7 @@ static void sig_alarm(int sig)
 		}
 	}
 
-	printf("ops/s=%u offline=%u/%u  failures: mig=%u io=%u  latencies: mig=%.1f/%.1f stat=%.1f/%.1f write=%.1f/%.1f read=%.1f/%.1f                \r",
+	printf("ops/s=%4u offline=%u/%u  failures: mig=%u io=%u  latencies: mig=%.1f/%.1f stat=%.1f/%.1f write=%.1f/%.1f read=%.1f/%.1f                \r",
 	       total, total_offline, total_online+total_offline, 
 	       total_migrate_failures,
 	       total_io_failures,
