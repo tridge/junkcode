@@ -5,7 +5,7 @@
 
   compile with:
 
-     gcc -Wall -o tsm_torture{,.c} -lgpfs_gpl
+     gcc -Wall -g -DWITH_GPFS=1 -o tsm_torture{,.c} -lgpfs_gpl 
 
   If you want to use the -L or -S switches then you must symlink tsm_torture to smbd as 
   otherwise it won't have permission to set share modes or leases
