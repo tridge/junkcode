@@ -348,6 +348,7 @@ static void sig_alarm(int sig)
 		total_migrate_failures=0, total_migrate_ok=0,
 		total_io_failures=0;
 	double latencies[OP_ENDOFLIST];
+	double worst_latencies[OP_ENDOFLIST];
 	
 	if (timeval_elapsed(&tv_start) >= options.timelimit) {
 		printf("\ntimelimit reached - killing children\n");
@@ -358,6 +359,7 @@ static void sig_alarm(int sig)
 
 	for (op=0;op<OP_ENDOFLIST;op++) {
 		latencies[op] = 0;
+		worst_latencies[op] = 0;
 	}
 
 	for (i=0;i<options.nprocesses;i++) {
@@ -375,19 +377,29 @@ static void sig_alarm(int sig)
 			children[i].latencies[op] = 0;
 		}
 		if (timeval_elapsed(&children[i].tv_start) > latencies[children[i].op]) {
-			latencies[children[i].op] = timeval_elapsed(&children[i].tv_start);
+			double lat;
+			lat = timeval_elapsed(&children[i].tv_start);
+			latencies[children[i].op] = lat;
+			if (lat > worst_latencies[children[i].op]) {
+				worst_latencies[children[i].op] = lat;
+			}
+		}
+		for (op=0;op<OP_ENDOFLIST;op++) {
+			double lat = children[i].worst_latencies[op];
+			if (lat > worst_latencies[op]) {
+				worst_latencies[op] = lat;
+			}
 		}
 	}
 
-	printf("ops/s=%4u  offline=%5u online=%4u migfail=%4u migok=%4u iofail=%u mig_lat=%.1f stat_lat=%.1f save_lat=%.1f load_lat=%.1f\r",
-	       total, total_offline, total_online, 
+	printf("ops/s=%u offline=%u/%u  failures: mig=%u io=%u  latencies: mig=%.1f/%.1f stat=%.1f/%.1f write=%.1f/%.1f read=%.1f/%.1f                \r",
+	       total, total_offline, total_online+total_offline, 
 	       total_migrate_failures,
-	       total_migrate_ok,
 	       total_io_failures,
-	       latencies[OP_MIGRATE],
-	       latencies[OP_GETOFFLINE],
-	       latencies[OP_SAVEFILE],
-	       latencies[OP_LOADFILE]);
+	       latencies[OP_MIGRATE], worst_latencies[OP_MIGRATE],
+	       latencies[OP_GETOFFLINE], worst_latencies[OP_GETOFFLINE],
+	       latencies[OP_SAVEFILE], worst_latencies[OP_SAVEFILE],
+	       latencies[OP_LOADFILE], worst_latencies[OP_LOADFILE]);
 	fflush(stdout);
 	signal(SIGALRM, sig_alarm);
 	alarm(1);
@@ -495,6 +507,7 @@ int main(int argc, char * const argv[])
 
 	printf("Starting %u child processes for %u seconds\n", 
 	       options.nprocesses, options.timelimit);
+	printf("Results shown as: offline=numoffline/total latencies: current/worst\n");
 
 	for (i=0;i<options.nprocesses;i++) {
 		pid_t pid = fork();
