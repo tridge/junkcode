@@ -61,12 +61,15 @@ static struct {
 	.migrate_cmd   = "dsmmigrate",
 };
 
-enum offline_op {OP_LOADFILE, OP_SAVEFILE, OP_SETOFFLINE, OP_GETOFFLINE, OP_ENDOFLIST};
+static pid_t parent_pid;
+
+enum offline_op {OP_LOADFILE, OP_SAVEFILE, OP_MIGRATE, OP_GETOFFLINE, OP_ENDOFLIST};
 
 struct child {
 	unsigned offline_count;
 	unsigned online_count;
 	unsigned migrate_fail_count;
+	unsigned io_fail_count;
 	unsigned migrate_ok_count;
 	unsigned count;
 	unsigned lastcount;
@@ -167,7 +170,10 @@ static void child_loadfile(struct child *child, const char *fname)
 #endif
 
 	if (pread(fd, buf, options.fsize, 0) != options.fsize) {
-		printf("\npread of '%s' failed - %s\n", fname, strerror(errno));
+		if (child->io_fail_count == 0) {
+			printf("pread failed on '%s' - %s\n", fname, strerror(errno));
+		}
+		child->io_fail_count++;
 		close(fd);
 		return;
 	}
@@ -207,7 +213,10 @@ static void child_savefile(struct child *child, const char *fname, unsigned fnum
 	memset(buf, fnumber%256, options.fsize);
 
 	if (pwrite(fd, buf, options.fsize, 0) != options.fsize) {
-		printf("\npwrite of '%s' failed - %s\n", fname, strerror(errno));
+		if (child->io_fail_count == 0) {
+			printf("pwrite failed on '%s' - %s\n", fname, strerror(errno));
+		}
+		child->io_fail_count++;
 		close(fd);
 		return;
 	}
@@ -244,7 +253,7 @@ static void child_getoffline(struct child *child, const char *fname)
 /* 
    set a file offline
  */
-static void child_setoffline(struct child *child, const char *fname)
+static void child_migrate(struct child *child, const char *fname)
 {
 	char *cmd = NULL;
 	int ret;
@@ -294,6 +303,11 @@ static void run_child(struct child *child)
 		unsigned fnumber = random() % options.nfiles;
 		char *fname = filename(fnumber);
 
+		if (kill(parent_pid, 0) != 0) {
+			/* parent has exited */
+			exit(0);
+		}
+
 		child->tv_start = timeval_current();
 
 		child->op = random() % OP_ENDOFLIST;
@@ -304,8 +318,8 @@ static void run_child(struct child *child)
 		case OP_SAVEFILE:
 			child_savefile(child, fname, fnumber);
 			break;
-		case OP_SETOFFLINE:
-			child_setoffline(child, fname);
+		case OP_MIGRATE:
+			child_migrate(child, fname);
 			break;
 		case OP_GETOFFLINE:
 			child_getoffline(child, fname);
@@ -331,7 +345,8 @@ static void sig_alarm(int sig)
 {
 	int i, op;
 	unsigned total=0, total_offline=0, total_online=0, 
-		total_migrate_failures=0, total_migrate_ok=0;
+		total_migrate_failures=0, total_migrate_ok=0,
+		total_io_failures=0;
 	double latencies[OP_ENDOFLIST];
 	
 	if (timeval_elapsed(&tv_start) >= options.timelimit) {
@@ -351,6 +366,7 @@ static void sig_alarm(int sig)
 		total_online += children[i].online_count;
 		total_offline += children[i].offline_count;
 		total_migrate_failures += children[i].migrate_fail_count;
+		total_io_failures += children[i].io_fail_count;
 		total_migrate_ok += children[i].migrate_ok_count;
 		for (op=0;op<OP_ENDOFLIST;op++) {
 			if (children[i].latencies[op] > latencies[op]) {
@@ -363,11 +379,12 @@ static void sig_alarm(int sig)
 		}
 	}
 
-	printf("ops/s=%4u  offline=%5u online=%4u migfail=%4u migok=%4u set_lat=%.1f get_lat=%.1f save_lat=%.1f load_lat=%.1f\r",
+	printf("ops/s=%4u  offline=%5u online=%4u migfail=%4u migok=%4u iofail=%u mig_lat=%.1f stat_lat=%.1f save_lat=%.1f load_lat=%.1f\r",
 	       total, total_offline, total_online, 
 	       total_migrate_failures,
 	       total_migrate_ok,
-	       latencies[OP_SETOFFLINE],
+	       total_io_failures,
+	       latencies[OP_MIGRATE],
 	       latencies[OP_GETOFFLINE],
 	       latencies[OP_SAVEFILE],
 	       latencies[OP_LOADFILE]);
@@ -473,6 +490,8 @@ int main(int argc, char * const argv[])
 		close(fd);
 		free(fname);
 	}
+
+	parent_pid = getpid();
 
 	printf("Starting %u child processes for %u seconds\n", 
 	       options.nprocesses, options.timelimit);
