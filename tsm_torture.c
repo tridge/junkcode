@@ -5,7 +5,7 @@
 
   compile with:
 
-     gcc -Wall -g -DWITH_GPFS=1 -o tsm_torture{,.c} -lgpfs_gpl 
+     gcc -Wall -g -DWITH_GPFS=1 -o tsm_torture{,.c} -lgpfs_gpl -lrt
 
   If you want to use the -L or -S switches then you must symlink tsm_torture to smbd as 
   otherwise it won't have permission to set share modes or leases
@@ -38,8 +38,14 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <aio.h>
 #if WITH_GPFS
 #include "gpfs_gpl.h"
+#endif
+
+/* The signal we'll use to signify aio done. */
+#ifndef RT_SIGNAL_AIO
+#define RT_SIGNAL_AIO (SIGRTMIN+3)
 #endif
 
 static struct {
@@ -51,6 +57,8 @@ static struct {
 	unsigned fsize;
 	const char *dir;
 	const char *migrate_cmd;
+	bool use_aio;
+	uid_t io_uid;
 } options = {
 	.use_lease     = false,
 	.use_sharemode = false,
@@ -59,6 +67,7 @@ static struct {
 	.fsize         = 8192,
 	.timelimit     = 30,
 	.migrate_cmd   = "dsmmigrate",
+	.use_aio       = false,
 };
 
 static pid_t parent_pid;
@@ -83,7 +92,7 @@ struct child {
 static struct timeval tv_start;
 static struct child *children;
 
-static char *buf;
+static unsigned char *buf;
 
 /* return a pointer to a /dev/zero shared memory segment of size "size"
    which will persist across fork() but will disappear when all processes
@@ -141,12 +150,117 @@ static void sigio_handler(int sig)
 	printf("\nGot SIGIO\n");
 }
 
+static volatile bool signal_received;
+
+static void signal_handler(int sig)
+{
+	signal_received = true;
+}
+
+/* simulate pread using aio */
+static ssize_t pread_aio(int fd, void *buf, size_t count, off_t offset)
+{
+	struct aiocb acb;
+	int ret;
+
+	memset(&acb, 0, sizeof(acb));
+
+	acb.aio_fildes = fd;
+	acb.aio_buf = buf;
+	acb.aio_nbytes = count;
+	acb.aio_offset = offset;
+	acb.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
+	acb.aio_sigevent.sigev_signo  = RT_SIGNAL_AIO;
+	acb.aio_sigevent.sigev_value.sival_int = 1;
+
+	signal(RT_SIGNAL_AIO, signal_handler);
+	signal_received = 0;
+
+	if (options.io_uid) {
+		if (seteuid(options.io_uid) != 0) {
+			printf("\nFailed to become uid %u\n", options.io_uid);
+			exit(1);
+		}
+	}
+	if (aio_read(&acb) != 0) {
+		return -1;
+	}
+	if (options.io_uid) {
+		if (seteuid(0) != 0) {
+			printf("\nFailed to become root\n");
+			exit(1);
+		}
+	}
+
+	while (signal_received == 0) {
+		usleep(500);
+	}
+
+	ret = aio_error(&acb);
+	if (ret != 0) {
+		printf("\naio operation failed - %s\n", strerror(ret));
+		return -1;
+	}
+
+	return aio_return(&acb);	
+}
+
+
+/* simulate pwrite using aio */
+static ssize_t pwrite_aio(int fd, void *buf, size_t count, off_t offset)
+{
+	struct aiocb acb;
+	int ret;
+
+	memset(&acb, 0, sizeof(acb));
+
+	acb.aio_fildes = fd;
+	acb.aio_buf = buf;
+	acb.aio_nbytes = count;
+	acb.aio_offset = offset;
+	acb.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
+	acb.aio_sigevent.sigev_signo  = RT_SIGNAL_AIO;
+	acb.aio_sigevent.sigev_value.sival_int = 1;
+
+	signal(RT_SIGNAL_AIO, signal_handler);
+	signal_received = 0;
+
+	if (options.io_uid) {
+		if (seteuid(options.io_uid) != 0) {
+			printf("\nFailed to become uid %u\n", options.io_uid);
+			exit(1);
+		}
+	}
+	if (aio_write(&acb) != 0) {
+		return -1;
+	}
+	if (options.io_uid) {
+		if (seteuid(0) != 0) {
+			printf("\nFailed to become root\n");
+			exit(1);
+		}
+	}
+
+	while (signal_received == 0) {
+		usleep(500);
+	}
+
+	ret = aio_error(&acb);
+	if (ret != 0) {
+		printf("\naio operation failed - %s\n", strerror(ret));
+		return -1;
+	}
+
+	return aio_return(&acb);	
+}
+
 /* 
    load a file 
  */
-static void child_loadfile(struct child *child, const char *fname)
+static void child_loadfile(struct child *child, const char *fname, unsigned fnumber)
 {
-	int fd;
+	int fd, i;
+	ssize_t ret;
 
 	signal(SIGIO, sigio_handler);
 
@@ -169,13 +283,26 @@ static void child_loadfile(struct child *child, const char *fname)
 	}
 #endif
 
-	if (pread(fd, buf, options.fsize, 0) != options.fsize) {
+	if (options.use_aio) {
+		ret = pread_aio(fd, buf, options.fsize, 0);
+	} else {
+		ret = pread(fd, buf, options.fsize, 0);
+	}
+	if (ret != options.fsize) {
 		if (child->io_fail_count == 0) {
-			printf("pread failed on '%s' - %s\n", fname, strerror(errno));
+			printf("\npread failed on '%s' - %s\n", fname, strerror(errno));
 		}
 		child->io_fail_count++;
 		close(fd);
 		return;
+	}
+
+	for (i=0;i<options.fsize;i++) {
+		if (buf[i] != fnumber % 256) {
+			printf("\nBad data %u - expected %u for '%s'\n",
+			       buf[i], fnumber%256, fname);
+			exit(1);
+		}
 	}
 
 	close(fd);
@@ -188,6 +315,7 @@ static void child_loadfile(struct child *child, const char *fname)
 static void child_savefile(struct child *child, const char *fname, unsigned fnumber)
 {
 	int fd;
+	int ret;
 
 	signal(SIGIO, sigio_handler);
 
@@ -212,9 +340,14 @@ static void child_savefile(struct child *child, const char *fname, unsigned fnum
 
 	memset(buf, fnumber%256, options.fsize);
 
-	if (pwrite(fd, buf, options.fsize, 0) != options.fsize) {
+	if (options.use_aio) {
+		ret = pwrite_aio(fd, buf, options.fsize, 0);
+	} else {
+		ret = pwrite(fd, buf, options.fsize, 0);
+	}
+	if (ret != options.fsize) {
 		if (child->io_fail_count == 0) {
-			printf("pwrite failed on '%s' - %s\n", fname, strerror(errno));
+			printf("\npwrite failed on '%s' - %s\n", fname, strerror(errno));
 		}
 		child->io_fail_count++;
 		close(fd);
@@ -313,7 +446,7 @@ static void run_child(struct child *child)
 		child->op = random() % OP_ENDOFLIST;
 		switch (child->op) {
 		case OP_LOADFILE:
-			child_loadfile(child, fname);
+			child_loadfile(child, fname, fnumber);
 			break;
 		case OP_SAVEFILE:
 			child_savefile(child, fname, fnumber);
@@ -416,8 +549,10 @@ static void usage(void)
 	printf("  -t <time>    runtime (seconds)\n");
 	printf("  -s <fsize>   file size (bytes)\n");
 	printf("  -M <migrate> set file migrate command\n");
+	printf("  -U <uid>     do IO as the specified uid\n");
 	printf("  -L           use gpfs leases\n");
 	printf("  -S           use gpfs sharemodes\n");
+	printf("  -A           use Posix async IO\n");
 	exit(0);
 }
 
@@ -428,13 +563,16 @@ int main(int argc, char * const argv[])
 	struct stat st;
 
 	/* parse command-line options */
-	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:h")) != -1) {
+	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:Ah")) != -1) {
 		switch (opt){
 		case 'L':
 			options.use_lease = true;
 			break;
 		case 'S':
 			options.use_sharemode = true;
+			break;
+		case 'A':
+			options.use_aio = true;
 			break;
 		case 'N':
 			options.nprocesses = atoi(optarg);
@@ -447,6 +585,9 @@ int main(int argc, char * const argv[])
 			break;
 		case 's':
 			options.fsize = atoi(optarg);
+			break;
+		case 'U':
+			options.io_uid = atoi(optarg);
 			break;
 		case 't':
 			options.timelimit = atoi(optarg);
