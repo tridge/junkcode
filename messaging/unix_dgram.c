@@ -105,12 +105,27 @@ static void worker(const char *n1, const char *n2, int w)
 
 	while (1) {
 		char c=0;
+		struct sockaddr from;
+		socklen_t fromlen = sizeof(from);
+		int n;
+
 		if (write(s2, &c, 1) != 1) {
 			fatal("write");
 		}
-		if (read(s1, &c, 1) != 1) {
+		n = recvfrom(s1, &c, 1, 0, &from, &fromlen);
+		if (n != 1) {
+			fatal("recvfrom");
+		}
+
+		n = sendto(s1, &c, 1, 0, &from, fromlen);
+		if (n != 1) {
+			fatal("sendto");
+		}
+		
+		if (read(s2, &c, 1) != 1) {
 			fatal("read");
 		}
+
 		if (w == 1 && (end_timer() > 1.0)) {
 			printf("%8u ops/sec\r", 
 			       (unsigned)(2*count/end_timer()));

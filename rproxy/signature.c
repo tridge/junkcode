@@ -15,7 +15,7 @@ struct file_buf {
 };
 
 
-enum rs_result {RS_DONE};
+typedef enum rs_result {RS_DONE} rs_result;
 
 size_t sig_inbytes, sig_outbytes, sig_zinbytes, sig_zoutbytes;
 

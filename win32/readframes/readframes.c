@@ -13,19 +13,20 @@
 #include "winbase.h"
 #include "readframes.h"
 
-#define READ_SIZE 61440
-
 static double total_time, min_time, max_time, total_bytes;
 
-static void test_file(const char *fname)
+static void test_file(const char *fname, unsigned readsize)
 {
 	int fd;
-	unsigned char buf[READ_SIZE];
+	unsigned char *buf;
 	LARGE_INTEGER counter1, counter2, freq;
 	double t;
 	int n;
 	HANDLE h;
 	DWORD nread;
+	BOOL ret;
+
+	buf = malloc(readsize);
 
 	QueryPerformanceCounter(&counter1);
 
@@ -40,12 +41,20 @@ static void test_file(const char *fname)
 
 	if (h == INVALID_HANDLE_VALUE) {
 		printf("Failed to open %s\n", fname);
+		free(buf);
 		return;
 	}
 
-	while (ReadFile(h, buf, READ_SIZE, &nread, NULL) && nread != 0) {
+	while ((ret=ReadFile(h, buf, readsize, &nread, NULL)) && nread != 0) {
 		total_bytes += nread;
 	}
+
+	if (ret != TRUE) {
+		printf("Read failure\n");
+	}
+
+	free(buf);
+
 	CloseHandle(h);
 	QueryPerformanceCounter(&counter2);
 
@@ -114,23 +123,27 @@ static int name_cmp(char **n1, char **n2)
 int main(int argc, char* argv[])
 {
 	int i;	
+	unsigned readsize;
+	char *dir;
 
 	printf("readframes tester - tridge@samba.org\n");
 
-	if (argc < 2) {
-		printf("Usage: readframes <directory>\n");
+	if (argc < 3) {
+		printf("Usage: readframes <directory> <readsize>\n");
 		exit(1);
 	}
 
-	for (i=1;i<argc;i++) {
-		printf("Testing on directory %s\n", argv[i]);
-		test_directory(argv[i]);
-	}
+	dir = argv[1];
+	readsize = strtoul(argv[2], NULL, 0);
+
+	printf("Testing on directory %s with readsize=%u\n", 
+	       dir, readsize);
+	test_directory(dir);
 
 	qsort(file_list, num_files, sizeof(char *), name_cmp);
 	
 	for (i=0;i<num_files;i++) {
-		test_file(file_list[i]);
+		test_file(file_list[i], readsize);
 	}
 
 	printf("\nProcessed %d files totalling %.2f MBytes\n", 

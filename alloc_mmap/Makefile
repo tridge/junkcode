@@ -1,4 +1,4 @@
-CFLAGS=-Wall -O3 
+CFLAGS=-Wall -O3
 
 .SUFFIXES: .po .o .c .so .to
 

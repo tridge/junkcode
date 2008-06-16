@@ -1,4 +1,4 @@
-CC=E:\VC98\bin\cl -nologo
+CC=cl -nologo
 INCLUDES=-I 
 CFLAGS=$(INCLUDES) -Zi
 LIBS=
@@ -6,9 +6,9 @@ LIBS=
 all: readframes
 
 clean:
-	del *~ *.obj readframes
+	del *~ *.obj readframes.exe
 
 readframes: readframes.obj
-	$(CC) -o readframes readframes.obj $(LIBS)
+	$(CC) /Fereadframes.exe readframes.obj $(LIBS)
 
 readframes.obj: readframes.h readframes.c

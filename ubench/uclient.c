@@ -61,7 +61,7 @@ static void load_gen(int fd)
 			fd_set fds;
 			struct timeval tv;
 			tv.tv_sec = 0;
-			tv.tv_usec = 10000;
+			tv.tv_usec = 1;
 			FD_ZERO(&fds);
 			FD_SET(fd, &fds);
 			select(fd+1, &fds, NULL, NULL, &tv);

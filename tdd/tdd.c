@@ -30,34 +30,15 @@
 
 static int sparse_writes;
 
-_syscall5(int , _llseek, 
-	  int, fd, 
-	  unsigned long , offset_high,
-	  unsigned long , offset_low,
-	  loff_t *, result,
-	  unsigned int, origin)
 
-static loff_t llseek(int fd, loff_t offset, unsigned origin)
-{
-	loff_t ofs=0;
-	int ret;
-
-	ret = _llseek(fd, offset>>32, offset&0xffffffff, &ofs, origin);
-	if (ret == 0) return ofs;
-	return ret;
-}
-
-extern int ftruncate64(int , loff_t);
-
-
-static loff_t getval(char *s)
+static off_t getval(char *s)
 {
 	char *p;
 	int i;
-	loff_t ret;
+	off_t ret;
 	struct {
 		char *s;
-		loff_t m;
+		off_t m;
 	} multipliers[] = {
 		{"c", 1},
 		{"w", 2},
@@ -111,15 +92,15 @@ static int all_zero(const char *buf, size_t count)
 /* varient of write() that will produce a sparse file if possible */
 static ssize_t write_sparse(int fd, const void *buf, size_t count)
 {
-	loff_t ofs;
+	off_t ofs;
 	if (!sparse_writes || !all_zero(buf, count)) {
 		return write(fd, buf, count);
 	}
-	ofs = llseek(fd, 0, SEEK_CUR) + count;
-	if (ftruncate64(fd, ofs) != 0) {
+	ofs = lseek(fd, 0, SEEK_CUR) + count;
+	if (ftruncate(fd, ofs) != 0) {
 		return -1;
 	}
-	llseek(fd, ofs, SEEK_SET);
+	lseek(fd, ofs, SEEK_SET);
 	return count;
 }
 
@@ -133,8 +114,8 @@ static void usage(void)
 int main(int argc, char *argv[])
 {
 	char *inf=NULL, *outf=NULL;
-	loff_t count=-1, iseek=0, skip=0, total_in=0, total_out=0, n=0;
-	loff_t bytes_in=0, bytes_out=0;
+	off_t count=-1, iseek=0, skip=0, total_in=0, total_out=0, n=0;
+	off_t bytes_in=0, bytes_out=0;
 	int bswap = 0;
 	int fd1=0, fd2=1, i;
 	char *buf;
@@ -216,23 +197,29 @@ int main(int argc, char *argv[])
 	}
 
 	if (iseek) {
-		if (llseek(fd2, iseek*obs, SEEK_CUR) != iseek*obs) {
-			fprintf(stderr,"failed to seek to %lld\n", iseek*obs);
+		if (lseek(fd2, iseek*obs, SEEK_CUR) != iseek*obs) {
+			fprintf(stderr,"failed to seek to %lld\n", (long long)iseek*obs);
 			exit(1);
 		}
 	}
 
-	while (skip) {
-		loff_t n = read(fd1, buf, ibs);
-		if (n <= 0) {
-			fprintf(stderr,"read on input gave %lld\n", n);
-			exit(1);
+	if (skip) {
+		/* try to seek, if not possible, then read */
+		if (lseek(fd1, skip*obs, SEEK_CUR) != skip*obs) {
+			while (skip) {
+				off_t n = read(fd1, buf, ibs);
+				if (n <= 0) {
+					fprintf(stderr,"read on input gave %lld\n", (long long)n);
+					exit(1);
+				}
+				skip--;
+			}
 		}
-		skip--;
 	}
+
 	
 	while (count == -1 || count != total_in) {
-		loff_t nread;
+		off_t nread;
 
 		nread = read(fd1, buf+n, ibs);
 		if (nread == -1) {
@@ -251,7 +238,7 @@ int main(int argc, char *argv[])
 		n += nread;
 
 		while (n >= obs) {
-			loff_t nwritten = write_sparse(fd2, buf, obs);
+			off_t nwritten = write_sparse(fd2, buf, obs);
 			if (nwritten > 0) bytes_out += nwritten;
 			if (nwritten != obs) {
 				fprintf(stderr,"write failure\n");
@@ -263,7 +250,7 @@ int main(int argc, char *argv[])
 			}
 			total_out++;
 			if (verbose) {
-				printf("%lld M\r", bytes_out/(1<<20));
+				printf("%lld M\r", (long long)bytes_out/(1<<20));
 				fflush(stdout);
 			}
 		}		
@@ -273,7 +260,7 @@ int main(int argc, char *argv[])
 
  out1:
 	if (n) {
-		loff_t nwritten = write_sparse(fd2, buf, n);
+		off_t nwritten = write_sparse(fd2, buf, n);
 		if (nwritten > 0) bytes_out += nwritten;
 	}
 
@@ -281,8 +268,8 @@ int main(int argc, char *argv[])
 	close(fd1);
 	close(fd2);
 
-	printf("%lld+%d records in\n", bytes_in/ibs, bytes_in%ibs?1:0);
-	printf("%lld+%d records out\n", bytes_out/obs, bytes_out%obs?1:0);
+	printf("%lld+%d records in\n", (long long)bytes_in/ibs, bytes_in%ibs?1:0);
+	printf("%lld+%d records out\n", (long long)bytes_out/obs, bytes_out%obs?1:0);
 	
 	return ret;
 }

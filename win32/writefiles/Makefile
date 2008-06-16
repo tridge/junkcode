@@ -1,4 +1,4 @@
-CC=E:\VC98\bin\cl -nologo
+CC=cl -nologo
 INCLUDES=-I 
 CFLAGS=$(INCLUDES) -Zi
 LIBS=
@@ -6,9 +6,9 @@ LIBS=
 all: writefiles
 
 clean:
-	del *~ *.obj writefiles
+	del *~ *.obj writefiles.exe
 
 writefiles: writefiles.obj
-	$(CC) -o writefiles writefiles.obj $(LIBS)
+	$(CC) /Fewritefiles.exe writefiles.obj $(LIBS)
 
 writefiles.obj: writefiles.h writefiles.c

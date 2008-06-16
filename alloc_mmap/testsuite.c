@@ -95,6 +95,8 @@ int main(void)
 {
 	int ret = 0;
 
+	setlinebuf(stdout);
+
 	ret |= test_random(100,   500000);
 	ret |= test_random(2000,  10000);
 	ret |= test_random(8000,  1000);

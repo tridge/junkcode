@@ -505,8 +505,8 @@ static void alloc_memalign_free(void *ptr)
 	if (mh->p == ptr) {
 		state.memalign_list = mh->next;
 		munmap(ptr, mh->num_pages*PAGE_SIZE);
-		free(mh);
 		THREAD_UNLOCK(&state.mutex);
+		free(mh);
 		return;
 	}
 
@@ -516,12 +516,14 @@ static void alloc_memalign_free(void *ptr)
 		if (mh2->p == ptr) {
 			mh->next = mh2->next;
 			munmap(ptr, mh2->num_pages);
-			free(mh2);
 			THREAD_UNLOCK(&state.mutex);
+			free(mh2);
 			return;
 		}
 		mh = mh->next;
 	}
+
+	THREAD_UNLOCK(&state.mutex);
 
 #if ALLOC_PARANOIA
 	/* it wasn't there ... */
@@ -572,13 +574,13 @@ static void alloc_free(void *ptr)
 		return;
 	}
 
-	if (ph->num_pages != 0) {
-		alloc_large_free(ptr);
+	if (unlikely(IS_PAGE_ALIGNED(ptr))) {
+		alloc_memalign_free(ptr);
 		return;
 	}
 
-	if (unlikely(IS_PAGE_ALIGNED(ptr))) {
-		alloc_memalign_free(ptr);
+	if (ph->num_pages != 0) {
+		alloc_large_free(ptr);
 		return;
 	}
 
