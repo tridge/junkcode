@@ -59,6 +59,7 @@ static struct {
 	const char *migrate_cmd;
 	bool use_aio;
 	uid_t io_uid;
+	bool skip_file_creation;
 } options = {
 	.use_lease     = false,
 	.use_sharemode = false,
@@ -68,6 +69,7 @@ static struct {
 	.timelimit     = 30,
 	.migrate_cmd   = "dsmmigrate",
 	.use_aio       = false,
+	.skip_file_creation = false,
 };
 
 static pid_t parent_pid;
@@ -553,6 +555,7 @@ static void usage(void)
 	printf("  -L           use gpfs leases\n");
 	printf("  -S           use gpfs sharemodes\n");
 	printf("  -A           use Posix async IO\n");
+	printf("  -C           skip file creation\n");
 	exit(0);
 }
 
@@ -563,7 +566,7 @@ int main(int argc, char * const argv[])
 	struct stat st;
 
 	/* parse command-line options */
-	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:Ah")) != -1) {
+	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:AhC")) != -1) {
 		switch (opt){
 		case 'L':
 			options.use_lease = true;
@@ -573,6 +576,9 @@ int main(int argc, char * const argv[])
 			break;
 		case 'A':
 			options.use_aio = true;
+			break;
+		case 'C':
+			options.skip_file_creation = true;
 			break;
 		case 'N':
 			options.nprocesses = atoi(optarg);
@@ -620,28 +626,31 @@ int main(int argc, char * const argv[])
 
 	children = shm_setup(sizeof(*children) * options.nprocesses);
 
-	printf("Creating %u files of size %u in '%s'\n", 
-	       options.nfiles, options.fsize, options.dir);
 
 	buf = malloc(options.fsize);
 
-	for (i=0;i<options.nfiles;i++) {
-		int fd;
-		char *fname = filename(i);
-		fd = open(fname, O_CREAT|O_RDWR, 0600);
-		if (fd == -1) {
-			perror(fname);
-			exit(1);
+	if (!options.skip_file_creation) {
+		printf("Creating %u files of size %u in '%s'\n", 
+		       options.nfiles, options.fsize, options.dir);
+
+		for (i=0;i<options.nfiles;i++) {
+			int fd;
+			char *fname = filename(i);
+			fd = open(fname, O_CREAT|O_RDWR, 0600);
+			if (fd == -1) {
+				perror(fname);
+				exit(1);
+			}
+			ftruncate(fd, options.fsize);
+			memset(buf, i%256, options.fsize);
+			if (write(fd, buf, options.fsize) != options.fsize) {
+				printf("Failed to write '%s'\n", fname);
+				exit(1);
+			}
+			fsync(fd);
+			close(fd);
+			free(fname);
 		}
-		ftruncate(fd, options.fsize);
-		memset(buf, i%256, options.fsize);
-		if (write(fd, buf, options.fsize) != options.fsize) {
-			printf("Failed to write '%s'\n", fname);
-			exit(1);
-		}
-		fsync(fd);
-		close(fd);
-		free(fname);
 	}
 
 	parent_pid = getpid();
