@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -25,8 +26,9 @@ static int segv_handler(int sig)
 	return 0;
 }
 
-void _init(void)
+static void segv_init() __attribute__((constructor));
+void segv_init(void)
 {
-	signal(SIGSEGV, segv_handler);
-	signal(SIGBUS, segv_handler);
+	signal(SIGSEGV, (sighandler_t) segv_handler);
+	signal(SIGBUS, (sighandler_t) segv_handler);
 }
