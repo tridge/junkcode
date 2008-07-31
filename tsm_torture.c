@@ -498,6 +498,9 @@ static void sig_alarm(int sig)
 	}
 
 	for (i=0;i<options.nprocesses;i++) {
+		if (kill(children[i].pid, 0) != 0) {
+			continue;
+		}
 		total += children[i].count - children[i].lastcount;
 		children[i].lastcount = children[i].count;		
 		total_online += children[i].online_count;
@@ -676,7 +679,7 @@ int main(int argc, char * const argv[])
 
 	/* wait for the children to finish */
 	for (i=0;i<options.nprocesses;i++) {
-		while (waitpid(children[i].pid, 0, 0) != 0 && errno != ECHILD) ;
+		while (waitpid(-1, 0, 0) != 0 && errno != ECHILD) ;
 	}	
 
 	return 0;
