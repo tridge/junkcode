@@ -60,6 +60,7 @@ static struct {
 	bool use_aio;
 	uid_t io_uid;
 	bool skip_file_creation;
+	bool exit_child_on_error;
 } options = {
 	.use_lease     = false,
 	.use_sharemode = false,
@@ -70,6 +71,7 @@ static struct {
 	.migrate_cmd   = "dsmmigrate",
 	.use_aio       = false,
 	.skip_file_creation = false,
+	.exit_child_on_error = false,
 };
 
 static pid_t parent_pid;
@@ -149,7 +151,7 @@ static char *filename(int i)
 
 static void sigio_handler(int sig)
 {
-	printf("\nGot SIGIO\n");
+	printf("Got SIGIO\n");
 }
 
 static volatile bool signal_received;
@@ -180,7 +182,7 @@ static ssize_t pread_aio(int fd, void *buf, size_t count, off_t offset)
 
 	if (options.io_uid) {
 		if (seteuid(options.io_uid) != 0) {
-			printf("\nFailed to become uid %u\n", options.io_uid);
+			printf("Failed to become uid %u\n", options.io_uid);
 			exit(1);
 		}
 	}
@@ -189,7 +191,7 @@ static ssize_t pread_aio(int fd, void *buf, size_t count, off_t offset)
 	}
 	if (options.io_uid) {
 		if (seteuid(0) != 0) {
-			printf("\nFailed to become root\n");
+			printf("Failed to become root\n");
 			exit(1);
 		}
 	}
@@ -200,7 +202,7 @@ static ssize_t pread_aio(int fd, void *buf, size_t count, off_t offset)
 
 	ret = aio_error(&acb);
 	if (ret != 0) {
-		printf("\naio operation failed - %s\n", strerror(ret));
+		printf("aio operation failed - %s\n", strerror(ret));
 		return -1;
 	}
 
@@ -229,7 +231,7 @@ static ssize_t pwrite_aio(int fd, void *buf, size_t count, off_t offset)
 
 	if (options.io_uid) {
 		if (seteuid(options.io_uid) != 0) {
-			printf("\nFailed to become uid %u\n", options.io_uid);
+			printf("Failed to become uid %u\n", options.io_uid);
 			exit(1);
 		}
 	}
@@ -238,7 +240,7 @@ static ssize_t pwrite_aio(int fd, void *buf, size_t count, off_t offset)
 	}
 	if (options.io_uid) {
 		if (seteuid(0) != 0) {
-			printf("\nFailed to become root\n");
+			printf("Failed to become root\n");
 			exit(1);
 		}
 	}
@@ -249,7 +251,7 @@ static ssize_t pwrite_aio(int fd, void *buf, size_t count, off_t offset)
 
 	ret = aio_error(&acb);
 	if (ret != 0) {
-		printf("\naio operation failed - %s\n", strerror(ret));
+		printf("aio operation failed - %s\n", strerror(ret));
 		return -1;
 	}
 
@@ -269,17 +271,20 @@ static void child_loadfile(struct child *child, const char *fname, unsigned fnum
 	fd = open(fname, O_RDONLY);
 	if (fd == -1) {
 		perror(fname);
-		exit(1);
+		if (options.exit_child_on_error) {
+			exit(1);
+		}
+		return;
 	}
 
 #if WITH_GPFS
 	if (options.use_lease && gpfs_set_lease(fd, GPFS_LEASE_READ) != 0) {
-		printf("\ngpfs_set_lease on '%s' - %s\n", fname, strerror(errno));
+		printf("gpfs_set_lease on '%s' - %s\n", fname, strerror(errno));
 		close(fd);
 		return;
 	}
 	if (options.use_sharemode && gpfs_set_share(fd, 1, 2) != 0) {
-		printf("\ngpfs_set_share on '%s' - %s\n", fname, strerror(errno));
+		printf("gpfs_set_share on '%s' - %s\n", fname, strerror(errno));
 		close(fd);
 		return;
 	}
@@ -291,9 +296,7 @@ static void child_loadfile(struct child *child, const char *fname, unsigned fnum
 		ret = pread(fd, buf, options.fsize, 0);
 	}
 	if (ret != options.fsize) {
-		if (child->io_fail_count == 0) {
-			printf("\npread failed on '%s' - %s\n", fname, strerror(errno));
-		}
+		printf("pread failed on '%s' - %s\n", fname, strerror(errno));
 		child->io_fail_count++;
 		close(fd);
 		return;
@@ -301,9 +304,12 @@ static void child_loadfile(struct child *child, const char *fname, unsigned fnum
 
 	for (i=0;i<options.fsize;i++) {
 		if (buf[i] != fnumber % 256) {
-			printf("\nBad data %u - expected %u for '%s'\n",
+			printf("Bad data %u - expected %u for '%s'\n",
 			       buf[i], fnumber%256, fname);
-			exit(1);
+			if (options.exit_child_on_error) {
+				exit(1);
+			}
+			break;
 		}
 	}
 
@@ -329,12 +335,12 @@ static void child_savefile(struct child *child, const char *fname, unsigned fnum
 
 #if WITH_GPFS
 	if (options.use_lease && gpfs_set_lease(fd, GPFS_LEASE_WRITE) != 0) {
-		printf("\ngpfs_set_lease on '%s' - %s\n", fname, strerror(errno));
+		printf("gpfs_set_lease on '%s' - %s\n", fname, strerror(errno));
 		close(fd);
 		return;
 	}
 	if (options.use_sharemode && gpfs_set_share(fd, 1, 2) != 0) {
-		printf("\ngpfs_set_share on '%s' - %s\n", fname, strerror(errno));
+		printf("gpfs_set_share on '%s' - %s\n", fname, strerror(errno));
 		close(fd);
 		return;
 	}
@@ -348,9 +354,7 @@ static void child_savefile(struct child *child, const char *fname, unsigned fnum
 		ret = pwrite(fd, buf, options.fsize, 0);
 	}
 	if (ret != options.fsize) {
-		if (child->io_fail_count == 0) {
-			printf("\npwrite failed on '%s' - %s\n", fname, strerror(errno));
-		}
+		printf("pwrite failed on '%s' - %s\n", fname, strerror(errno));
 		child->io_fail_count++;
 		close(fd);
 		return;
@@ -367,17 +371,21 @@ static void child_getoffline(struct child *child, const char *fname)
 {
 	struct stat st;
 	if (stat(fname, &st) != 0) {
-		printf("\nFailed to stat '%s' - %s\n", fname, strerror(errno));
-		exit(1);
+		printf("Failed to stat '%s' - %s\n", fname, strerror(errno));
+		if (options.exit_child_on_error) {
+			exit(1);
+		}
 	}
 	if (st.st_size != options.fsize) {
-		printf("\nWrong file size for '%s' - %u\n", fname, (unsigned)st.st_size);
-		exit(1);
+		printf("Wrong file size for '%s' - %u\n", fname, (unsigned)st.st_size);
+		if (options.exit_child_on_error) {
+			exit(1);
+		}
 	}
 	if (st.st_blocks == 0) {
 		child->offline_count++;
 		if (strcmp(options.migrate_cmd, "/bin/true") == 0) {
-			printf("\nFile '%s' is offline with no migration command\n", fname);
+			printf("File '%s' is offline with no migration command\n", fname);
 		}
 	} else {
 		child->online_count++;
@@ -396,12 +404,16 @@ static void child_migrate(struct child *child, const char *fname)
 	struct stat st;
 
 	if (stat(fname, &st) != 0) {
-		printf("\nFailed to stat '%s' - %s\n", fname, strerror(errno));
-		exit(1);
+		printf("Failed to stat '%s' - %s\n", fname, strerror(errno));
+		if (options.exit_child_on_error) {
+			exit(1);
+		}
 	}
 	if (st.st_size != options.fsize) {
-		printf("\nWrong file size for '%s' - %u\n", fname, (unsigned)st.st_size);
-		exit(1);
+		printf("Wrong file size for '%s' - %u\n", fname, (unsigned)st.st_size);
+		if (options.exit_child_on_error) {
+			exit(1);
+		}
 	}
 	if (st.st_blocks == 0) {
 		/* already offline */
@@ -486,7 +498,7 @@ static void sig_alarm(int sig)
 	double worst_latencies[OP_ENDOFLIST];
 	
 	if (timeval_elapsed(&tv_start) >= options.timelimit) {
-		printf("\ntimelimit reached - killing children\n");
+		printf("timelimit reached - killing children\n");
 		for (i=0;i<options.nprocesses;i++) {
 			kill(children[i].pid, SIGTERM);
 		}
@@ -559,6 +571,7 @@ static void usage(void)
 	printf("  -S           use gpfs sharemodes\n");
 	printf("  -A           use Posix async IO\n");
 	printf("  -C           skip file creation\n");
+	printf("  -E           exit child on IO error\n");
 	exit(0);
 }
 
@@ -569,7 +582,7 @@ int main(int argc, char * const argv[])
 	struct stat st;
 
 	/* parse command-line options */
-	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:AhC")) != -1) {
+	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:AhCE")) != -1) {
 		switch (opt){
 		case 'L':
 			options.use_lease = true;
@@ -601,6 +614,9 @@ int main(int argc, char * const argv[])
 		case 't':
 			options.timelimit = atoi(optarg);
 			break;
+		case 'E':
+			options.exit_child_on_error = true;
+			break;
 		default:
 			usage();
 			break;
@@ -611,7 +627,8 @@ int main(int argc, char * const argv[])
 		printf("ERROR: you must invoke as smbd to use leases or share modes - use a symlink\n");
 		exit(1);
 	}
-	
+
+	setlinebuf(stdout);	
 
 	argv += optind;
 	argc -= optind;
