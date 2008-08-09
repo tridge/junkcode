@@ -1,0 +1,57 @@
+This is an implementation of a tsig-gss dynamic dns update client. It
+has been tested against windows 2000 servers using MIT kerberos and
+des-cbc-crc kerberos tickets.
+
+Setup
+-----
+
+Download the Net-DNS package from http://www.net-dns.org/. Make sure
+you grab at least the October 15 2002 CVS snapshot. To see if you have
+the right version, it must contain a file called TKEY.pm. 
+
+You will also need the GSSAPI-0.12 package from
+http://search.cpan.org/author/PGUEN/GSSAPI-0.12/ and you will need the
+MIT kerberos and MIT gssapi libraries installed.
+
+On debian you need to install the following packages:
+
+  libnet-dns-perl
+  libgssapi-perl
+  krb5-user
+
+Kerberos setup
+--------------
+
+Here is a sample /etc/krb5.conf that works for me:
+
+  [realms]
+	VNET2.HOME.SAMBA.ORG = {
+	     kdc = win2000.vnet2.home.samba.org:88
+	}
+
+
+Getting a ticket
+----------------
+
+You need to use kinit to get an initial ticket in the domain you wish
+to update. For example:
+
+   kinit tridge@VNET2.HOME.SAMBA.ORG
+
+After you have a ticket use 'klist -e' to make sure you have it.
+
+Adding an A record
+------------------
+
+The following will add an A record for myhost.vnet2.home.samba.org
+with the given IP and TTL.
+
+  nsupdate-gss myhost vnet2.home.samba.org 192.168.2.241 36000
+
+A return value of 0 indicates success.
+
+
+Author
+------
+
+nsupdate-gss was written by Andrew Tridgell (tridge@samba.org).
