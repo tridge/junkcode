@@ -274,6 +274,7 @@ static void child_loadfile(struct child *child, const char *fname, unsigned fnum
 		if (options.exit_child_on_error) {
 			exit(1);
 		}
+		child->io_fail_count++;
 		return;
 	}
 
@@ -309,6 +310,7 @@ static void child_loadfile(struct child *child, const char *fname, unsigned fnum
 			if (options.exit_child_on_error) {
 				exit(1);
 			}
+			child->io_fail_count++;
 			break;
 		}
 	}
@@ -375,12 +377,16 @@ static void child_getoffline(struct child *child, const char *fname)
 		if (options.exit_child_on_error) {
 			exit(1);
 		}
+		child->io_fail_count++;
+		return;
 	}
 	if (st.st_size != options.fsize) {
 		printf("Wrong file size for '%s' - %u\n", fname, (unsigned)st.st_size);
 		if (options.exit_child_on_error) {
 			exit(1);
 		}
+		child->io_fail_count++;
+		return;
 	}
 	if (st.st_blocks == 0) {
 		child->offline_count++;
@@ -408,12 +414,16 @@ static void child_migrate(struct child *child, const char *fname)
 		if (options.exit_child_on_error) {
 			exit(1);
 		}
+		child->io_fail_count++;
+		return;
 	}
 	if (st.st_size != options.fsize) {
 		printf("Wrong file size for '%s' - %u\n", fname, (unsigned)st.st_size);
 		if (options.exit_child_on_error) {
 			exit(1);
 		}
+		child->io_fail_count++;
+		return;
 	}
 	if (st.st_blocks == 0) {
 		/* already offline */
