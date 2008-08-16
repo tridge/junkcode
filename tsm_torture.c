@@ -61,6 +61,7 @@ static struct {
 	uid_t io_uid;
 	bool skip_file_creation;
 	bool exit_child_on_error;
+	bool die_on_error;
 } options = {
 	.use_lease     = false,
 	.use_sharemode = false,
@@ -72,6 +73,7 @@ static struct {
 	.use_aio       = false,
 	.skip_file_creation = false,
 	.exit_child_on_error = false,
+	.die_on_error = false,
 };
 
 static pid_t parent_pid;
@@ -584,6 +586,7 @@ static void usage(void)
 	printf("  -A           use Posix async IO\n");
 	printf("  -C           skip file creation\n");
 	printf("  -E           exit child on IO error\n");
+	printf("  -D           die on error\n");
 	exit(0);
 }
 
@@ -594,7 +597,7 @@ int main(int argc, char * const argv[])
 	struct stat st;
 
 	/* parse command-line options */
-	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:AhCE")) != -1) {
+	while ((opt = getopt(argc, argv, "LSN:F:t:s:M:U:AhCED")) != -1) {
 		switch (opt){
 		case 'L':
 			options.use_lease = true;
@@ -627,6 +630,10 @@ int main(int argc, char * const argv[])
 			options.timelimit = atoi(optarg);
 			break;
 		case 'E':
+			options.exit_child_on_error = true;
+			break;
+		case 'D':
+			options.die_on_error = true;
 			options.exit_child_on_error = true;
 			break;
 		default:
@@ -709,7 +716,12 @@ int main(int argc, char * const argv[])
 
 	/* wait for the children to finish */
 	for (i=0;i<options.nprocesses;i++) {
-		while (waitpid(-1, 0, 0) != 0 && errno != ECHILD) ;
+		int status;
+		while (waitpid(-1, &status, 0) != 0 && errno != ECHILD) ;
+		if (WEXITSTATUS(status) != 0 &&
+		    options.die_on_error) {
+			exit(1);
+		}
 	}	
 
 	return 0;
