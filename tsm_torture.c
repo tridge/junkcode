@@ -79,6 +79,7 @@ static pid_t parent_pid;
 enum offline_op {OP_LOADFILE, OP_SAVEFILE, OP_MIGRATE, OP_GETOFFLINE, OP_ENDOFLIST};
 
 struct child {
+	unsigned child_num;
 	unsigned offline_count;
 	unsigned online_count;
 	unsigned migrate_fail_count;
@@ -304,9 +305,9 @@ static void child_loadfile(struct child *child, const char *fname, unsigned fnum
 	}
 
 	for (i=0;i<options.fsize;i++) {
-		if (buf[i] != fnumber % 256) {
+		if (buf[i] != 1+(fnumber % 255)) {
 			printf("Bad data %u - expected %u for '%s'\n",
-			       buf[i], fnumber%256, fname);
+			       buf[i], 1+(fnumber%255), fname);
 			if (options.exit_child_on_error) {
 				exit(1);
 			}
@@ -348,7 +349,7 @@ static void child_savefile(struct child *child, const char *fname, unsigned fnum
 	}
 #endif
 
-	memset(buf, fnumber%256, options.fsize);
+	memset(buf, 1+(fnumber%255), options.fsize);
 
 	if (options.use_aio) {
 		ret = pwrite_aio(fd, buf, options.fsize, 0);
@@ -447,6 +448,7 @@ static void child_migrate(struct child *child, const char *fname)
 	}
 	free(cmd);
 }
+
 
 /*
   main child loop
@@ -672,7 +674,7 @@ int main(int argc, char * const argv[])
 				exit(1);
 			}
 			ftruncate(fd, options.fsize);
-			memset(buf, i%256, options.fsize);
+			memset(buf, 1+(i%255), options.fsize);
 			if (write(fd, buf, options.fsize) != options.fsize) {
 				printf("Failed to write '%s'\n", fname);
 				exit(1);
@@ -693,6 +695,7 @@ int main(int argc, char * const argv[])
 		pid_t pid = fork();
 		if (pid == 0) {
 			children[i].pid = getpid();
+			children[i].child_num = i;
 			run_child(&children[i]);
 		} else {
 			children[i].pid = pid;
