@@ -26,7 +26,7 @@
 int open_socket_in(int type, int port, uint32 socket_addr);
 int open_socket_out(char *host, int port);
 double end_timer();
-void report_time(int total);
+void report_time(uint64_t total);
 void start_timer();
 void set_socket_options(int fd, char *options);
 

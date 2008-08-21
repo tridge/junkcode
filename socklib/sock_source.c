@@ -41,7 +41,7 @@ static int do_write(int fd, const char *buf, size_t size)
 static void server(int fd)
 {
 	char *buf;
-	int total=0;
+	uint64_t total=0;
 
 	signal(SIGPIPE, SIG_IGN);
 	

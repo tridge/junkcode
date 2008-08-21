@@ -8,7 +8,8 @@ static char *host="127.0.0.1";
 
 static void sender(void)
 {
-	int fd, total=0;
+	int fd;
+	uint64_t total=0;
 	char *buf;
 	
 	fd = open_socket_out(host, port);

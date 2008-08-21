@@ -242,7 +242,7 @@ double end_timer()
 	       (tp2.tv_usec - tp1.tv_usec)*1.0e-6);
 }
 
-void report_time(int total)
+void report_time(uint64_t total)
 {
 	printf("%.6g MB/sec\n", (total/(1.0e6))/end_timer());
 }
