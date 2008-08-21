@@ -10,6 +10,7 @@ static int port=7001;
 static int bufsize=0x10000;
 static char *host="127.0.0.1";
 static const char *outfile;
+static unsigned delay_per_packet;
 
 static void sender(void)
 {
@@ -47,6 +48,9 @@ static void sender(void)
 				exit(1);
 			}
 		}
+		if (delay_per_packet) {
+			usleep(delay_per_packet);
+		}
 		total += ret;
 		if (end_timer() > 2.0) {
 			report_time(total);
@@ -59,7 +63,7 @@ static void sender(void)
 
 static void usage(void)
 {
-	printf("-p port\n-t socket options\n-H host\n-b bufsize [-F outfile]\n\n");
+	printf("-p port\n-t socket options\n-H host\n-b bufsize [-F outfile] [-D delay]\n\n");
 }
 
 int main(int argc, char *argv[])
@@ -67,7 +71,7 @@ int main(int argc, char *argv[])
 	int opt;
 	extern char *optarg;
 
-	while ((opt = getopt (argc, argv, "p:t:H:b:hF:")) != EOF) {
+	while ((opt = getopt (argc, argv, "p:t:H:b:hF:D:")) != EOF) {
 		switch (opt) {
 		case 'p':
 			port = strtol(optarg, NULL, 0);
@@ -83,6 +87,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'F':
 			outfile = optarg;
+			break;
+		case 'D':
+			delay_per_packet = strtoul(optarg, NULL, 0);
 			break;
 
 		case 'h':
