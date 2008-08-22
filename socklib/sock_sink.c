@@ -49,7 +49,7 @@ static void sender(void)
 			}
 		}
 		if (delay_per_packet) {
-			usleep(delay_per_packet);
+			delay_loop(delay_per_packet);
 		}
 		total += ret;
 		if (end_timer() > 2.0) {

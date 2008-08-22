@@ -29,8 +29,5 @@ double end_timer();
 void report_time(uint64_t total);
 void start_timer();
 void set_socket_options(int fd, char *options);
-
-
-
-
+void delay_loop(unsigned usec);
 

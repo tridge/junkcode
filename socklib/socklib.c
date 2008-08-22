@@ -242,6 +242,18 @@ double end_timer()
 	       (tp2.tv_usec - tp1.tv_usec)*1.0e-6);
 }
 
+void delay_loop(unsigned usec)
+{
+	struct timeval t1, t2;
+	double t;
+	gettimeofday(&t1,NULL);
+	do {
+		gettimeofday(&t2,NULL);
+		t = ((t2.tv_sec - t1.tv_sec)*1.0e6 + 
+		     (t2.tv_usec - t1.tv_usec));
+	} while (t < usec);
+}
+
 void report_time(uint64_t total)
 {
 	printf("%.6g MB/sec\n", (total/(1.0e6))/end_timer());
