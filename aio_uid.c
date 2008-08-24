@@ -1,6 +1,29 @@
 /*
   test program to demonstrate race between AIO and setresuid()
+
   tridge@samba.org August 2008
+
+  The race condition is in setresuid(), which in glibc tries to be
+  smart about threads and change the euid of threads when the euid of
+  the main program changes. The problem is that this makes setresuid()
+  non-atomic, which means that if an IO completes during the complex
+  series of system calls that setresuid() becomes, then the thread
+  completing the IO may get -1/EPERM back from the rt_sigqueueinfo()
+  call that it uses to notify its parent of the completing IO. In that
+  case two things happen:
+
+    1) the signal is never delivered, so the caller never is told that
+    the IO has completed
+
+    2) if the caller polls for completion using aio_error() then it
+    will see a -1/EPERM result, rather than the real result of the IO
+
+  The simplest fix in existing code that mixes uid changing with AIO
+  (such as Samba) is to not use setresuid() and use setreuid()
+  instead, which in glibc doesn't try to play any games with the euid
+  of threads. That does mean that you will need to manually gain root
+  privileges before calling aio_read() or aio_write() to ensure that
+  the thread has permission to send signals to the main thread
  */
 
 #define _XOPEN_SOURCE 500
