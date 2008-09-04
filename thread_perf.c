@@ -117,7 +117,7 @@ static pthread_t thread_start(void *(*fn)(int), int id)
 	typedef void *(*thread_fn_t)(void *);
 	pthread_attr_init(&thread_attr);
 	pthread_attr_setdetachstate(&thread_attr, 0);
-	rc = pthread_create(&thread_id, &thread_attr, (thread_fn_t)fn, (void *)id);
+	rc = pthread_create(&thread_id, &thread_attr, (thread_fn_t)fn, (void *)(intptr_t)id);
 	pthread_attr_destroy(&thread_attr);
 
 	if (rc != 0) {
@@ -263,6 +263,37 @@ static void *test_malloc(int id)
 		}
 		for (i=1;i<NMALLOCS;i++) {
 			free(ptrs[i]);
+		}
+	}
+
+	barrier_wait(&barriers[1]);
+	return NULL;
+}
+
+/***********************************************************************
+  a simple setreuid speed test
+************************************************************************/
+static void *test_setreuid(int id)
+{
+	int i;
+	void *ptrs[NMALLOCS];
+
+	barrier_wait(&barriers[0]);
+	if (getuid() != 0) {
+		if (id == 0) {
+			printf("Skipping setreuid test for non-root user\n");
+		}
+		barrier_wait(&barriers[1]);
+		return NULL;
+	}
+
+
+	for (i=0;i<2000;i++) {
+		if (setreuid(-1, 1) != 0 ||
+		    setreuid(-1, 0) != 0) {
+			printf("setreuid failed: %s\n", strerror(errno));
+			barrier_wait(&barriers[1]);
+			return NULL;
 		}
 	}
 
@@ -515,6 +546,7 @@ int main(int argc, char *argv[])
 	} tests[] = {
 		{"noop", test_noop},
 		{"malloc", test_malloc},
+		{"setreuid", test_setreuid},
 		{"readwrite", test_readwrite},
 		{"stat", test_stat},
 		{"fstat", test_fstat},
