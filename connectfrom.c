@@ -2,7 +2,7 @@
   force TCP connections to come from a specific IP
 
   compile with:
-     gcc -o connectfrom.so -fPIC -shared -o connectfrom.so connectfrom.c
+     gcc -o connectfrom.so -fPIC -shared -o connectfrom.so connectfrom.c -ldl
 */
 
 #include <stdio.h>
