@@ -247,7 +247,7 @@ static double run_processes(int nprocs, void *(*fn)(int ))
 ************************************************************************/
 static void *test_malloc(int id)
 {
-#define NMALLOCS 300
+#define NMALLOCS 200
 	int i, j;
 	void *ptrs[NMALLOCS];
 
@@ -255,7 +255,7 @@ static void *test_malloc(int id)
 
 	for (j=0;j<500;j++) {
 		for (i=1;i<NMALLOCS;i++) {
-			ptrs[i] = malloc(i);
+			ptrs[i] = malloc(i*128);
 			if (!ptrs[i]) {
 				printf("malloc(%d) failed!\n", i);
 				exit(1);
@@ -310,7 +310,7 @@ static void *test_readwrite(int id)
 	int i;
 	int fd_in, fd_out;
 	/* we use less than 1 page to prevent page table games */
-	char buf[4095];
+	char buf[32];
 
 	barrier_wait(&barriers[0]);
 
@@ -321,7 +321,7 @@ static void *test_readwrite(int id)
 		exit(1);
 	}
 
-	for (i=0;i<20000;i++) {
+	for (i=0;i<100000;i++) {
 		if (read(fd_in, buf, sizeof(buf)) != sizeof(buf) ||
 		    write(fd_out, buf, sizeof(buf)) != sizeof(buf)) {
 			fprintf(stderr,"IO failed at loop %d\n", i);
