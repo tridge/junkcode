@@ -47,6 +47,14 @@ Results with the following defines:
   fcntl: 12.4272 secs
   ipc: 5.41895 secs
 
+  Linux 2.6.27 on Core-2-duo T61 thinkpad
+  fcntl: 0.718363 secs
+  ipc: 2.12952 secs
+
+  Linux 2.6.27 on Core-2-quad
+  fcntl: 0.718363 secs
+  ipc: 2.12952 secs
+  
  */
 
 #include <stdlib.h>
@@ -54,6 +62,7 @@ Results with the following defines:
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
