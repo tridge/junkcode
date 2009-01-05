@@ -289,6 +289,17 @@ or
 
 Any diagnostics messages should be self explanatory.
 
+EMACS
+-----
+
+If you use an Emacs-based email program then you should set the
+variable mail-interactive to t.  This means that the email program
+will notice when 'mail.runner sendmail' fails to queue a message,
+perhaps if mail.runner exits (with non-0 status) because another
+instance is already running (possibly doing 'mail.runner send').
+Otherwise it may look like 'mail.runner sendmail' has queued a
+message, but it has really been discarded!
+
 CONFIGURATION
 -------------
 
