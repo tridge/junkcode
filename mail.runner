@@ -211,6 +211,17 @@ mail_remote_send() {
     return 0
 }
 
+###############################
+# show the outgoing mail queue
+###############################
+mail_queue() {
+    for f in $HOME/$MAIL_DIR/mail.out.*.*; do
+        echo `basename $f`:
+        egrep '^(From|To|Subject):' $f | sed 's/^/      /'
+        echo
+    done
+}
+
 
 ###############################################################################
 # display help text
