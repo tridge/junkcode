@@ -26,7 +26,7 @@ my(%typemap) = (
 
 
 # parse the symbols into defined and undefined 
-for (my($i)=0; $i <= $#{@lines}; $i++) {
+for (my($i)=0; $i <= $#lines; $i++) {
 	my($line) = $lines[$i];
 	if ($line =~ /(.*):[a-f0-9]* ([TCD]) (.*)/) {
 		my($fname) = $1;
