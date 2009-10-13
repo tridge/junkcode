@@ -243,6 +243,19 @@ static void shift_it(int lnum, int to, int from)
 	}
 }
 
+/*
+  try to detect section boundaries
+ */
+int section_start(const char *line)
+{
+	char *p;
+	if (!isdigit(line[0])) return 0;
+	p = strchr(line, ' ');
+	if (!p) return 0;
+	if (strspn(line, "0123456789.") != (p-line)) return 0;
+	return 1;	
+}
+
 static const char *prefix = "BIT_";
 static int idl_format = 0;
 static int little_endian = 0;
@@ -274,8 +287,11 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 		if (line[strlen(line)-1] == '\n') {
 			line[strlen(line)-1] = 0;
 		}
+		if (line[0] == 0xC) {
+			memmove(&line[0], &line[1], strlen(line));
+		}
 
-		if (isdigit(line[0])) {
+		if (section_start(line)) {
 			/* a new section */
 			(*next_section) = strdup(line);
 			more_sections = 1;
@@ -429,19 +445,23 @@ try_right:
 					continue;
 				}
 				for (tpos = i+1; tpos<max_len; tpos++) {
-					if (lines[lnum][tpos] != ' ') {
-						/* already taken - give up going right */
-						break;
-					}
 					if (lines[0][tpos] != ' ') {
 						break;
 					}
 				}
-				if (tpos < max_len && lines[lnum][tpos] == ' ') {
-					shift_it(lnum, tpos, i);
-					continue;
+				if (tpos < max_len) {
+					if (lines[lnum][tpos] != ' ') {
+						if (lines[lnum][tpos+1] == ' ') {
+							shift_it(lnum, tpos+1, tpos);
+						}
+					}
+					if (lines[lnum][tpos] == ' ') {
+						shift_it(lnum, tpos, i);
+						continue;
+					}
 				}
-				printf("/* (line %d) Nowhere to put character at pos %d */\n", line_num, i);
+				printf("/* (line %d) Nowhere to put character '%c' at pos %d of subline %d */\n", 
+				       line_num, lines[lnum][i], i, lnum);
 				report();
 				return more_sections;
 			}
