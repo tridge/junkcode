@@ -211,6 +211,17 @@ static char *remove_spaces(const char *s)
 static int nlines = 0;
 static char lines[MAX_LINES][MAX_WIDTH];
 
+static void fatal(void)
+{
+	int i;
+	printf("/* fatal error on line %d\n", line_num);
+	for (i=0; i<nlines; i++) {
+		printf("   line[%d]: %s\n", i, lines[i]);
+	}
+	printf("*/\n");
+	exit(1);
+}
+
 static void shift_it(int lnum, int to, int from)
 {
 	int i;
@@ -219,7 +230,7 @@ static void shift_it(int lnum, int to, int from)
 		if (lines[i][from] == ' ') break;
 		if (lines[i][to] != ' ') {
 			printf("/* (line %d) Non-empty to position at line %d posn %d\n */", line_num, i, to);
-			exit(1);
+			fatal();
 		}
 		lines[i][to] = lines[i][from];
 		lines[i][from] = ' ';
@@ -233,12 +244,14 @@ static int little_endian = 0;
 static int process_bitmap(const char *comment, FILE *f, char **next_section)
 {
 	char *p;
-	int i;
+	int i, lnum;
 	int max_len = 0;
 	int bitpos;
 	int in_mappings = 0;
 	int more_sections = 0;
+	int this_one_little_endian = little_endian;
 
+	memset(lines, 0, sizeof(lines));
 	num_mappings = 0;
 	nlines = 0;
 	longest_mapping = 0;
@@ -257,6 +270,10 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 			(*next_section) = strdup(line);
 			more_sections = 1;
 			break;
+		}
+
+		if (strstr(line, "little-endian byte order")) {
+			this_one_little_endian = 1;
 		}
 
 		if (nlines == 0) {
@@ -312,7 +329,7 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 	}
 
 	/* normalise the 2nd line */
-	for (i=0; lines[1][i]; i++) {
+	for (i=0; lines[0][i]; i++) {
 		int tpos;
 
 		if (lines[0][i] == ' ' && lines[1][i] == ' ') continue;
@@ -331,7 +348,7 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 			}
 			if (tpos == max_len) {
 				printf("/* (line %d) no digit match at pos %d */\n", line_num, i);
-				exit(1);
+				fatal();
 			}
 			lines[0][i] = lines[0][tpos];
 			lines[0][tpos] = ' ';
@@ -363,12 +380,46 @@ try_right:
 			shift_it(1, i, tpos);
 			continue;
 		} else {
-			printf("/* (line %d) No match at position %d of line 1\n", line_num, i);
-			for (i=0; i<nlines; i++) {
-				printf("   line[%d]: %s\n", i, lines[i]);
+			printf("/* (line %d) No match at position %d of line 1 */\n", line_num, i);
+			fatal();
+		}
+	}
+
+	/* normalise the subsequent lines */
+	for (lnum=2; lnum<nlines; lnum++) {
+		for (i=0; lines[0][i]; i++) {
+			int tpos;
+			if (lines[0][i] == ' ' && lines[lnum][i] != ' ') {
+				/* a little lost character ... try to
+				   find it a home */
+				for (tpos = i-1; tpos>=0; tpos--) {
+					if (lines[lnum][tpos] != ' ') {
+						/* already taken - give up going left */
+						break;
+					}
+					if (lines[0][tpos] != ' ') {
+						break;
+					}
+				}
+				if (tpos >= 0 && lines[lnum][tpos] == ' ') {
+					shift_it(lnum, tpos, i);
+					continue;
+				}
+				for (tpos = i+1; tpos<max_len; tpos++) {
+					if (lines[lnum][tpos] != ' ') {
+						/* already taken - give up going right */
+						break;
+					}
+					if (lines[0][tpos] != ' ') {
+						break;
+					}
+				}
+				if (tpos < max_len && lines[lnum][tpos] == ' ') {
+					shift_it(lnum, tpos, i);
+					continue;
+				}
+				printf("/* (line %d) Nowhere to put character at pos %d */\n", line_num, i);
 			}
-			printf("*/\n");
-			exit(1);
 		}
 	}
 
@@ -379,6 +430,7 @@ try_right:
 		}
 		printf("*/\n");
 	}
+
 	/* print the bits */
 	bitpos = 0;
 	if (comment) {
@@ -398,14 +450,14 @@ try_right:
 			const char *mapped_name = map_name(t);
 			unsigned value;
 
-			if (little_endian) {
+			if (this_one_little_endian) {
 				int bpos, bnum = bitpos/8;
 				bpos = (bnum*8) + (7 - (bitpos%8));
 				value = (1U<<bpos);
 			} else {
 				value = (1U<<bitpos);
 			}
-			if (strcmp(t, "X") == 0) continue;
+			if (strcmp(t, "X") == 0 || strcmp(t, "0") == 0) continue;
 			if (idl_format) {
 				printf("%s%-*s = 0x%08x,\n", prefix, longest_mapping, mapped_name, value);
 			} else {
@@ -414,6 +466,7 @@ try_right:
 		}
 		bitpos++;
 	}
+	printf("\n");
 
 	return more_sections;
 }
