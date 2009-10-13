@@ -211,14 +211,20 @@ static char *remove_spaces(const char *s)
 static int nlines = 0;
 static char lines[MAX_LINES][MAX_WIDTH];
 
-static void fatal(void)
+static void report(void)
 {
 	int i;
-	printf("/* fatal error on line %d\n", line_num);
+	printf("/*\n");
 	for (i=0; i<nlines; i++) {
 		printf("   line[%d]: %s\n", i, lines[i]);
 	}
 	printf("*/\n");
+}
+
+static void fatal(void)
+{
+	printf("/* fatal error on line %d\n", line_num);
+	report();
 	exit(1);
 }
 
@@ -354,7 +360,8 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 			}
 			if (tpos == max_len) {
 				printf("/* (line %d) no digit match at pos %d */\n", line_num, i);
-				fatal();
+				report();
+				return more_sections;
 			}
 			lines[0][i] = lines[0][tpos];
 			lines[0][tpos] = ' ';
@@ -387,7 +394,8 @@ try_right:
 			continue;
 		} else {
 			printf("/* (line %d) No match at position %d of line 1 */\n", line_num, i);
-			fatal();
+			report();
+			return more_sections;
 		}
 	}
 
@@ -425,7 +433,8 @@ try_right:
 					continue;
 				}
 				printf("/* (line %d) Nowhere to put character at pos %d */\n", line_num, i);
-				fatal();
+				report();
+				return more_sections;
 			}
 		}
 	}
