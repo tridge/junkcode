@@ -246,6 +246,8 @@ static void shift_it(int lnum, int to, int from)
 static const char *prefix = "BIT_";
 static int idl_format = 0;
 static int little_endian = 0;
+static int big_endian = 0;
+static int auto_endian = 0;
 
 static int process_bitmap(const char *comment, FILE *f, char **next_section)
 {
@@ -256,6 +258,7 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 	int in_mappings = 0;
 	int more_sections = 0;
 	int this_one_little_endian = little_endian;
+	int this_one_big_endian = big_endian;
 
 	memset(lines, 0, sizeof(lines));
 	num_mappings = 0;
@@ -279,8 +282,14 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 			break;
 		}
 
-		if (strstr(line, "little-endian byte order")) {
+		if (auto_endian &&
+		    strstr(line, "little-endian byte order")) {
 			this_one_little_endian = 1;
+		}
+
+		if (auto_endian &&
+		    strstr(line, "big-endian byte order")) {
+			this_one_big_endian = 1;
 		}
 
 		if (nlines == 0) {
@@ -470,6 +479,8 @@ try_right:
 				int bpos, bnum = bitpos/8;
 				bpos = (bnum*8) + (7 - (bitpos%8));
 				value = (1U<<bpos);
+			} else if (this_one_big_endian) {
+				value = (1U<<(31-bitpos));
 			} else {
 				value = (1U<<bitpos);
 			}
@@ -494,6 +505,7 @@ static void usage(void)
 	printf("Options:\n");
 	printf("\t-i           use IDL bitmap format\n");
 	printf("\t-L           use little-endian bit order\n");
+	printf("\t-A           attempt to auto-detect endianness\n");
 	printf("\t-p PREFIX    use the given prefix\n");
 	printf("\t-v           increase verbosity\n");
 }
@@ -504,7 +516,7 @@ int main(int argc, char * const argv[])
 	FILE *f;
 	char *sect_name = NULL;
 
-	while ((opt = getopt(argc, argv, "vip:Lh")) != -1) {
+	while ((opt = getopt(argc, argv, "vip:ALBh")) != -1) {
 		switch (opt) {
 		case 'p':
 			prefix = optarg;
@@ -517,6 +529,12 @@ int main(int argc, char * const argv[])
 			break;
 		case 'L':
 			little_endian = 1;
+			break;
+		case 'B':
+			big_endian = 1;
+			break;
+		case 'A':
+			auto_endian = 1;
 			break;
 		default:
 			usage();
