@@ -258,6 +258,7 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 
 	while (fgets(lines[nlines], MAX_WIDTH-1, f)) {
 		char *line = lines[nlines];
+		int dummy;
 
 		line_num++;
 
@@ -283,11 +284,16 @@ static int process_bitmap(const char *comment, FILE *f, char **next_section)
 			}
 		}
 
+		if (sscanf(line, "%u / %u", &dummy, &dummy) == 2) {
+			continue;
+		}
+
 		/* detect the start of the descriptions */
 		for (i=0; line[i]; i++) {
 			if (line[i] != ' ' &&
 			    !isdigit(line[i]) &&
-			    !isupper(line[i])) {
+			    !isupper(line[i]) &&
+			    line[i] != '/') {
 				in_mappings = 1;
 				break;
 			}
@@ -419,6 +425,7 @@ try_right:
 					continue;
 				}
 				printf("/* (line %d) Nowhere to put character at pos %d */\n", line_num, i);
+				fatal();
 			}
 		}
 	}
