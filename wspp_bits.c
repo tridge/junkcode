@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <ctype.h>
 
 /*
   I'm desperate ... an attempt to create C #defines from WSPP bitmaps
@@ -160,7 +161,7 @@ static void add_mapping(char *line)
 	if (p == NULL) return;
 	*p = 0;
 	mappings[num_mappings].long_form = strdup(p+1);
-	for (p=line; *p == ' '; p++) ;
+	for (p=line; isspace(*p); p++) ;
 	mappings[num_mappings].short_form = strdup(p);
 	p = strchr(mappings[num_mappings].long_form, ')');
 	if (p == NULL) return;
@@ -213,7 +214,9 @@ static void usage(void)
 {
 	printf("wspp_bits [options] <file>\n");
 	printf("Options:\n");
-	printf("\t-i       use IDL bitmap format\n");
+	printf("\t-i           use IDL bitmap format\n");
+	printf("\t-L           use little-endian bit order\n");
+	printf("\t-p PREFIX    use the given prefix\n");
 }
 
 int main(int argc, char * const argv[])
@@ -225,15 +228,19 @@ int main(int argc, char * const argv[])
 	int idl_format = 0;
 	FILE *f;
 	int in_mappings = 0;
+	int little_endian = 0;
 	const char *prefix = "BIT_";
 
-	while ((opt = getopt(argc, argv, "ip:h")) != -1) {
+	while ((opt = getopt(argc, argv, "ip:Lh")) != -1) {
 		switch (opt) {
 		case 'p':
 			prefix = optarg;
 			break;
 		case 'i':
 			idl_format = 1;
+			break;
+		case 'L':
+			little_endian = 1;
 			break;
 		default:
 			usage();
@@ -260,8 +267,14 @@ int main(int argc, char * const argv[])
 			line[strlen(line)-1] = 0;
 		}
 
-		if (strchr(line, ':')) {
-			in_mappings = 1;
+		/* detect the start of the descriptions */
+		for (i=0; line[i]; i++) {
+			if (line[i] != ' ' &&
+			    !isdigit(line[i]) &&
+			    !isupper(line[i])) {
+				in_mappings = 1;
+				break;
+			}
 		}
 
 		if (in_mappings) {
@@ -348,7 +361,15 @@ try_right:
 		}
 		for (t = strtok(name, "/"); t; t=strtok(NULL, "/")) {
 			const char *mapped_name = map_name(t);
-			unsigned value = (1U<<bitpos);
+			unsigned value;
+
+			if (little_endian) {
+				int bpos, bnum = bitpos/8;
+				bpos = (bnum*8) + (7 - (bitpos%8));
+				value = (1U<<bpos);
+			} else {
+				value = (1U<<bitpos);
+			}
 			if (strcmp(t, "X") == 0) continue;
 			if (idl_format) {
 				printf("%s%-*s = 0x%08x,\n", prefix, longest_mapping, mapped_name, value);
