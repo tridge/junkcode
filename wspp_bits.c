@@ -137,6 +137,9 @@ This will produce:
 
 */
 
+static int line_num;
+static int verbose;
+
 #define MAX_MAPPINGS 100
 static int num_mappings;
 static struct {
@@ -150,7 +153,7 @@ static void add_mapping(char *line)
 	char *p;
 	
 	if (num_mappings == MAX_MAPPINGS) {
-		printf("too many mappings!\n");
+		printf("/* (%d) too many mappings! */\n", line_num);
 		exit(1);
 	}
 
@@ -189,6 +192,19 @@ static const char *map_name(const char *s)
 	return s;
 }
 
+static char *remove_spaces(const char *s)
+{
+	char *ret = strdup(s);
+	int i=0;
+	while (*s) {
+		if (!isspace(*s)) {
+			ret[i++] = *s;
+		}
+		s++;
+	}
+	return ret;
+}
+
 #define MAX_LINES 50
 #define MAX_WIDTH 200
 
@@ -202,7 +218,7 @@ static void shift_it(int lnum, int to, int from)
 	for (i=lnum; i<nlines; i++) {
 		if (lines[i][from] == ' ') break;
 		if (lines[i][to] != ' ') {
-			printf("Non-empty to position at line %d posn %d\n", i, to);
+			printf("/* (line %d) Non-empty to position at line %d posn %d\n */", line_num, i, to);
 			exit(1);
 		}
 		lines[i][to] = lines[i][from];
@@ -210,61 +226,44 @@ static void shift_it(int lnum, int to, int from)
 	}
 }
 
-static void usage(void)
-{
-	printf("wspp_bits [options] <file>\n");
-	printf("Options:\n");
-	printf("\t-i           use IDL bitmap format\n");
-	printf("\t-L           use little-endian bit order\n");
-	printf("\t-p PREFIX    use the given prefix\n");
-}
+static const char *prefix = "BIT_";
+static int idl_format = 0;
+static int little_endian = 0;
 
-int main(int argc, char * const argv[])
+static int process_bitmap(const char *comment, FILE *f, char **next_section)
 {
 	char *p;
 	int i;
 	int max_len = 0;
-	int bitpos, opt;
-	int idl_format = 0;
-	FILE *f;
+	int bitpos;
 	int in_mappings = 0;
-	int little_endian = 0;
-	const char *prefix = "BIT_";
+	int more_sections = 0;
 
-	while ((opt = getopt(argc, argv, "ip:Lh")) != -1) {
-		switch (opt) {
-		case 'p':
-			prefix = optarg;
-			break;
-		case 'i':
-			idl_format = 1;
-			break;
-		case 'L':
-			little_endian = 1;
-			break;
-		default:
-			usage();
-			exit(1);
-		}
-	}
-
-	argv += optind;
-	argc -= optind;
-
-	if (argc < 1) {
-		f = stdin;
-	} else {
-		f = fopen(argv[0], "r");
-		if (f == NULL) {
-			perror(argv[0]);
-			exit(1);
-		}
-	}
+	num_mappings = 0;
+	nlines = 0;
+	longest_mapping = 0;
 
 	while (fgets(lines[nlines], MAX_WIDTH-1, f)) {
 		char *line = lines[nlines];
+
+		line_num++;
+
 		if (line[strlen(line)-1] == '\n') {
 			line[strlen(line)-1] = 0;
+		}
+
+		if (isdigit(line[0])) {
+			/* a new section */
+			(*next_section) = strdup(line);
+			more_sections = 1;
+			break;
+		}
+
+		if (nlines == 0) {
+			/* discard preamble lines */
+			if (strncmp(remove_spaces(line), "0123456789", 10) != 0) {
+				continue;
+			}
 		}
 
 		/* detect the start of the descriptions */
@@ -301,6 +300,10 @@ int main(int argc, char * const argv[])
 		}
 	}
 
+	if (nlines < 2) {
+		return more_sections;
+	}
+
 	/* pad lines with spaces if needed */
 	for (i=0; i<nlines; i++) {
 		if (strlen(lines[i]) < max_len) {
@@ -312,11 +315,29 @@ int main(int argc, char * const argv[])
 	for (i=0; lines[1][i]; i++) {
 		int tpos;
 
-		if (lines[0][i] == ' ') continue;
-		if (lines[1][i] != ' ') {
+		if (lines[0][i] == ' ' && lines[1][i] == ' ') continue;
+
+		if (lines[0][i] != ' ' && lines[1][i] != ' ') {
 			/* already aligned */
 			continue;
 		}
+
+		if (lines[0][i] == ' ') {
+			/* we need to shift the next digit left */
+			for (tpos = i+1; tpos<max_len; tpos++) {
+				if (lines[0][tpos] != ' ') {
+					break;
+				}
+			}
+			if (tpos == max_len) {
+				printf("/* (line %d) no digit match at pos %d */\n", line_num, i);
+				exit(1);
+			}
+			lines[0][i] = lines[0][tpos];
+			lines[0][tpos] = ' ';
+			continue;
+		}
+
 		/* now we need to look for the missing tag either to
 		 * the left or right. Try left first */
 		for (tpos = i-1; tpos>=0; tpos--) {
@@ -342,13 +363,27 @@ try_right:
 			shift_it(1, i, tpos);
 			continue;
 		} else {
-			printf("No match at position %d of line 1\n", i);
+			printf("/* (line %d) No match at position %d of line 1\n", line_num, i);
+			for (i=0; i<nlines; i++) {
+				printf("   line[%d]: %s\n", i, lines[i]);
+			}
+			printf("*/\n");
 			exit(1);
 		}
 	}
 
+	if (verbose) {
+		printf("/* (line %d): \n", line_num); 
+		for (i=0; i<nlines; i++) {
+			printf("   line[%d]: %s\n", i, lines[i]);
+		}
+		printf("*/\n");
+	}
 	/* print the bits */
 	bitpos = 0;
+	if (comment) {
+		printf("/* %s */\n", comment);
+	}
 	for (i=0; lines[0][i]; i++) {
 		int n;
 		char name[MAX_LINES+1] = "";
@@ -379,5 +414,61 @@ try_right:
 		}
 		bitpos++;
 	}
+
+	return more_sections;
+}
+
+
+static void usage(void)
+{
+	printf("wspp_bits [options] <file>\n");
+	printf("Options:\n");
+	printf("\t-i           use IDL bitmap format\n");
+	printf("\t-L           use little-endian bit order\n");
+	printf("\t-p PREFIX    use the given prefix\n");
+	printf("\t-v           increase verbosity\n");
+}
+
+int main(int argc, char * const argv[])
+{
+	int opt;
+	FILE *f;
+	char *sect_name = NULL;
+
+	while ((opt = getopt(argc, argv, "vip:Lh")) != -1) {
+		switch (opt) {
+		case 'p':
+			prefix = optarg;
+			break;
+		case 'i':
+			idl_format = 1;
+			break;
+		case 'v':
+			verbose++;
+			break;
+		case 'L':
+			little_endian = 1;
+			break;
+		default:
+			usage();
+			exit(1);
+		}
+	}
+
+	argv += optind;
+	argc -= optind;
+
+	if (argc < 1) {
+		f = stdin;
+	} else {
+		f = fopen(argv[0], "r");
+		if (f == NULL) {
+			perror(argv[0]);
+			exit(1);
+		}
+	}
+
+	while (process_bitmap(sect_name, f, &sect_name)) ;
+
 	return 0;
 }
