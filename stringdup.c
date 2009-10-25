@@ -386,6 +386,8 @@ static int remove_duplicates(char **list, unsigned count)
 	if (num_hashes % 2)
 		num_hashes++;
 
+	printf("num_hashes=%d\n", num_hashes);
+
 	output_count = 0;
 	for (i = 0; i < count; i++) {
 		unsigned int len = strlen(list[i]), bits_set = 0;
@@ -456,8 +458,8 @@ static char *randstring(int len)
 int main(int argc, char *argv[])
 {
 	int count, nondup, i;
-	char **list, **list2;
-	int output_count, str_len;
+	char **orig, **list1, **list2;
+	int output_count1, output_count2, str_len;
 	double pctdup;
 
 	if (argc < 4) {
@@ -471,33 +473,41 @@ int main(int argc, char *argv[])
 	pctdup = strtod(argv[2], NULL);
 	str_len = strtoul(argv[3], NULL, 0);
 
-	list = malloc(sizeof(char *) * (count+1));
+	orig = malloc(sizeof(char *) * (count+1));
 	nondup = ((100 - pctdup)/100.0)*count;
 	if (nondup == 0) nondup = 1;
 
 	for (i=0; i<nondup; i++) {
-		list[i] = randstring(str_len);
+		orig[i] = randstring(str_len);
 	}
 	for (; i<count; i++) {
-		list[i] = list[random() % nondup];
+		orig[i] = orig[random() % nondup];
 	}
 
-	list2 = copy_list(list, count);
+	list1 = copy_list(orig, count);
 	start_timer();
-	output_count = remove_duplicates(list2, count);
-	if (output_count == -1) {
+	output_count1 = remove_duplicates(list1, count);
+	if (output_count1 == -1) {
 		exit(1);
 	}
-	printf("Removed %d duplicates from %d strings took %f usec\n", 
-	       count - output_count, count, end_timer() * 1.0e6);
+	printf("Removed %d duplicates from %d strings took %f usec (hashing)\n", 
+	       count - output_count1, count, end_timer() * 1.0e6);
+	qsort(list1, output_count1, sizeof(char *), string_cmp);
 
-	list2 = copy_list(list, count);
+	list2 = copy_list(orig, count);
 	start_timer();
-	output_count = remove_duplicates_qsort(list2, count);
-	if (output_count == -1) {
+	output_count2 = remove_duplicates_qsort(list2, count);
+	if (output_count2 == -1) {
 		exit(1);
 	}
 	printf("Removed %d duplicates from %d strings took %f usec (qsort)\n", 
-	       count - output_count, count, end_timer() * 1.0e6);
+	       count - output_count2, count, end_timer() * 1.0e6);
+
+	if (output_count1 != output_count2 ||
+	    memcmp(list1, list2, output_count1*sizeof(char *)) != 0) {
+		printf("output mismatch!\n");
+		exit(1);
+	}
+
 	return 0;
 }
