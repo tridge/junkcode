@@ -1,0 +1,11 @@
+
+# config for network_backup.sh
+
+BACKUP_SERVER="192.168.100.249"
+SERVER=bogart
+EXCLUDE_FILE=/opt/rsync_backup/excludes
+NUM_INCREMENTAL=3
+FILESYSTEMS="/ /home /opt /usr /var /boot"
+BANDWIDTH_LIMIT=5000
+TIMEOUT=3600
+NOTIFY_LIST="tridge@samba.org"
