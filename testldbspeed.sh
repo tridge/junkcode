@@ -7,6 +7,8 @@ usage: testldbspeed.sh DEVICE FSTYPE MNTOPTIONS MNTPOINT LDBTEST
 example usage:
 
   testldbspeed.sh /dev/sda6 ext3 "-o barrier=1" /mnt/ldbtest "/home/tridge/samba/git/combined/source4/bin/ldbtest -H test.ldb --num-records=200 --num-searches=10"
+
+  testldbspeed.sh /dev/sda6 ext4 "-o barrier=0" /mnt/ldbtest "/home/tridge/samba/git/combined/source4/bin/tdbtorture -t -n 1"
 EOF
     exit 1
 }
