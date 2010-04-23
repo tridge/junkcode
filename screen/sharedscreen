@@ -1,0 +1,1 @@
+screen -c /dev/null -x -R shared -e '^|^|' screen -x -R private

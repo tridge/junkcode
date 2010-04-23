@@ -14,47 +14,19 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <signal.h>
 
-#define MAX(a,b) ((a)>(b)?(a):(b))
-
-/* open a socket to a remote host with the specified port */
-static int open_socket_out(const char *host, int port)
+static void get_address(const char *host, struct in_addr *addr)
 {
-	struct sockaddr_in sock_out;
-	int res;
-	struct hostent *hp;  
-	struct in_addr addr;
-
-	res = socket(PF_INET, SOCK_DGRAM, 0);
-	if (res == -1) {
-		return -1;
-	}
-
-	if (inet_pton(AF_INET, host, &addr) > 0) {
-		memcpy(&sock_out.sin_addr, &addr, sizeof(addr));
-	} else {
-		hp = gethostbyname(host);
-		if (!hp) {
-			fprintf(stderr,"unknown host %s\n", host);
-			return -1;
-		}
-		memcpy(&sock_out.sin_addr, hp->h_addr, hp->h_length);
-	}
-
-	sock_out.sin_port = htons(port);
-	sock_out.sin_family = PF_INET;
-
-	if (connect(res,(struct sockaddr *)&sock_out,sizeof(sock_out)) != 0) {
-		close(res);
-		fprintf(stderr,"failed to connect to %s (%s)\n", 
-			host, strerror(errno));
-		return -1;
-	}
-
-	return res;
+       if (inet_pton(AF_INET, host, addr) <= 0) {
+	       struct hostent *hp;
+               hp = gethostbyname(host);
+               if (!hp) {
+                       fprintf(stderr,"unknown host %s\n", host);
+		       exit(1);
+               }
+               memcpy(addr, hp->h_addr, hp->h_length);
+       }
 }
-
 
 /*
   open a socket of the specified type, port and address for incoming data
@@ -88,98 +60,75 @@ int open_socket_in(int port)
 	return res;
 }
 
-/* write to a file descriptor, making sure we get all the data out or
- * die trying */
-static void write_all(int fd, unsigned char *s, size_t n)
-{
-	usleep(1000);
-	while (n) {
-		int r;
-		r = write(fd, s, n);
-		if (r <= 0) {
-			exit(1);
-		}
-		s += r;
-		n -= r;
-	}
-}
-
-static void main_loop(int sock1, int sock2)
+static void main_loop(int sock, const char *host1, const char *host2)
 {
 	unsigned char buf[10240];
-	int i=0;
-	static struct sockaddr from;
-	static socklen_t fromlen = sizeof(from);
+	struct in_addr addr1, addr2;
+
+	get_address(host1, &addr1);
+	get_address(host2, &addr2);
 
 	while (1) {
 		fd_set fds;
 		int ret;
+		struct in_addr *addr;
 
 		FD_ZERO(&fds);
-		FD_SET(sock1, &fds);
-		FD_SET(sock2, &fds);
+		FD_SET(sock, &fds);
 
-		ret = select(MAX(sock1, sock2)+1, &fds, NULL, NULL, NULL);
+		ret = select(sock, &fds, NULL, NULL, NULL);
 		if (ret == -1 && errno == EINTR) continue;
 		if (ret <= 0) break;
 
-		if (FD_ISSET(sock1, &fds)) {
-			int n = recvfrom(sock1, buf, sizeof(buf), 0, &from, &fromlen);
+		if (FD_ISSET(sock, &fds)) {
+			static struct sockaddr_in from;
+			static socklen_t fromlen = sizeof(from);
+			int n = recvfrom(sock, buf, sizeof(buf), 0, 
+					 (struct sockaddr *)&from, &fromlen);
 			if (n <= 0) break;
 
-//			printf("out %d bytes\n", n);
-			write_all(sock2, buf, n);
-		}
+			if (from.sin_addr.s_addr == addr1.s_addr) {
+				addr = &addr2;
+			} else if (from.sin_addr.s_addr == addr2.s_addr) {
+				addr = &addr1;
+			} else {
+				printf("Unexpected packet from %s\n", inet_ntoa(from.sin_addr));
+				continue;
+			}
 
-		if (FD_ISSET(sock2, &fds)) {
-			int n = read(sock2, buf, sizeof(buf));
-			if (n <= 0) break;
-
-//			printf("in %d bytes\n", n);
-			sendto(sock1, buf, n, 0, &from, fromlen);
+			from.sin_addr = *addr;
+			ret = sendto(sock, buf, n, 0, (struct sockaddr *)&from, sizeof(from));
+			if (ret != n) {
+				printf("Failed to send %d bytes to %s - %d\n",
+				       n, inet_ntoa(*addr), ret);
+			}
 		}
 	}	
 }
 
-static int sig_alrm(int sig)
-{
-	return 0;
-}
-
 int main(int argc, char *argv[])
 {
-	int listen_port, dest_port;
-	char *host;
+	int listen_port;
+	char *host1, *host2;
 	int sock_in;
-	int sock_out;
-	struct sockaddr addr;
-	int in_addrlen = sizeof(addr);
-	char buf[8192];
 
 	if (argc < 4) {
-		printf("Usage: sockspy <inport> <host> <port>\n");
+		printf("Usage: udpproxy <port> <host1> <host2>\n");
 		exit(1);
 	}
 
 	listen_port = atoi(argv[1]);
-	host = argv[2];
-	dest_port = atoi(argv[3]);
+	host1 = argv[2];
+	host2 = argv[3];
 
 	sock_in = open_socket_in(listen_port);
-
 	if (sock_in == -1) {
 		fprintf(stderr,"sock on port %d failed - %s\n", 
 			listen_port, strerror(errno));
 		exit(1);
 	}
 
-	signal(SIGCHLD, SIG_IGN);
-
-	signal(SIGALRM, sig_alrm);
-
-	sock_out = open_socket_out(host, dest_port);
-
-	main_loop(sock_in, sock_out);
+	main_loop(sock_in, host1, host2);
 
 	return 0;
 }
