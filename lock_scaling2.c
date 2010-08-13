@@ -83,17 +83,20 @@ int main(int argc, char *argv[])
 		int count=0;
 		double t;
 
+		printf("setting up %d locks...\r", nlocks);
+		fflush(stdout);
 		setup_locks(fd, nlocks/2, nlocks);
 
 		start_timer();
 
 		while (end_timer() < 5.0) {
-			while ((t=end_timer()) < 1.0) {
+			double t1 = end_timer();
+			while ((t=end_timer()) < t1+1.0) {
 				brlock(fd, 2*nlocks, F_WRLCK, F_SETLKW);
 				brlock(fd, 2*nlocks, F_UNLCK, F_SETLKW);
 				count++;
 			}
-			printf("%7d %.1f locks/sec\r", nlocks, count/t);
+			printf("%7d %8.1f locks/sec     \r", nlocks, count/t);
 			fflush(stdout);
 		}
 		printf("%7d %8.1f locks/sec\n", nlocks, count/t);
