@@ -1,0 +1,24 @@
+To build a dependency list for a build do the following:
+
+1) compile depmaker
+
+2) put the path to depmaker.so in /etc/ld.so.preload
+
+3) build the package like this:
+
+   DEPMAKER=/tmp/package.dep buildcmd
+
+where "buildcmd" is whatever command you normally use to build the
+package
+
+4) run 
+   depmaker-rpm /tmp/package.dep 2> /dev/null
+or
+   depmaker-deb /tmp/package.dep 2> /dev/null
+
+depending on whether you have a rpm or deb based system
+
+
+----
+tridge@linuxcare.com
+October 2000

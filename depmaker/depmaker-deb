@@ -1,0 +1,8 @@
+#!/bin/sh
+
+DEPFILE=$1
+EXCLUDE="^COMMAND|^/tmp|^/var/tmp|^/proc/"
+PKGCMD="dpkg -S | cut -d':' -f1"
+
+grep -v $EXCLUDE < $DEPFILE | sort -u | xargs -i sh -c "test -e {} && echo {}" |
+    xargs $PKGCMD | sort -u
