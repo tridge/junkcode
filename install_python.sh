@@ -1,10 +1,6 @@
 #!/bin/sh
 
-# this script should be . included into the fns file
-# of any system that needs an update to its python install
-
-PATH=$HOME/python/bin:$PATH
-export PATH
+# this script downloads and installs python in $HOME/python
 
 VERSION="Python-2.6.5"
 
@@ -19,3 +15,7 @@ cd $VERSION || exit 1
 ./configure --prefix=$HOME/python --disable-ipv6 || exit 1
 make || exit 1
 make install || exit 1
+
+$HOME/python/bin/python -V
+
+echo 'Please put $HOME/python/bin in your $PATH'
