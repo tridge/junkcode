@@ -8,9 +8,7 @@
 
 static void usage(void)
 {
-	printf("
-timed_command <time> <command>
-");
+	printf("timed_command <time> <command>\n");
 }
 
 int main(int argc, char *argv[])
