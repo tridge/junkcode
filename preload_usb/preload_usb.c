@@ -23,7 +23,7 @@
 #include <linux/usbdevice_fs.h>
 
 static int usb_fd = -1;
-static const char *usb_path = "/dev/vboxusb/005/0";
+static const char *usb_path = "/dev/vboxusb";
 
 #define LOG_NAME "/tmp/usb.log"
 
@@ -133,7 +133,8 @@ int ioctl(int fd, unsigned long int cmd, ...)
 
 	ret = real_ioctl(fd, cmd, arg);
 
-	if (ret == 0 && fd == usb_fd && cmd == USBDEVFS_REAPURBNDELAY && arg != NULL) {
+	if (ret == 0 && fd == usb_fd && 
+	    (cmd == USBDEVFS_REAPURBNDELAY) && arg != NULL) {
 		struct usbdevfs_urb *urb = *(struct usbdevfs_urb **)arg;
 		uint8_t *data = urb->buffer;
 		uint8_t newdata[14];
@@ -143,6 +144,10 @@ int ioctl(int fd, unsigned long int cmd, ...)
 			logit("actual_length=%u\n", urb->actual_length);
 			return ret;
 		}
+		for (i=0;i<urb->actual_length;i++) {
+			logit("%02X ", data[i]);
+		}
+		logit("\n");
 		df = fopen("/tmp/usb.data", "r");
 		if (df == NULL) {
 			return ret;
@@ -156,10 +161,6 @@ int ioctl(int fd, unsigned long int cmd, ...)
 			newdata[i] = v;
 		}
 		fclose(df);
-		for (i=0;i<urb->actual_length;i++) {
-			logit("%02X ", data[i]);
-		}
-		logit("\n");
 		memcpy(urb->buffer, newdata, sizeof(newdata));
 		logit("(%4u) replaced actual_length=%u\n", getpid(), urb->actual_length);
 	}
