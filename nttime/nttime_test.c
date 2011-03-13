@@ -4,6 +4,7 @@
 #include <sys/time.h>
 
 typedef uint64_t NTTIME;
+
 typedef struct {
 	uint64_t t;
 } NTTIME_s;
