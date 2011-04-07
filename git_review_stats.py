@@ -47,5 +47,5 @@ keys = stats.keys()
 keys = sorted(keys, key=lambda author: -stats[author].review_pct())
 for author in keys:
     s = stats[author]
-    print("%4.1f %4u %4u %s" % (s.review_pct(), s.reviewed_count, s.commit_count, s.name))
+    print("%5.1f%% %4u %4u %s" % (s.review_pct(), s.reviewed_count, s.commit_count, s.name))
     
