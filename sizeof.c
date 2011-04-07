@@ -17,4 +17,5 @@ main()
         printf("ino_t : %d\n", sizeof(ino_t));
         printf("float : %d\n", sizeof(float));
         printf("double : %d\n", sizeof(double));
+        printf("pid_t : %d\n", sizeof(pid_t));
 }
