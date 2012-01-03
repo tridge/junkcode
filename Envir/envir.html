@@ -1,0 +1,141 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<title>EnviR Data</title>
+
+<script type="text/javascript">is_IE = false;</script>
+<script type="text/javascript" src="lib/strftime-min.js"></script>
+<script type="text/javascript" src="lib/rgbcolor.js"></script>
+<script type="text/javascript" src="lib/dygraph-canvas.js"></script>
+<script type="text/javascript" src="lib/dygraph.js"></script>
+<script type="text/javascript" src="lib/debug.js"></script>
+<script type="text/javascript" src="graphs.js"></script>
+<script type="text/javascript" src="lib/date-picker/js/datepicker.js"></script>
+<link href="lib/date-picker/css/datepicker.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<h1>EnviR Data</h1>
+
+<p>Tips:</p>
+<ul>
+<li>You can zoom a time range by dragging the mouse over the range you
+  are interested in.</li>
+<li>Double click to see the whole data set again.</li>
+<li>You can change the rolling average value using the selection box
+  in the bottom left corner of each graph.</li>
+<li>Use the green +/- icons to hide or show a particular graph</li>
+<li>Hover your mouse over the '!' annotations to view them</li>
+</ul>
+
+
+<form id="MainForm" method="get" onsubmit="return false;" action="">
+    <fieldset>
+      <p>Select Date: <input type="text" class="w8em format-d-m-y highlight-days-67
+      range-low-2010-10-05" name="pvdate" id="pvdate" value="" maxlength="10" /></p>
+     <label>Daily<input   name="period" type='radio' value=1 checked='1' onclick='change_period(1)' /></label>
+     <label>&nbsp;Weekly<input  name="period" type='radio' value=0 onclick='change_period(7)' /></label>
+     <label>&nbsp;Monthly<input name="period" type='radio' value=0 onclick='change_period(31)' /></label>
+     <label>&nbsp;Yearly<input name="period" type='radio' value=0 onclick='change_period(366)' /></label>
+     <label>&nbsp;Averaging<input type='text' id='averaging' value=1 size=2 onchange='change_averaging()' /></label>
+    </fieldset>
+</form>
+
+<div id="loading"><font color="red">Loading ....</font></div>
+<div id="nodata"><font color="red">No data available for chosen date</font></div>
+
+<script type="text/javascript">
+if (hashvars['debug'] == '1') {
+  enableDebug(true);
+}
+if (hashvars['date'] != undefined) {
+  pvdate = date_round(parse_date(hashvars['date']));
+} else {
+  pvdate = canberraDate();
+}
+first_data = date_round(parse_date("2010-10-07"));
+XML_directory = "../XML/";
+setup_datepicker();
+
+/*
+  return the list of XML files for date pvdate
+ */
+function xml_files() {
+  var list = new Array();
+  var oneday = 24*60*60*1000;
+  var start_date = pvdate.getTime() - (period_days-1)*oneday;
+  if (start_date < first_data.getTime()) {
+    start_date = first_data.getTime();
+  }
+  for (var d=0; d<period_days; d++) {
+    var day = new Date(start_date + (d*oneday));
+    if (day.getTime() > pvdate.getTime()) {
+      break;
+    }
+    var f = XML_directory + date_YMD(day) + ".xml";
+    if (d == 0) {
+      list = f;
+    } else {
+      list += ',' + f;
+    }
+  }
+  writeDebug("xml files: " + list);
+
+  return [ list ];
+}
+
+
+/*
+  show all the live data graphs
+ */
+function show_graphs() {
+  hide_div("nodata", true);
+
+  pvdate_base = pvdate.getTime();
+
+  graph_csv_files_func("Recent Data (W)",
+		       xml_files(),
+		       [ "msg.ch1.watts", "msg.ch2.watts", "msg.ch3.watts" ],
+		       null, null,
+		       { includeZero: true,
+			   averaging: false,
+			   maxtime: 15,
+			   series_base: [ 'Time', 'Chan1', 'Chan2', 'Chan3' ]});
+
+  function total(v) {
+    return pow = v[0] + v[1] + v[2];
+  }
+
+  graph_csv_files_func("Total (W)",
+		       xml_files(),
+		       [ "msg.ch1.watts", "msg.ch2.watts", "msg.ch3.watts" ],
+		       total, null,
+		       { includeZero: true,
+			 series_base: 'Total'});
+
+  graph_csv_files("Temperature (C)",
+		  xml_files(),
+		  "msg.tmpr",
+		  { includeZero: false });
+
+  graph_csv_files_func("Channels (W)",
+		       xml_files(),
+		       [ "msg.ch1.watts", "msg.ch2.watts", "msg.ch3.watts" ],
+		       null, null,
+		       { includeZero: true,
+			 series_base: [ 'Time', 'Chan1', 'Chan2', 'Chan3' ]});
+  load_annotations();
+
+  in_redraw = true;
+}
+
+show_graphs();
+</script>
+
+<p>
+<small>Thanks to <a href="http://danvk.org/dygraphs/">dygraphs</a> for
+  the graphs</small></p>
+
+</body>
+</html>
