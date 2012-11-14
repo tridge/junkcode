@@ -332,7 +332,7 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 #if PID_CHECK
 		ph->pid = getpid();
 #endif
-		memset(ph->used, 0, (ph->num_elements+7)/8);
+		memset(ph->used, 0, 4*((ph->num_elements+31)/32));
 		state.num_empty_pages--;
 		THREAD_UNLOCK(&state.mutex);
 		return;
