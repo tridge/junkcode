@@ -80,7 +80,9 @@
 #define BUCKET_NEXT_SIZE(prev) ((3*(prev))/2)
 #define PID_CHECK        0
 #define BUCKET_LOOKUP_SIZE 128
-#define ALLOC_PARANOIA   0
+#define ALLOC_PARANOIA   1
+
+#define ZERO_PAGES       0
 
 /* you can hard code the page size in the Makefile for more speed */
 #ifndef PAGE_SIZE
@@ -101,8 +103,11 @@
    to the ALLOC_ALIGNMENT */
 #define ALIGN_UP(ptr, type) ((ALIGN_COST(type)+(intptr_t)(ptr)))
 
-/* align to the start of the page, and return a type* */
+/* align down to the start of the page, and return a type* */
 #define ALIGN_DOWN_PAGE(ptr, type) (type *)((~(intptr_t)(PAGE_SIZE-1)) & (intptr_t)(ptr))
+
+/* align up to the start of the page, and return a type* */
+#define ALIGN_UP_PAGE(ptr, type) (type *)((~(intptr_t)(PAGE_SIZE-1)) & ((intptr_t)(ptr)+(PAGE_SIZE-1)))
 
 /* work out the aligned size of a page header, given the size of the used[] array */
 #define PAGE_HEADER_SIZE(n) ALIGN_SIZE(offsetof(struct page_header, used) + 4*(((n)+31)/32))
@@ -258,6 +263,12 @@ static void alloc_initialise(void)
 		       PAGE_SIZE) {
 			bs->elements_per_page--;
 		}
+
+#if 0
+		fprintf(stderr, "[%u] alloc_limit=%u elements_per_page=%u\n",
+			i, bs->alloc_limit, bs->elements_per_page);
+#endif
+
 		if (unlikely(bs->elements_per_page < 1)) {
 			break;
 		}
@@ -278,6 +289,47 @@ static void alloc_pid_handler(void)
 }
 #endif
 
+
+/*
+  allocate the specified number of pages. Return must be on a
+  PAGE_SIZE boundary
+ */
+static void *alloc_pages(uint32_t num_pages)
+{
+	void *ptr = mmap(0, num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, 
+			 MAP_ANON | MAP_PRIVATE, -1, 0);
+	void *ptr2;
+	ptrdiff_t pdiff;
+	if (likely(ptr == ALIGN_DOWN_PAGE(ptr, void))) {
+#if ZERO_PAGES
+		memset(ptr, 0, num_pages*PAGE_SIZE);
+#endif
+		return ptr;
+	}
+
+	/* the kernel is giving us unaligned pages. We are
+	   probably using a fake pagesize larger than real
+	   page size */
+	munmap(ptr, num_pages*PAGE_SIZE);
+
+	/* allocate twice as large, round up, then unmap at
+	   the ends */
+	ptr = mmap(0, 2*num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, 
+		   MAP_ANON | MAP_PRIVATE, -1, 0);
+	ptr2 = ALIGN_UP_PAGE(ptr, void);
+	pdiff = ptr2 - ptr;
+	if (ptr2 != ptr) {
+		munmap(ptr, pdiff);
+	}
+	if (pdiff != num_pages*PAGE_SIZE) {
+		munmap(num_pages*PAGE_SIZE + (uint8_t *)ptr2, num_pages*PAGE_SIZE - pdiff);
+	}
+#if ZERO_PAGES
+	memset(ptr2, 0, num_pages*PAGE_SIZE);
+#endif
+	return ptr2;
+}
+
 /*
   large allocation function - use mmap per allocation
  */
@@ -293,11 +345,15 @@ static void *alloc_large(size_t size)
 		return NULL;
 	}
 
-	lh = (struct large_header *)mmap(0, num_pages*PAGE_SIZE, PROT_READ | PROT_WRITE, 
-					 MAP_ANON | MAP_PRIVATE, -1, 0);
+	lh = (struct large_header *)alloc_pages(num_pages);
 	if (unlikely(lh == (struct large_header *)-1)) {
 		return NULL;
 	}
+#if ALLOC_PARANOIA
+	if (unlikely(lh != ALIGN_DOWN_PAGE(lh, struct large_header))) {
+		abort();
+	}
+#endif
 
 	lh->num_pages = num_pages;
 
@@ -339,12 +395,16 @@ static void alloc_refill_bucket(struct bucket_state *bs)
 	}
 
 	/* we need to allocate a new page */
-	ph = (struct page_header *)mmap(0, PAGE_SIZE, PROT_READ | PROT_WRITE, 
-					MAP_ANON | MAP_PRIVATE, -1, 0);
+	ph = (struct page_header *)alloc_pages(1);
 	if (unlikely(ph == (struct page_header *)-1)) {
 		THREAD_UNLOCK(&state.mutex);
 		return;
 	}
+#if ALLOC_PARANOIA
+	if (unlikely(ph != ALIGN_DOWN_PAGE(ph, struct page_header))) {
+		abort();
+	}
+#endif
 
 	/* we rely on mmap() giving us initially zero memory */
 	ph->bucket = bs;
@@ -788,8 +848,7 @@ static void *alloc_memalign(size_t boundary, size_t size)
 		return NULL;
 	}
 
-	mh->p = mmap(0, (extra_pages+mh->num_pages)*PAGE_SIZE, PROT_READ | PROT_WRITE, 
-		     MAP_ANON | MAP_PRIVATE, -1, 0);
+	mh->p = alloc_pages(extra_pages+mh->num_pages);
 	if (mh->p == (void *)-1) {
 		free(mh);
 		return NULL;
