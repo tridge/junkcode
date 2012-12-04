@@ -4,6 +4,24 @@ my $sub_src = shift;
 my $sub_dst = shift;
 
 #####################################################################
+# read a file into a string
+sub FileLoad($)
+{
+    my($filename) = shift;
+    local(*INPUTFILE);
+    open(INPUTFILE, $filename) || return undef;
+    my($saved_delim) = $/;
+    undef $/;
+    my($data) = <INPUTFILE>;
+    close(INPUTFILE);
+    $/ = $saved_delim;
+    if (!defined($data)) {
+	    return "";
+    }
+    return $data;
+}
+
+#####################################################################
 # write a string into a file
 sub FileSave($$)
 {
@@ -16,8 +34,12 @@ sub FileSave($$)
 }
 
 while (my $fname = shift) {
-	my $src = `cat $fname`;
+	my $src = FileLoad($fname);
 	my $replace = 0;
+	if (!defined($src)) {
+		print("Unable to open $fname\n");
+		next;
+	}
 	
 	while ((my $idx = index($src, $sub_src)) != -1) {
 		substr $src, $idx, length($sub_src), $sub_dst;
