@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SPI Reimbursement Request</title>
+<link rel="stylesheet" type="text/css" href="css/styles.css">
+<style>
+</style>
+</head>
+<body>
+  <img src="images/spi_header.jpg" alt="Software in the Public Interest, Inc."><p>
+    <h1>SPI Reimbursement Request</h1>
+    <p>
+      <form id="rform" method="post">
+        Name:&nbsp;<input type="text" width="120" name="name"><br>
+        E-mail:&nbsp;<input type="text" width="120" name="email"><br>
+        Address:&nbsp;<input type="text" width="120" name="address"><br>
+        Address (continued):&nbsp;<input type="text" width="120" name="address2"><br>
+        City:&nbsp;<input type="text" width="100" name="city"><br>
+        State:&nbsp;<input type="text" width="30" name="state"><br>
+        Postcode:&nbsp;<input type="text" width="20" name="postcode"><br>
+        Country:&nbsp;<input type="text" width="100" name="country"><br>
+        Currency (and amount):&nbsp;<input type="text" width="100" name="currency"><br><br>
+
+        Bank Name:&nbsp;<input type="text" width="100" name="bank"><br>
+        Account Number:&nbsp;<input type="text" width="100" name="account"><br>
+        IBAN:&nbsp;<input type="text" width="100" name="IBAN"><br>
+        Bank Branch Number (ABA routing number, BACS, CHAPS, Sort Code, Transit Number, BSB, etc)
+        <input type="text" width="100" name="BSB"><br>
+        SWIFT/BIC Code:<input type="text" width="100" name="swift"><br>
+        Bank Address:<input type="text" width="100" name="bank_address"><br>
+        Bank Address (continued):<input type="text" width="100" name="bank_address2"><br>
+        City:<input type="text" width="100" name="bank_city"><br>
+        State:<input type="text" width="100" name="bank_state"><br>
+        PostCode:<input type="text" width="100" name="bank_postcode"><br>
+        Country:<input type="text" width="100" name="bank_country"><br>
+
+        <p><input type="Submit" value="Generate PDF" onclick="generate_PDF();">
+      </form>
+  
+  
+  <script src='js/jspdf.debug.js'></script>
+  <script>
+
+    var layout = [
+        "name:Name",
+        "email:E-mail",
+        "address:Address",
+        "address2:Address (continued)",
+        "city:City",
+        "state:State",
+        "postcode:Postcode",
+        "country:Country",
+        "currency:Currency (and amount)",
+        "",
+        "bank:Bank Name",
+        "account:Account Number",
+        "IBAN:IBAN",
+        "BSB:Bank Branch Number (ABA routing number, BACS, CHAPS, Sort Code, Transit Number, BSB, etc):",
+        "swift:SWIFT/BIC Code",
+        "bank_address2:Bank Address",
+        "bank_city:City",
+        "bank_state:State",
+        "bank_postcode:PostCode",
+        "bank_country:Country",
+    ];
+    
+    function generate_PDF() {
+        var pdf = new jsPDF();
+        var form = document.getElementById('rform');
+
+        pdf.setFontSize(22);
+        
+        pdf.text(20, 10, "SPI Reimbursement Request");
+
+        pdf.setFontSize(9);
+
+        var lineinc = 5;
+        
+        var n = layout.length;        
+        for (var i=0; i<n; i++) {
+            var s = layout[i];
+            if (s == "") {
+                continue;
+            }
+            var a = s.split(':')
+            var vname = a[0];
+            var print_name = a[1];
+            if (vname in form.elements) {
+                var v = form.elements[vname].value;
+                var line = print_name + ": " + v;
+                pdf.text(20, 30+i*lineinc, line);
+            } else {
+                console.log("Missing: " + vname);
+            }
+        }
+        pdf.save('reimbursement_request.pdf');
+    }
+
+  </script>
+</body>
+</html>
