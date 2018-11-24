@@ -40,8 +40,8 @@ else
     HAVE_MAIL_RUNNER_CONFIG=0
 fi
 
-if [ ! -z "$MAIL_RUNNER_CONF" -a -r "$MAIL_RUNNER_CONF" ]; then
- . $MAIL_RUNNER_CONF
+if [ ! -z "$MAIL_RUNNER_CONF" ] && [ -r "$MAIL_RUNNER_CONF" ]; then
+ . "$MAIL_RUNNER_CONF"
 fi
 
 if [ -z "$MAIL_OUT_DIR" ]; then
@@ -76,10 +76,10 @@ exit_if_running() {
     if [ "$MAIL_NO_PIDOF" == 1 ]; then
 	return;
     fi
-    pids=`pidof -x -o $$ mail.runner`;
-    myid=`id -u`;
+    pids=$(pidof -x -o $$ mail.runner);
+    myid=$(id -u);
     for p in $pids; do
-	pid_owner=`stat -c"%u" /proc/$p/stat`
+	pid_owner=$(stat -c"%u" /proc/$p/stat)
 	if [ x$pid_owner = x$myid ]; then
 	    echo "mail.runner is already running - pid $p"
 	    exit 1
@@ -95,13 +95,13 @@ exit_if_running() {
 mail_send() {
     exit_if_running
 
-    list=`echo $HOME/$MAIL_OUT_DIR/mail.out.*.*[0-9]`
+    list=$(echo "$HOME"/"$MAIL_OUT_DIR"/mail.out.*.*[0-9])
     debug_msg 2 "";
     if [ "$list" = "" ]; then
 	debug_msg 2 "No messages to send";
 	return 0;
     fi
-    debug_msg 1 "Sending `echo $list | wc -w` messages";
+    debug_msg 1 "Sending $(echo $list | wc -w) messages";
 
     if rsync --rsync-path="$MAIL_RUNNER remote_deliver" \
 	--timeout=$MAIL_TIMEOUT $RSYNC_OPTS -e "$MAIL_SSH" \
@@ -123,19 +123,19 @@ mail_fetch() {
 	return 1;
     fi
 
-    if [ "`echo $HOME/$MAIL_DIR/mail.in.*.*`" = "" ]; then 
+    if [ "$(echo "$HOME"/"$MAIL_DIR"/mail.in.*.*)" = "" ]; then
 	debug_msg 1 "";
 	debug_msg 1 "No mail to retrieve";
 	return 1
     fi
 
-    for f in $HOME/$MAIL_DIR/mail.in.*.*; do
-	if cat $f | $PROCMAIL_COMMAND; then
+    for f in "$HOME"/"$MAIL_DIR"/mail.in.*.*; do
+	if $PROCMAIL_COMMAND < $f; then
 	    # it is useful seeing what mail is being processed
 	    if [ "$MAIL_FRM" = "1" ]; then
-		frm $f
+		frm "$f"
 	    fi
-	    rm -f $f
+	    rm -f "$f"
 	fi
     done
 
@@ -143,7 +143,7 @@ mail_fetch() {
     if [ "$MAIL_PROCMAIL_TAIL" = "1" ]; then
 	debug_msg 2 "";
 	debug_msg 2 "";
-	debug_msg 2 `tail $HOME/$MAIL_DIR/procmail.log`;
+	debug_msg 2 "$(tail $HOME/$MAIL_DIR/procmail.log)";
     fi
 
     return 0;
@@ -156,8 +156,8 @@ mail_fetch() {
 mail_sendmail() {
     msg=$HOME/$MAIL_DIR/mail.out.$RANDOM.$$
     tmp=$msg.tmp
-    cat > $tmp
-    /bin/mv $tmp $msg
+    cat > "$tmp"
+    /bin/mv "$tmp" $msg
     mail_sendmail_hook $msg
     exit 0
 }
@@ -175,9 +175,9 @@ mail_remote_deliver() {
 	return $status;
     fi
 
-    for f in $HOME/$MAIL_DIR/mail.out.*.*[0-9]; do
+    for f in "$HOME"/"$MAIL_DIR"/mail.out.*.*[0-9]; do
 	    if $SENDMAIL $SENDMAIL_OPTS < $f; then
-		rm -f $f
+		rm -f "$f"
 	    else
 		error_msg "Mail of $f failed $status";
 	    fi
@@ -191,23 +191,23 @@ mail_remote_send() {
     exit_if_running
 
     # atomically move mail from InBox to a temporary file
-    if test -s $MAIL_INBOX; then
-	movemail $MAIL_INBOX $HOME/$MAIL_DIR/mail.in.$RANDOM.$$ > /dev/null
+    if test -s "$MAIL_INBOX"; then
+	movemail "$MAIL_INBOX" "$HOME/$MAIL_DIR/mail.in.$RANDOM.$$" > /dev/null
     fi
 
     # by using an empty file we avoid error messages from rsync about not
     # having any files to transfer
-    if [ ! -f $HOME/$MAIL_DIR/EMPTY_FILE ]; then
-	touch $HOME/$MAIL_DIR/EMPTY_FILE
+    if [ ! -f "$HOME/$MAIL_DIR/EMPTY_FILE" ]; then
+	touch "$HOME/$MAIL_DIR/EMPTY_FILE"
     fi
 
-    rsync $* $HOME/$MAIL_DIR/mail.in.*.*
+    rsync $* "$HOME"/"$MAIL_DIR"/mail.in.*.*
     status=$?
     if [ $status != 0 ]; then
 	return $status;
     fi
 
-    rm -f $HOME/$MAIL_DIR/mail.in.*.*
+    rm -f "$HOME"/"$MAIL_DIR"/mail.in.*.*
     return 0
 }
 
@@ -215,9 +215,9 @@ mail_remote_send() {
 # show the outgoing mail queue
 ###############################
 mail_queue() {
-    for f in $HOME/$MAIL_DIR/mail.out.*.*; do
-        echo `basename $f`:
-        egrep '^(From|To|Subject):' $f | sed 's/^/      /'
+    for f in "$HOME"/"$MAIL_DIR"/mail.out.*.*; do
+        basename "$f"
+        grep -E '^(From|To|Subject):' "$f" | sed 's/^/      /'
         echo
     done
 }
@@ -390,7 +390,7 @@ EOF
 ###############################################################################
 
 # See if user is just after help, if so display and exit
-if [ "$1" = "-h" -o "$1" = "--help" -o $HAVE_MAIL_RUNNER_CONFIG == 0 ]; then
+if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $HAVE_MAIL_RUNNER_CONFIG == 0 ]; then
     mail_help
     exit 0
 fi
@@ -413,7 +413,7 @@ if [ $# != 0 ]; then
 
     cmd=$1
     shift
-    mail_$cmd $*
+    mail_"$cmd" $*
     exit $?
 fi
 
