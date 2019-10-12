@@ -1,6 +1,4 @@
-#include <stdio.h>
-
 main()
 {
-  printf("%d\n",time(NULL));
+	printf("%d\n", time(0));
 }
