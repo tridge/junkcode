@@ -18,6 +18,18 @@ ap.add_argument("--scale", type=float, default=2.0)
 args = ap.parse_args()
 
 viewer = mp_image.MPImage(title='OpenCV', width=200, height=200, auto_size=True)
+masked_view = mp_image.MPImage(title='Masked', width=200, height=200, auto_size=True)
+thresh_view = mp_image.MPImage(title='Thresh', width=200, height=200, auto_size=True)
+
+def mask_dark_gray(img):
+    '''return a mask for dark gray in image only'''
+
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    lower = numpy.array([10, 0, 0])
+    upper = numpy.array([250,110,60])
+
+    mask = cv2.inRange(hsv, lower, upper)
+    return mask
 
 def match_gate(cnt):
     '''return true if this contour could be a gate'''
@@ -45,22 +57,36 @@ def match_gate(cnt):
 
 def process_image_file(filename):
     img = cv2.imread(filename)
+    mask = mask_dark_gray(img)
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    kernel = numpy.ones((4, 4), numpy.uint8)
-    dilation = cv2.dilate(gray, kernel, iterations=1)
-    blur = cv2.GaussianBlur(dilation, (11, 11), 0)
 
-    thresh = cv2.adaptiveThreshold(blur, 255, 1, 1, 11, 2)
-    _, contours, _ = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    gray[mask != 255] = (255)
+    gray[mask == 255] = (0)
 
+    #kernel = numpy.ones((4, 4), numpy.uint8)
+    #dilation = cv2.dilate(gray, kernel, iterations=1)
+    #blur = cv2.GaussianBlur(dilation, (1, 1), 0)
+
+    img_masked = img.copy()
+    img_masked[mask != 255] = (255,255,255)
+    img_masked = cv2.resize(img_masked, (0,0), fx=args.scale, fy=args.scale)
+    masked_view.set_image(img_masked)
+
+    _, contours, _ = cv2.findContours(gray, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    gray = cv2.resize(gray, (0,0), fx=args.scale, fy=args.scale)
+    thresh_view.set_image(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+    
     coordinates = []
     for cnt in contours:
-        approx = cv2.approxPolyDP(cnt, 0.07 * cv2.arcLength(cnt, True), True)
-#        if not match_gate(approx):
-#            continue
-        cv2.drawContours(img, [approx], 0, (0, 0, 255), 2)
-    if args.scale != 1.0:
-        img = cv2.resize(img, (0,0), fx=args.scale, fy=args.scale)
+        approx = cv2.approxPolyDP(cnt, 0.12 * cv2.arcLength(cnt, True), True)
+        if not match_gate(approx):
+            #cv2.drawContours(img, [approx], 0, (255, 0, 0), 2)
+            pass
+        else:
+            cv2.drawContours(img, [approx], 0, (0, 0, 255), 2)
+    img = cv2.resize(img, (0,0), fx=args.scale, fy=args.scale)
     viewer.set_image(img,bgr=True)
 
 if os.path.isfile(args.dir):
