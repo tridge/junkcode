@@ -15,18 +15,25 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--dir", type=str, default=None, required=True)
 ap.add_argument("--delay", type=float, default=0.02)
 ap.add_argument("--scale", type=float, default=2.0)
+ap.add_argument("--avi", type=str, default=None)
+ap.add_argument("--debug", type=str, default=None)
 args = ap.parse_args()
 
 viewer = mp_image.MPImage(title='OpenCV', width=200, height=200, auto_size=True)
-masked_view = mp_image.MPImage(title='Masked', width=200, height=200, auto_size=True)
-thresh_view = mp_image.MPImage(title='Thresh', width=200, height=200, auto_size=True)
+masked_view = None
+thresh_view = None
+
+if args.debug:
+    masked_view = mp_image.MPImage(title='Masked', width=200, height=200, auto_size=True)
+    thresh_view = mp_image.MPImage(title='Thresh', width=200, height=200, auto_size=True)
+avi_out = None
 
 def mask_dark_gray(img):
     '''return a mask for dark gray in image only'''
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     lower = numpy.array([10, 0, 0])
-    upper = numpy.array([250,110,60])
+    upper = numpy.array([250,140,60])
 
     mask = cv2.inRange(hsv, lower, upper)
     return mask
@@ -71,12 +78,14 @@ def process_image_file(filename):
     img_masked = img.copy()
     img_masked[mask != 255] = (255,255,255)
     img_masked = cv2.resize(img_masked, (0,0), fx=args.scale, fy=args.scale)
-    masked_view.set_image(img_masked)
+    if masked_view is not None:
+        masked_view.set_image(img_masked)
 
     _, contours, _ = cv2.findContours(gray, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
     gray = cv2.resize(gray, (0,0), fx=args.scale, fy=args.scale)
-    thresh_view.set_image(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+    if thresh_view is not None:
+        thresh_view.set_image(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
     
     coordinates = []
     for cnt in contours:
@@ -89,6 +98,13 @@ def process_image_file(filename):
     img = cv2.resize(img, (0,0), fx=args.scale, fy=args.scale)
     viewer.set_image(img,bgr=True)
 
+    global avi_out
+    if args.avi is not None and avi_out is None:
+        frame_height,frame_width,_ = img.shape
+        avi_out = cv2.VideoWriter(args.avi,cv2.VideoWriter_fourcc('M','J','P','G'), 50, (frame_width,frame_height))
+    if avi_out is not None:
+        avi_out.write(img)
+
 if os.path.isfile(args.dir):
     print("Processing one file %s" % args.dir)
     process_image_file(args.dir)
@@ -99,3 +115,6 @@ else:
         print(f)
         process_image_file(f)
         time.sleep(args.delay)
+
+if avi_out is not None:
+    avi_out.release()
