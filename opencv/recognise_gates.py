@@ -9,6 +9,7 @@ import argparse
 import os
 import glob
 import time
+import socket
 from MAVProxy.modules.lib import mp_image
 
 ap = argparse.ArgumentParser()
@@ -17,6 +18,8 @@ ap.add_argument("--delay", type=float, default=0.02)
 ap.add_argument("--scale", type=float, default=2.0)
 ap.add_argument("--avi", type=str, default=None)
 ap.add_argument("--debug", type=str, default=None)
+ap.add_argument("--udp", type=int, default=-1)
+ap.add_argument("--saveimgs", action='store_true')
 args = ap.parse_args()
 
 viewer = mp_image.MPImage(title='OpenCV', width=200, height=200, auto_size=True)
@@ -38,7 +41,10 @@ def mask_dark_gray(img):
     mask = cv2.inRange(hsv, lower, upper)
     return mask
 
-def match_gate(cnt):
+left_count = 0
+right_count = 0
+
+def match_gate(img, cnt):
     '''return true if this contour could be a gate'''
     if len(cnt) != 3:
         return False
@@ -52,18 +58,41 @@ def match_gate(cnt):
     # sort by Y coordinate
     vertices.sort(key=lambda x: x[1])
     height = vertices[2][1] - vertices[0][1]
-    width1 = abs(vertices[1][0] - vertices[0][0])
-    width2 = abs(vertices[1][0] - vertices[2][0])
-    if height < 1 or width1 < 1 or width2 < 1:
+    width1 = vertices[1][0] - vertices[0][0]
+    width2 = vertices[1][0] - vertices[2][0]
+    if height < 1 or abs(width1) < 1 or abs(width2) < 1:
         return False
-    ratio1 = height / float(width1)
-    ratio2 = height / float(width2)
+    ratio1 = height / float(abs(width1))
+    ratio2 = height / float(abs(width2))
     if abs(ratio1 - 3.0) > 1.0 or abs(ratio2 - 3.0) > 1.0:
         return False
+
+    if not args.saveimgs:
+        return True
+
+    h,w,_ = img.shape
+    border = 10
+    global left_count, right_count
+
+    if width1 < 0:
+        left_count += 1
+        x1 = max(vertices[1][0]-border,0)
+        y1 = max(vertices[0][1]-border,0)
+        x2 = min(vertices[0][0]+border,w-1)
+        y2 = min(vertices[2][1]+border,h-1)
+        arrow = img[y1:y2,x1:x2,:]
+        cv2.imwrite('train/left%04u.jpg' % left_count, arrow)
+    else:
+        right_count += 1
+        x1 = max(vertices[0][0]-border,0)
+        y1 = max(vertices[0][1]-border,0)
+        x2 = min(vertices[1][0]+border,w-1)
+        y2 = min(vertices[2][1]+border,h-1)
+        arrow = img[y1:y2,x1:x2,:]
+        cv2.imwrite('train/right%04u.jpg' % right_count, arrow)
     return True
 
-def process_image_file(filename):
-    img = cv2.imread(filename)
+def process_image_file(img):
     mask = mask_dark_gray(img)
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -90,7 +119,7 @@ def process_image_file(filename):
     coordinates = []
     for cnt in contours:
         approx = cv2.approxPolyDP(cnt, 0.12 * cv2.arcLength(cnt, True), True)
-        if not match_gate(approx):
+        if not match_gate(img, approx):
             #cv2.drawContours(img, [approx], 0, (255, 0, 0), 2)
             pass
         else:
@@ -105,15 +134,26 @@ def process_image_file(filename):
     if avi_out is not None:
         avi_out.write(img)
 
-if os.path.isfile(args.dir):
+if args.udp > 0:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('', args.udp))
+    while True:
+        p = sock.recv(80000)
+        img = cv2.imdecode(numpy.fromstring(p, dtype=numpy.uint8), -1)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        process_image_file(img)
+elif os.path.isfile(args.dir):
     print("Processing one file %s" % args.dir)
-    process_image_file(args.dir)
+    img = cv2.imread(args.dir)
+    process_image_file(img)
 else:
     print("Processing directory %s" % args.dir)
     flist = sorted(glob.glob(os.path.join(args.dir, '*.jpg')))
     for f in flist:
         print(f)
-        process_image_file(f)
+        img = cv2.imread(f)
+        process_image_file(img)
         time.sleep(args.delay)
 
 if avi_out is not None:
