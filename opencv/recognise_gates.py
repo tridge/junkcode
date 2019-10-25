@@ -13,6 +13,9 @@ import socket
 from MAVProxy.modules.lib import mp_image
 from MAVProxy.modules.lib import multiproc
 
+if __name__ == "__main__":
+    multiproc.freeze_support()
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--dir", type=str, default=None)
 ap.add_argument("--delay", type=float, default=0.02)
@@ -136,8 +139,6 @@ def process_image_file(img):
         avi_out.write(img)
 
 if __name__ == "__main__":
-    multiproc.freeze_support()
-
     if args.udp > 0:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
