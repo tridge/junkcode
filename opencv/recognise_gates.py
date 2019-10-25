@@ -11,9 +11,10 @@ import glob
 import time
 import socket
 from MAVProxy.modules.lib import mp_image
+from MAVProxy.modules.lib import multiproc
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--dir", type=str, default=None, required=True)
+ap.add_argument("--dir", type=str, default=None)
 ap.add_argument("--delay", type=float, default=0.02)
 ap.add_argument("--scale", type=float, default=2.0)
 ap.add_argument("--avi", type=str, default=None)
@@ -134,27 +135,30 @@ def process_image_file(img):
     if avi_out is not None:
         avi_out.write(img)
 
-if args.udp > 0:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(('', args.udp))
-    while True:
-        p = sock.recv(80000)
-        img = cv2.imdecode(numpy.fromstring(p, dtype=numpy.uint8), -1)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        process_image_file(img)
-elif os.path.isfile(args.dir):
-    print("Processing one file %s" % args.dir)
-    img = cv2.imread(args.dir)
-    process_image_file(img)
-else:
-    print("Processing directory %s" % args.dir)
-    flist = sorted(glob.glob(os.path.join(args.dir, '*.jpg')))
-    for f in flist:
-        print(f)
-        img = cv2.imread(f)
-        process_image_file(img)
-        time.sleep(args.delay)
+if __name__ == "__main__":
+    multiproc.freeze_support()
 
-if avi_out is not None:
-    avi_out.release()
+    if args.udp > 0:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(('', args.udp))
+        while True:
+            p = sock.recv(80000)
+            img = cv2.imdecode(numpy.fromstring(p, dtype=numpy.uint8), -1)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            process_image_file(img)
+    elif os.path.isfile(args.dir):
+        print("Processing one file %s" % args.dir)
+        img = cv2.imread(args.dir)
+        process_image_file(img)
+    else:
+        print("Processing directory %s" % args.dir)
+        flist = sorted(glob.glob(os.path.join(args.dir, '*.jpg')))
+        for f in flist:
+            print(f)
+            img = cv2.imread(f)
+            process_image_file(img)
+            time.sleep(args.delay)
+
+    if avi_out is not None:
+        avi_out.release()
