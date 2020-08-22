@@ -8,6 +8,8 @@ parser = OptionParser("plot_esc.py [options]")
 parser.add_option("--poles", type=int, default=16, help="motor poles")
 parser.add_option("--plot1", default='Motor_RPM', help="plot1")
 parser.add_option("--plot2", default='Drive_Current', help="plot2")
+parser.add_option("--last-session", action='store_true', default=False, help="only last session")
+parser.add_option("--save", default=None, help="safe name")
 
 (opts, args) = parser.parse_args()
 
@@ -28,10 +30,11 @@ x = []
 p1 = []
 p2 = []
 fields = None
+filename = args[0]
 
 last_session = None
 session_ofs = 0
-lines = open(args[0],"r").readlines()
+lines = open(filename,"r").readlines()
 i = 0
 
 for line in lines:
@@ -53,6 +56,10 @@ for line in lines:
         x.append(t0 + session_ofs*30)
         p1.append(0)
         p2.append(0)
+        if opts.last_session:
+            x = []
+            p1 = []
+            p2 = []
     t = t0 + session_ofs * 30
     v1 = get_value(row, fields, opts.plot1)
     v2 = get_value(row, fields, opts.plot2)
@@ -70,6 +77,12 @@ ax2 = ax1.twinx()
 ax2.set_ylabel(opts.plot2)
 ax2.plot(x, p2, label=opts.plot2, color='tab:green')
 
-plt.title('ESC %s %s' % (opts.plot1, opts.plot2))
+if filename.endswith(".csv"):
+    filename = filename[:-4]
+plt.title('ESC %s %s\n%s' % (opts.plot1, opts.plot2, filename))
 fig.legend()
+if opts.save:
+    print("Saving %s" % opts.save)
+    plt.savefig(opts.save)
 plt.show()
+
