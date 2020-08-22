@@ -30,6 +30,7 @@ p2 = []
 fields = None
 
 last_session = None
+session_ofs = 0
 lines = open(args[0],"r").readlines()
 i = 0
 
@@ -45,13 +46,14 @@ for line in lines:
     session = get_value(row, fields, 'LogSession_ID')
     t0 = i / float(row[fields.index('Log_Frequency')])
     if last_session is not None and session != last_session:
-        x.append(t0 + last_session*30)
+        x.append(t0 + session_ofs*30)
         p1.append(0)
         p2.append(0)
-        x.append(t0 + session*30)
+        session_ofs += 30
+        x.append(t0 + session_ofs*30)
         p1.append(0)
         p2.append(0)
-    t = t0 + session * 30
+    t = t0 + session_ofs * 30
     v1 = get_value(row, fields, opts.plot1)
     v2 = get_value(row, fields, opts.plot2)
     p1.append(v1)
