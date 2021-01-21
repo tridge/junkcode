@@ -29,6 +29,8 @@ points = []
 min_pos = [None,None]
 max_pos = [None,None]
 
+histogram = {}
+
 def add_file(filename):
     '''add data from one file to map'''
     mlog = mavutil.mavlink_connection(filename)
@@ -36,6 +38,8 @@ def add_file(filename):
     GPS = None
     GPS2 = None
     CTUN = None
+
+    max_err = 0.0
 
     while True:
         try:
@@ -65,11 +69,21 @@ def add_file(filename):
                 max_pos[0] = GPS2.Lat
             if max_pos[1] is None or GPS2.Lng > max_pos[1]:
                 max_pos[1] = GPS2.Lng
-            dist = mavextra.distance_two(GPS,GPS2,True)
-            if dist < opts.threshold_min:
+            if abs((GPS.TimeUS - GPS2.TimeUS)*1.0e-6) > 0.25:
                 continue
+            dist = mavextra.distance_two(GPS,GPS2,True)
+            if dist > max_err:
+                max_err = dist
+            if dist < opts.threshold_min:
+                dist = opts.threshold_min
             err = dist / opts.threshold_max
             points.append((err,GPS2.Lat, GPS2.Lng))
+    hbin = int(max_err+0.5)
+    if not hbin in histogram:
+        histogram[hbin] = 1
+    else:
+        histogram[hbin] += 1
+    print(filename, hbin)
 
 for i in range(len(args)):
     filename = args[i]
@@ -117,4 +131,12 @@ for (err,lat,lon) in points:
     map.add_object(mp_slipmap.SlipCircle(str(err), 3,
                                          (lat, lon),
                                          opts.radius, get_color(err), linewidth=opts.linewidth))
-    
+
+print(histogram)
+keys = sorted(histogram.keys())
+maxkey = keys[-1]
+for k in range(maxkey+1):
+    if not k in histogram:
+        print("%2u, 0" % k)
+    else:
+        print("%2u, %u" % (k, histogram[k]))
