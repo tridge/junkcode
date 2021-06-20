@@ -7,13 +7,16 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stddef.h>
+#include <string.h>
 #include <stdbool.h>
-#include <termios.h>
+#include <sys/ioctl.h>
 #include <getopt.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <asm/ioctls.h>
+#include <asm/termbits.h>
 
 #include "mavhelper.h"
 
@@ -30,30 +33,41 @@ void comm_send_ch(mavlink_channel_t chan, uint8_t c)
 }
 
 /*
-  open up a serial port at 115200
+  open up a serial port at given baudrate
  */
-static int open_serial_115200(const char *devname)
+static int open_serial(const char *devname, uint32_t baudrate)
 {
     int fd = open(devname, O_RDWR|O_CLOEXEC);
     if (fd == -1) {
         return -1;
     }
-    struct termios options;
 
-    tcgetattr(fd, &options);
+    struct termios2 tc;
+    memset(&tc, 0, sizeof(tc));
+    if (ioctl(fd, TCGETS2, &tc) == -1) {
+        return -1;
+    }
+    
+    /* speed is configured by c_[io]speed */
+    tc.c_cflag &= ~CBAUD;
+    tc.c_cflag |= BOTHER;
+    tc.c_ispeed = baudrate;
+    tc.c_ospeed = baudrate;
 
-    cfsetispeed(&options, B115200);
-    cfsetospeed(&options, B115200);
+    tc.c_cflag &= ~(PARENB|CSTOPB|CSIZE);
+    tc.c_cflag |= CS8;
 
-    options.c_cflag &= ~(PARENB|CSTOPB|CSIZE);
-    options.c_cflag |= CS8;
+    tc.c_lflag &= ~(ICANON|ECHO|ECHOE|ISIG);
+    tc.c_iflag &= ~(IXON|IXOFF|IXANY);
+    tc.c_oflag &= ~OPOST;
+    
+    if (ioctl(fd, TCSETS2, &tc) == -1) {
+        return -1;
+    }
+    if (ioctl(fd, TCFLSH, TCIOFLUSH) == -1) {
+        return -1;
+    }
 
-    options.c_lflag &= ~(ICANON|ECHO|ECHOE|ISIG);
-    options.c_iflag &= ~(IXON|IXOFF|IXANY);
-    options.c_oflag &= ~OPOST;
-
-    tcsetattr(fd, TCSANOW, &options);
-    tcflush(fd, TCIOFLUSH);
     return fd;
 }
 
@@ -88,7 +102,7 @@ int main(int argc, const char *argv[])
         exit(1);
     }
 
-    dev_fd = open_serial_115200(devname);
+    dev_fd = open_serial(devname, 115200);
     if (dev_fd == -1) {
         printf("Failed to open %s\n", devname);
         exit(1);
