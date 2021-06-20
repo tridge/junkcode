@@ -1,0 +1,3 @@
+[submodule "mavlink_example/mavlink"]
+	path = mavlink_example/mavlink
+	url = git://github.com/ArduPilot/mavlink
