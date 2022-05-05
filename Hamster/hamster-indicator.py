@@ -62,7 +62,7 @@ def format_fact(f):
         ret += " [%s]" % ' '.join(f.tags)
     return ret
 
-def recent_facts(days=90):
+def recent_facts(days=365):
     now = datetime.datetime.now()
     facts = storage.get_facts(now - datetime.timedelta(days=days), now)
     facts.sort(key=lambda x: x.start_time, reverse=True)
@@ -115,5 +115,6 @@ def stop(_):
     storage.stop_tracking()
     
 if __name__ == "__main__":
+    print("hamster-indicator starting")
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     main()
