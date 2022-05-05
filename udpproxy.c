@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -14,18 +15,13 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/wait.h>
 
-static void get_address(const char *host, struct in_addr *addr)
+static double timestamp()
 {
-       if (inet_pton(AF_INET, host, addr) <= 0) {
-	       struct hostent *hp;
-               hp = gethostbyname(host);
-               if (!hp) {
-                       fprintf(stderr,"unknown host %s\n", host);
-		       exit(1);
-               }
-               memcpy(addr, hp->h_addr, hp->h_length);
-       }
+    struct timeval tval;
+    gettimeofday(&tval,NULL);
+    return tval.tv_sec + (tval.tv_usec*1.0e-6);
 }
 
 /*
@@ -60,75 +56,134 @@ int open_socket_in(int port)
 	return res;
 }
 
-static void main_loop(int sock, const char *host1, const char *host2)
+static void main_loop(int sock1, int sock2)
 {
 	unsigned char buf[10240];
-	struct in_addr addr1, addr2;
-
-	get_address(host1, &addr1);
-	get_address(host2, &addr2);
+        bool have_conn1=false;
+        bool have_conn2=false;
+        double last_pkt1=0;
+        double last_pkt2=0;
+        int fdmax = (sock1>sock2?sock1:sock2)+1;
 
 	while (1) {
-		fd_set fds;
-		int ret;
-		struct in_addr *addr;
+            fd_set fds;
+            int ret;
+            struct timeval tval;
+            double now = timestamp();
+            
+            if (have_conn1 && now - last_pkt1 > 10) {
+                break;
+            }
+            if (have_conn2 && now - last_pkt2 > 10) {
+                break;
+            }
+            
+            FD_ZERO(&fds);
+            FD_SET(sock1, &fds);
+            FD_SET(sock2, &fds);
 
-		FD_ZERO(&fds);
-		FD_SET(sock, &fds);
+            tval.tv_sec = 10;
+            tval.tv_usec = 0;
 
-		ret = select(sock, &fds, NULL, NULL, NULL);
-		if (ret == -1 && errno == EINTR) continue;
-		if (ret <= 0) break;
+            ret = select(fdmax, &fds, NULL, NULL, &tval);
+            if (ret == -1 && errno == EINTR) continue;
+            if (ret <= 0) break;
 
-		if (FD_ISSET(sock, &fds)) {
-			static struct sockaddr_in from;
-			static socklen_t fromlen = sizeof(from);
-			int n = recvfrom(sock, buf, sizeof(buf), 0, 
-					 (struct sockaddr *)&from, &fromlen);
-			if (n <= 0) break;
+            now = timestamp();
+                
+            if (FD_ISSET(sock1, &fds)) {
+                struct sockaddr_in from;
+                socklen_t fromlen = sizeof(from);
+                int n = recvfrom(sock1, buf, sizeof(buf), 0, 
+                                 (struct sockaddr *)&from, &fromlen);
+                if (n <= 0) break;
+                last_pkt1 = now;
+                if (!have_conn1) {
+                    if (connect(sock1, (struct sockaddr *)&from, fromlen) != 0) {
+                        break;
+                    }
+                    have_conn1 = true;
+                    printf("have conn1\n");
+                    fflush(stdout);
+                }
+                if (have_conn2) {
+                    if (send(sock2, buf, n, 0) != n) {
+                        break;
+                    }
+                }
+            }
 
-			if (from.sin_addr.s_addr == addr1.s_addr) {
-				addr = &addr2;
-			} else if (from.sin_addr.s_addr == addr2.s_addr) {
-				addr = &addr1;
-			} else {
-				printf("Unexpected packet from %s\n", inet_ntoa(from.sin_addr));
-				continue;
-			}
+            if (FD_ISSET(sock2, &fds)) {
+                struct sockaddr_in from;
+                socklen_t fromlen = sizeof(from);
+                int n = recvfrom(sock2, buf, sizeof(buf), 0, 
+                                 (struct sockaddr *)&from, &fromlen);
+                if (n <= 0) break;
+                last_pkt2 = now;
+                if (!have_conn2) {
+                    if (connect(sock2, (struct sockaddr *)&from, fromlen) != 0) {
+                        break;
+                    }
+                    have_conn2 = true;
+                    printf("have conn2\n");
+                    fflush(stdout);
+                }
+                if (have_conn1) {
+                    if (send(sock1, buf, n, 0) != n) {
+                        break;
+                    }
+                }
+            }
+	}
+}
 
-			from.sin_addr = *addr;
-			ret = sendto(sock, buf, n, 0, (struct sockaddr *)&from, sizeof(from));
-			if (ret != n) {
-				printf("Failed to send %d bytes to %s - %d\n",
-				       n, inet_ntoa(*addr), ret);
-			}
-		}
-	}	
+static void loop_proxy(int listen_port1, int listen_port2)
+{
+    while (true) {
+        printf("Opening sockets %d %d\n", listen_port1, listen_port2);
+        fflush(stdout);
+        int sock_in1 = open_socket_in(listen_port1);
+        int sock_in2 = open_socket_in(listen_port2);
+        if (sock_in1 == -1 || sock_in2 == -1) {
+            printf("sock on ports %d or %d failed - %s\n",
+                   listen_port1, listen_port2, strerror(errno));
+            fflush(stdout);
+            if (sock_in1 != -1) {
+                close(sock_in1);
+            }
+            if (sock_in2 != -1) {
+                close(sock_in2);
+            }
+            sleep(5);
+            return;
+        }
+        
+        main_loop(sock_in1, sock_in2);
+        close(sock_in1);
+        close(sock_in2);
+    }
 }
 
 int main(int argc, char *argv[])
 {
-	int listen_port;
-	char *host1, *host2;
-	int sock_in;
+    if (argc < 4) {
+        printf("Usage: udpproxy <baseport1> <baseport2> <count>\n");
+        exit(1);
+    }
 
-	if (argc < 4) {
-		printf("Usage: udpproxy <port> <host1> <host2>\n");
-		exit(1);
-	}
+    int listen_port1 = atoi(argv[1]);
+    int listen_port2 = atoi(argv[2]);
+    int count = atoi(argv[3]);
 
-	listen_port = atoi(argv[1]);
-	host1 = argv[2];
-	host2 = argv[3];
+    printf("Opening %d sockets\n", count);
+    fflush(stdout);
+    for (int i=0; i<count; i++) {
+        if (fork() == 0) {
+            loop_proxy(listen_port1+i, listen_port2+i);
+        }
+    }
+    int status=0;
+    wait(&status);
 
-	sock_in = open_socket_in(listen_port);
-	if (sock_in == -1) {
-		fprintf(stderr,"sock on port %d failed - %s\n", 
-			listen_port, strerror(errno));
-		exit(1);
-	}
-
-	main_loop(sock_in, host1, host2);
-
-	return 0;
+    return 0;
 }
