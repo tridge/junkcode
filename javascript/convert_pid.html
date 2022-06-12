@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ArduPilot Plane 4.1.x PID Calculator</title>
+</head>
+<h1>ArduPilot Plane 4.1.x PID Calculator</h1>
+
+The following form will help you convert PID values for fixed wing
+flight between ArduPilot plane 4.0.x and 4.1.x.
+<br>You can read more
+about the new PID system here:<br>
+
+ <a href="https://discuss.ardupilot.org/t/new-fixed-wing-pid-system-and-autotune">https://discuss.ardupilot.org/t/new-fixed-wing-pid-system-and-autotune</a>
+<p>
+Note that when you upgrade your firmware from 4.0.x to 4.1.x this
+conversion is done automatically. The form below is to help users
+manually convert from a parameter file.
+<p>
+ <hr>
+
+<body>
+<form id="PID" action="">
+<fieldset>
+  <legend>4.0.x Roll PID Values</legend>
+  Enter your old plane 4.0.x roll PID values
+	<p>
+                <label for="FF">RLL2SRV_FF</label>
+                <input id="rll_FF" name="FF" type="number" step="0.01" value="0.0"/>
+	</p>
+	<p>
+                <label for="P">RLL2SRV_P</label>
+                <input id="rll_P" name="P" type="number" step="0.01" value="1.0" />
+	</p>
+	<p>
+                <label for="I">RLL2SRV_I</label>
+                <input id="rll_I" name="I" type="number" step="0.01" value="0.3" />
+	</p>
+	<p>
+                <label for="D">RLL2SRV_D</label>
+                <input id="rll_D" name="D" type="number" step="0.01" value="0.08" />
+	</p>
+	<p>
+                <label for="TCONST">RLL2SRV_TCONST</label>
+                <input id="rll_TCONST" name="TCONST" type="number" step="0.01" value="0.5" />
+	</p>
+	<p>
+                <label for="IMAX">RLL2SRV_IMAX</label>
+                <input id="rll_IMAX" name="IMAX" type="number" step="1" value="3000" />
+	</p>
+</fieldset>
+<fieldset>
+  <legend>4.1.x Roll PID Values</legend>
+  These are the equivalent 4.1.x roll PID values
+	<p>
+                <label for="FF">RLL_RATE_FF</label>
+                <input id="new_rll_FF" name="FF" type="number" step="any"
+                value="0.345" readonly/>
+	</p>
+	<p>
+                <label for="P">RLL_RATE_P</label>
+                <input id="new_rll_P" name="P" type="number" step="any"
+                value="0.08" readonly />
+	</p>
+	<p>
+                <label for="I">RLL_RATE_I</label>
+                <input id="new_rll_I" name="I" type="number" step="any"
+                value="0.15" readonly />
+	</p>
+	<p>
+                <label for="D">RLL_RATE_D</label>
+                <input id="new_rll_D" name="D" type="number" step="any"
+                value="0.0" readonly/>
+	</p>
+	<p>
+                <label for="IMAX">RLL_RATE_IMAX</label>
+                <input id="new_rll_IMAX" name="IMAX" type="number"
+                step="any" value="0.66" readonly />
+	</p>
+	<p>
+                <label for="TCONST">RLL2SRV_TCONST</label>
+                <input id="new_rll_TCONST" name="TCONST" type="number"
+                step="any" value="0.5" readonly/>
+	</p>
+</fieldset>
+<hr>
+<fieldset>
+        <legend>4.0.x Pitch PID Values</legend>
+        Enter your old plane 4.0.x pitch PID values
+        <p>
+                <label for="FF">PTCH2SRV_FF</label>
+                <input id="ptch_FF" name="FF" type="number" step="0.01" value="0.0"/>
+	</p>
+	<p>
+                <label for="P">PTCH2SRV_P</label>
+                <input id="ptch_P" name="P" type="number" step="0.01" value="1.0" />
+	</p>
+	<p>
+                <label for="I">PTCH2SRV_I</label>
+                <input id="ptch_I" name="I" type="number" step="0.01" value="0.3" />
+	</p>
+	<p>
+                <label for="D">PTCH2SRV_D</label>
+                <input id="ptch_D" name="D" type="number" step="0.01" value="0.04" />
+	</p>
+	<p>
+                <label for="TCONST">PTCH2SRV_TCONST</label>
+                <input id="ptch_TCONST" name="TCONST" type="number" step="0.01" value="0.5" />
+	</p>
+	<p>
+                <label for="IMAX">PTCH2SRV_IMAX</label>
+                <input id="ptch_IMAX" name="IMAX" type="number" step="1" value="3000" />
+	</p>
+</fieldset>
+<fieldset>
+        <legend>4.1.x Pitch PID Values</legend>
+        These are the equivalent 4.1.x pitch PID values
+        <p>
+                <label for="FF">PTCH_RATE_FF</label>
+                <input id="new_ptch_FF" name="FF" type="number" step="any"
+                value="0.345" readonly/>
+	</p>
+	<p>
+                <label for="P">PTCH_RATE_P</label>
+                <input id="new_ptch_P" name="P" type="number" step="any"
+                value="0.08" readonly />
+	</p>
+	<p>
+                <label for="I">PTCH_RATE_I</label>
+                <input id="new_ptch_I" name="I" type="number" step="any"
+                value="0.15" readonly />
+	</p>
+	<p>
+                <label for="D">PTCH_RATE_D</label>
+                <input id="new_ptch_D" name="D" type="number" step="any"
+                value="0.0" readonly/>
+	</p>
+	<p>
+                <label for="IMAX">PTCH_RATE_IMAX</label>
+                <input id="new_ptch_IMAX" name="IMAX" type="number"
+                step="any" value="0.66" readonly />
+	</p>
+	<p>
+                <label for="TCONST">PTCH2SRV_TCONST</label>
+                <input id="new_ptch_TCONST" name="TCONST" type="number"
+                step="any" value="0.5" readonly/>
+	</p>
+</fieldset>
+</form>
+
+<script>
+  var form = document.getElementById("PID");
+  form.addEventListener("change", function() {
+      var FF = parseFloat(document.getElementById("rll_FF").value);
+      var P = parseFloat(document.getElementById("rll_P").value);
+      var I = parseFloat(document.getElementById("rll_I").value);
+      var D = parseFloat(document.getElementById("rll_D").value);
+      var TCONST = parseFloat(document.getElementById("rll_TCONST").value);
+      var IMAX = parseFloat(document.getElementById("rll_IMAX").value);
+      document.getElementById("new_rll_FF").value = (FF + Math.max((P - I * TCONST) * TCONST - D, 0)).toFixed(3);
+      document.getElementById("new_rll_P").value = D.toFixed(3);
+      document.getElementById("new_rll_I").value = (I * TCONST).toFixed(3);;
+      document.getElementById("new_rll_D").value = 0.0;
+      document.getElementById("new_rll_TCONST").value = TCONST.toFixed(3);
+      document.getElementById("new_rll_IMAX").value = (IMAX/4500.0).toFixed(2);
+
+      FF = parseFloat(document.getElementById("ptch_FF").value);
+      P = parseFloat(document.getElementById("ptch_P").value);
+      I = parseFloat(document.getElementById("ptch_I").value);
+      D = parseFloat(document.getElementById("ptch_D").value);
+      TCONST = parseFloat(document.getElementById("ptch_TCONST").value);
+      IMAX = parseFloat(document.getElementById("ptch_IMAX").value);
+      if (FF <= 0.0) {
+          I = Math.max(I, 0.15);
+      }
+      document.getElementById("new_ptch_FF").value = (FF + Math.max((P - I * TCONST) * TCONST - D, 0)).toFixed(3);
+      document.getElementById("new_ptch_P").value = D.toFixed(3);
+      document.getElementById("new_ptch_I").value = (I * TCONST).toFixed(3);;
+      document.getElementById("new_ptch_D").value = 0.0;
+      document.getElementById("new_ptch_TCONST").value = TCONST.toFixed(3);
+      document.getElementById("new_ptch_IMAX").value = (IMAX/4500.0).toFixed(2);
+  });
+</script>
+</body>
+</html>
