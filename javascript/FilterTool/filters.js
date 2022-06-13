@@ -281,8 +281,8 @@ var chart;
 function calculate_filter() {
     var sample_rate = get_form("GyroSampleRate");
     var filters = []
-    var freq_max = 150;
-    var samples = 50000;
+    var freq_max = get_form("MaxFreq");
+    var samples = 100000;
     var freq_step = 1;
     filters.push(new HarmonicNotchFilter(sample_rate,
                                          get_form("INS_HNTCH_ENABLE"),
@@ -307,6 +307,16 @@ function calculate_filter() {
     filters.push(new DigitalBiquadFilter(sample_rate,get_form("INS_GYRO_FILTER")));
     filters.push(new LPF_1P(sample_rate,get_form("FLTD")));
 
+    var num_notches = 0;
+    for (const f in filters) {
+        if ('notches' in filters[f]) {
+            num_notches += filters[f].notches.length;
+        }
+    }
+    samples /= (num_notches+1);
+    samples /= Math.max(1, freq_max/150.0);
+    // console.log("samples: " + samples)
+
     var attenuation = []
     var phase_lag = []
     var max_phase_lag = 0.0;
@@ -322,6 +332,7 @@ function calculate_filter() {
     if (chart) {
         chart.data.datasets[0].data = attenuation;
         chart.data.datasets[1].data = phase_lag;
+        chart.options.scales.xAxes[0].ticks.max = freq_max;
         chart.options.scales.yAxes[1].ticks.max = max_phase_lag;
         chart.update();
     } else {
