@@ -395,7 +395,7 @@ function calculate_filter() {
 
 function setCookie(c_name, value) {
     var exdate = new Date();
-    var exdays = 1;
+    var exdays = 365;
     exdate.setDate(exdate.getDate() + exdays);
     var c_value = escape(value) + ";expires=" + exdate.toUTCString();
     document.cookie = c_name + "=" + c_value + ";path=/";
