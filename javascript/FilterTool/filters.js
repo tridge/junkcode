@@ -320,12 +320,19 @@ function calculate_filter() {
     var attenuation = []
     var phase_lag = []
     var max_phase_lag = 0.0;
+    var phase_wrap = 0.0;
     for (freq=1; freq<=freq_max; freq++) {
         var v = run_filters(filters, freq, sample_rate, samples);
         attenuation.push({x:freq, y:v[0]});
-        phase_lag.push({x:freq, y:v[1]});
-        if (v[1] > max_phase_lag) {
-            max_phase_lag = v[1];
+        var phase = v[1] + phase_wrap;
+        if (phase < max_phase_lag-100) {
+            // we have wrapped
+            phase_wrap += 360.0;
+            phase += 360.0;
+        }
+        phase_lag.push({x:freq, y:-phase});
+        if (phase > max_phase_lag) {
+            max_phase_lag = phase;
         }
     }
     max_phase_lag = Math.ceil((max_phase_lag+10)/10)*10;
@@ -333,7 +340,8 @@ function calculate_filter() {
         chart.data.datasets[0].data = attenuation;
         chart.data.datasets[1].data = phase_lag;
         chart.options.scales.xAxes[0].ticks.max = freq_max;
-        chart.options.scales.yAxes[1].ticks.max = max_phase_lag;
+        chart.options.scales.yAxes[1].ticks.min = -max_phase_lag;
+        chart.options.scales.yAxes[1].ticks.max = 0;
         chart.update();
     } else {
         chart = new Chart("Attenuation", {
@@ -376,7 +384,7 @@ function calculate_filter() {
                             scaleLabel: { display: true, labelString: "Phase Lag(deg)" },
                             id: 'PhaseLag',
                             position: 'right',
-                            ticks: {min:0, max:max_phase_lag, stepSize:10}
+                            ticks: {min:-max_phase_lag, max:0, stepSize:10}
                         }
                     ],
                     xAxes: [
