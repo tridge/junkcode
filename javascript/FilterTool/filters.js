@@ -477,3 +477,90 @@ async function load_parameters(file) {
     }
     calculate_filter();
 }
+
+function fill_docs()
+{
+    var inputs = document.forms["params"].getElementsByTagName("input");
+    for (const v in inputs) {
+        var name = inputs[v].name;
+        var doc = document.getElementById(name + ".doc");
+        if (!doc) {
+            continue;
+        }
+        inputs[v].onchange = fill_docs;
+        var value = parseFloat(inputs[v].value);
+        if (name.endsWith("_ENABLE")) {
+            if (value >= 1) {
+                doc.innerHTML = "Enabled";
+            } else {
+                doc.innerHTML = "Disabled";
+            }
+        } else if (name.endsWith("_MODE")) {
+            switch (Math.floor(value)) {
+            case 0:
+                doc.innerHTML = "Fixed notch";
+                break;
+            case 1:
+                doc.innerHTML = "Throttle";
+                break;
+            case 2:
+                doc.innerHTML = "RPM Sensor 1";
+                break;
+            case 3:
+                doc.innerHTML = "ESC Telemetry";
+                break;
+            case 4:
+                doc.innerHTML = "Dynamic FFT";
+                break;
+            case 5:
+                doc.innerHTML = "RPM Sensor 2";
+                break;
+            default:
+                doc.innerHTML = "INVALID";
+                break;
+            }
+        } else if (name.endsWith("_OPTS")) {
+            var ival = Math.floor(value);
+            var bits = [];
+            if (ival & 1) {
+                bits.push("Double Notch");
+            }
+            if (ival & 2) {
+                bits.push("Dynamic Harmonic");
+            }
+            if (ival & 4) {
+                bits.push("Loop Rate");
+            }
+            if (ival & 8) {
+                bits.push("All IMUs Rate");
+            }
+            doc.innerHTML = bits.join(", ");
+        } else if (name.endsWith("_HMNCS")) {
+            var ival = Math.floor(value);
+            var bits = [];
+            if (ival & 1) {
+                bits.push("Fundamental");
+            }
+            if (ival & 2) {
+                bits.push("1st Harmonic");
+            }
+            if (ival & 4) {
+                bits.push("2nd Harmonic");
+            }
+            if (ival & 8) {
+                bits.push("3rd Harmonic");
+            }
+            if (ival & 16) {
+                bits.push("4th Harmonic");
+            }
+            if (ival & 32) {
+                bits.push("5th Harmonic");
+            }
+            if (ival & 64) {
+                bits.push("6th Harmonic");
+            }
+            doc.innerHTML = bits.join(", ");
+        }
+
+    }
+}
