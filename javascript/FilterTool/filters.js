@@ -339,6 +339,7 @@ function calculate_filter() {
         }
     }
     max_phase_lag = Math.ceil((max_phase_lag+10)/10)*10;
+    max_phase_lag = Math.min(get_form("MaxPhaseLag"), max_phase_lag);
     if (chart) {
         chart.data.datasets[0].data = attenuation;
         chart.data.datasets[1].data = phase_lag;
