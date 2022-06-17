@@ -442,3 +442,38 @@ function clear_cookies() {
         document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
 }
+
+function save_parameters() {
+    var params = "";
+    var inputs = document.forms["params"].getElementsByTagName("input");
+    for (const v in inputs) {
+        var name = "" + inputs[v].name;
+        if (name.startsWith("INS_")) {
+            var value = inputs[v].value;
+            params += name + "=" + value + "\n";
+        }
+    }
+    var blob = new Blob([params], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, "filter.param");
+}
+
+async function load_parameters(file) {
+    var text = await file.text();
+    var lines = text.split('\n');
+    for (i in lines) {
+        var line = lines[i];
+        if (line.startsWith("INS_")) {
+            v = line.split(/[\s,=\t]+/);
+            if (v.length >= 2) {
+                var vname = v[0];
+                var value = v[1];
+                var fvar = document.getElementById(vname);
+                if (fvar) {
+                    fvar.value = value;
+                    console.log("set " + vname + "=" + value);
+                }
+            }
+        }
+    }
+    calculate_filter();
+}

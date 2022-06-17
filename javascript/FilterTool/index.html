@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <title>ArduPilot Filter Analysis</title>
 <script type="text/javascript" src="filters.js"></script>
+<script type="text/javascript" src="FileSaver.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.js"></script>
 </head>
 <h1>ArduPilot Filter Analysis</h1>
@@ -14,7 +15,11 @@ ArduPilot 4.2 filter setup.
   <canvas id="Attenuation" style="width:100%;max-width:1200px"></canvas>
 <p>
   <input type="button" id="calculate" value="Calculate">
-<form id="params" action="">
+  <input type="button" id="SaveParams" value="Save Parameters" onclick="save_parameters();">
+  <button class="styleClass" onclick="document.getElementById('param_file').click()">Load Parameters</button>
+  <input type='file' id="param_file" style="display:none" onchange="load_parameters(this.files[0]);">
+
+  <form id="params" action="">
 <fieldset>
   <legend>INS Settings</legend>
         <p>
