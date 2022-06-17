@@ -479,6 +479,7 @@ async function load_parameters(file) {
             }
         }
     }
+    fill_docs();
     calculate_filter();
 }
 
