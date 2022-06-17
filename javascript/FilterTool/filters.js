@@ -198,7 +198,7 @@ function HarmonicNotchFilter(sample_freq,enable,mode,freq,bw,att,ref,fm_rat,hmnc
         if (opts & 2) {
             chained = get_form("NUM_MOTORS");
         }
-        var rpm = get_form("RPM1");
+        var rpm = get_form("ESC_RPM");
         freq = Math.max(rpm/60.0,freq) * ref;
     }
     for (var n=0;n<8;n++) {

@@ -43,22 +43,32 @@ ArduPilot 4.2 filter setup.
 	</p>
 </fieldset>
 <fieldset>
-  <legend>Motors</legend>
+  <legend>Throttle Based</legend>
+        <p>
+                <label for="Throttle">Throttle</label>
+                <input id="Throttle" name="Throttle" type="number" step="0.01" value="0.3"/>
+	</p>
+</fieldset>
+<fieldset>
+  <legend>ESC Telemetry</legend>
         <p>
                 <label for="NUM_MOTORS">Number of Motors</label>
                 <input id="NUM_MOTORS" name="NUM_MOTORS" type="number" step="1" value="1"/>
 	</p>
         <p>
-                <label for="RPM1">RPM1</label>
+                <label for="ESC_RPM">ESC RPM</label>
+                <input id="ESC_RPM" name="ESC_RPM" type="number" step="1" value="2500"/>
+	</p>
+</fieldset>
+<fieldset>
+  <legend>RPM/EFI Based</legend>
+        <p>
+                <label for="RPM1">RPM2</label>
                 <input id="RPM1" name="RPM1" type="number" step="1" value="2500"/>
 	</p>
         <p>
                 <label for="RPM2">RPM2</label>
                 <input id="RPM2" name="RPM2" type="number" step="1" value="2500"/>
-	</p>
-        <p>
-                <label for="Throttle">Throttle</label>
-                <input id="Throttle" name="Throttle" type="number" step="0.01" value="0.3"/>
 	</p>
 </fieldset>
 <fieldset>
