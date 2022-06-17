@@ -171,13 +171,16 @@ function HarmonicNotchFilter(sample_freq,enable,mode,freq,bw,att,ref,fm_rat,hmnc
         }
     }
 
-    if (mode == 0 || enable <= 0) {
+    if (enable <= 0) {
         this.apply = function(sample) {
             return sample;
         }
         return this;
     }
 
+    if (mode == 0) {
+        // fixed notch
+    }
     if (mode == 1) {
         var motors_throttle = Math.max(0,get_form("Throttle"));
         var throttle_freq = freq * Math.max(fm_rat,Math.sqrt(motors_throttle / ref));
