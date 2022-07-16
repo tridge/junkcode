@@ -39,12 +39,12 @@ def update(indicator):
             active = True
             last_dt_str = dt_str
             indicator.set_menu(build_menu(facts[-1].activity + " " + dt_str))
-            indicator.set_icon(os.path.abspath('hamster-applet-active.png'))
+            indicator.set_icon_full(os.path.abspath('hamster-applet-active.png'), "active")
     else:
         if active:
             active = False
             indicator.set_menu(build_menu("inactive"))
-            indicator.set_icon(os.path.abspath('hamster-applet-inactive.png'))
+            indicator.set_icon_full(os.path.abspath('hamster-applet-inactive.png'), "inactive")
 
 def main():
     indicator = appindicator.Indicator.new(APPINDICATOR_ID, os.path.abspath('hamster-applet-inactive.png'), appindicator.IndicatorCategory.SYSTEM_SERVICES)
