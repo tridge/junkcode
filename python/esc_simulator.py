@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+'''
+simulate hobbywing ESC serial protocol
+this is based on telemetry from XRotor Pro 80A ESCs
+'''
 
 import serial
 
@@ -8,7 +12,7 @@ import time
 import struct
 
 parser = ArgumentParser(description=__doc__)
-parser.add_argument("--baudrate", default=57600, type=int, help="baud rate")
+parser.add_argument("--baudrate", default=19200, type=int, help="baud rate")
 parser.add_argument("--rate", type=float, default=100, help="output rate")
 parser.add_argument("port", default=None, type=str, help="serial port")
 args = parser.parse_args()
