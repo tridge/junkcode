@@ -4,11 +4,13 @@
 /*
   implementation of gimbal attitude estimator from flight controller
   euler angles and magnetic encoders for a 3,1,2 joint angle gimbal
+
+  Andrew Tridgell, October 2023
  */
 
 
 /*
-  attitude representation using a 3x3 rotation matrix. This rollows
+  attitude representation using a 3x3 rotation matrix. This follows
   the conventions of the ArduPilot AP_Math library
  */
 struct RotationMatrix {
