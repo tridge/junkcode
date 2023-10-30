@@ -22,12 +22,12 @@ struct RotationMatrix {
  */
 static void rotmat_from_euler321(struct RotationMatrix *r, const struct Attitude *att)
 {
-    const float cp = cos(att->pitch_rad);
-    const float sp = sin(att->pitch_rad);
-    const float sr = sin(att->roll_rad);
-    const float cr = cos(att->roll_rad);
-    const float sy = sin(att->yaw_rad);
-    const float cy = cos(att->yaw_rad);
+    const float cp = cosf(att->pitch_rad);
+    const float sp = sinf(att->pitch_rad);
+    const float sr = sinf(att->roll_rad);
+    const float cr = cosf(att->roll_rad);
+    const float sy = sinf(att->yaw_rad);
+    const float cy = cosf(att->yaw_rad);
 
     r->mat[0][0] = cp * cy;
     r->mat[0][1] = (sr * sp * cy) - (cr * sy);
@@ -45,12 +45,12 @@ static void rotmat_from_euler321(struct RotationMatrix *r, const struct Attitude
  */
 static void rotmat_from_euler312(struct RotationMatrix *r, const struct Encoders *enc)
 {
-    const float c3 = cos(enc->pitch_rad);
-    const float s3 = sin(enc->pitch_rad);
-    const float s2 = sin(enc->roll_rad);
-    const float c2 = cos(enc->roll_rad);
-    const float s1 = sin(enc->yaw_rad);
-    const float c1 = cos(enc->yaw_rad);
+    const float c3 = cosf(enc->pitch_rad);
+    const float s3 = sinf(enc->pitch_rad);
+    const float s2 = sinf(enc->roll_rad);
+    const float c2 = cosf(enc->roll_rad);
+    const float s1 = sinf(enc->yaw_rad);
+    const float c1 = cosf(enc->yaw_rad);
 
     r->mat[0][0] = c1 * c3 - s1 * s2 * s3;
     r->mat[1][1] = c1 * c2;
