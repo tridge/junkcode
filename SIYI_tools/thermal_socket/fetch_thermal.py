@@ -14,10 +14,12 @@ import struct
 import threading
 import datetime
 import math
+import zlib
 
 from MAVProxy.modules.lib.mp_image import MPImage
 
 TCP_THERMAL=("192.168.144.25", 7345)
+#TCP_THERMAL=("127.0.0.1", 7345)
 
 last_data = None
 WIN_NAME = "Thermal"
@@ -72,6 +74,18 @@ def display_file(fname, data):
     cv2.setMouseCallback(WIN_NAME, click_callback)
     update_title()
 
+    import zlib
+
+def decompress_zlib_buffer(compressed_buffer):
+    try:
+        # Decompress the buffer using zlib
+        uncompressed_buffer = zlib.decompress(compressed_buffer)
+        return uncompressed_buffer
+    except zlib.error as e:
+        # Handle any errors during decompression
+        print(f"Decompression error: {e}")
+        return None
+
 def fetch_latest():
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp.connect(TCP_THERMAL)
@@ -84,15 +98,30 @@ def fetch_latest():
         buf += b
 
     print(len(buf))
-    if len(buf) != 128 + 8 + EXPECTED_DATA_SIZE:
+    header_len = 128 + 12
+    if len(buf) < header_len:
+        print("Invalid data size %u" % len(buf))
         return None
 
     print("Got %u bytes" % len(buf))
+
     fname = buf[:128].decode("utf-8").strip('\x00')
-    tstamp, = struct.unpack("<d", buf[128:128+8])
+    compressed_size,tstamp = struct.unpack("<Id", buf[128:128+12])
+
+    compressed_data = buf[header_len:]
+
+    if compressed_size != len(compressed_data):
+        print("Invalid compressed_size %u expected %u" % (compressed_size, len(compressed_data)))
+        return None
+
+    uncompressed_data = decompress_zlib_buffer(compressed_data)
+
+    print("uncompressed_size=%u" % len(uncompressed_data))
+    if len(uncompressed_data) != EXPECTED_DATA_SIZE:
+        print("Bad uncompressed length %u" % len(uncompressed_data))
+
     print(fname, tstamp)
-    data = buf[128+8:]
-    return fname, tstamp, data
+    return fname, tstamp, uncompressed_data
 
 def save_file(fname, tstamp, data):
     fname = os.path.basename(fname)[:-4]

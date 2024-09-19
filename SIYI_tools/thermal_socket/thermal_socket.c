@@ -18,17 +18,26 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <dirent.h>
+#include <zlib.h>
 
 #define LISTEN_PORT 7345
 #define THERMAL_DIR "/mnt/DCIM/102SIYI_TEM"
-#define EXPECTED_SIZE 655360
+//#define THERMAL_DIR "/mnt/Photo/B"
+//#define THERMAL_DIR "test_images"
 
-struct header {
+#define EXPECTED_SIZE (640 * 512 * 2)
+
+#define FORK_PER_CONNECTION 1
+
+#define PACKED __attribute__((__packed__))
+
+struct PACKED header {
     char fname[128];
+    uint32_t compressed_size;
     double timestamp;
 };
 
-static int open_socket_in(int type, int port)
+static int open_socket_in(int port)
 {
     struct sockaddr_in sock;
     int res;
@@ -99,6 +108,46 @@ char *find_latest_file(int fd, struct stat *st_latest)
     return newest_fname;
 }
 
+// Function to handle errors
+static void zlib_error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+/*
+  compress a buffer, returning the compressed size
+  exit via zlib_error() on any error
+*/
+static uint32_t compress_buffer(uint8_t *in_buffer, uint32_t in_size, uint8_t *out_buffer, uint32_t out_buf_size, uint8_t compression_level)
+{
+    z_stream strm;
+    memset(&strm, 0, sizeof(strm)); // Initialize the z_stream structure
+
+    // Initialize the zlib stream for compression
+    if (deflateInit(&strm, compression_level) != Z_OK) {
+        zlib_error("deflateInit failed");
+    }
+
+    // Set up the zlib stream for compression
+    strm.avail_in = in_size;
+    strm.next_in = in_buffer;
+
+    strm.avail_out = out_buf_size;
+    strm.next_out = out_buffer;
+
+    // Compress with zlib
+    int ret = deflate(&strm, Z_FINISH);
+    if (ret == Z_STREAM_ERROR) {
+	deflateEnd(&strm);
+	zlib_error("deflate failed");
+    }
+
+    // Clean up the zlib stream
+    deflateEnd(&strm);
+    
+    // Calculate how many bytes were compressed into out_buffer
+    return out_buf_size - strm.avail_out;
+}
 
 
 static void serve_connection(int fd)
@@ -129,25 +178,31 @@ static void serve_connection(int fd)
     if (read(dfd, buf, sizeof(buf)) != sizeof(buf)) {
 	return;
     }
+    uint8_t compressed_buf[EXPECTED_SIZE*2];
+    h.compressed_size = compress_buffer(buf, sizeof(buf), compressed_buf, sizeof(compressed_buf), 1);
+    if (h.compressed_size == 0) {
+	printf("compression failed %s\n", h.fname);
+	exit(1);
+    }
 
     write(fd, &h, sizeof(h));
-    write(fd, buf, sizeof(buf));
+    write(fd, compressed_buf, h.compressed_size);
 
-    printf("Sent %s\n", h.fname);
+    printf("Sent %s compression %.1f%% compressed_size=%u\n", h.fname, (100.0 * h.compressed_size) / sizeof(buf), (unsigned)h.compressed_size);
 }
 
 static void listener(void)
 {
     int sock;
 
-    sock = open_socket_in(SOCK_STREAM, LISTEN_PORT);
+    sock = open_socket_in(LISTEN_PORT);
 
-    if (listen(sock, 20) == -1) {
+    if (listen(sock, 200) == -1) {
 	fprintf(stderr,"listen failed\n");
 	exit(1);
     }
 
-    printf("waiting for connections\n");
+    printf("waiting for connections on port %u\n", (unsigned)LISTEN_PORT);
 
     while (1) {
 	struct sockaddr addr;
@@ -159,16 +214,20 @@ static void listener(void)
 	fd = accept(sock, &addr, &in_addrlen);
 
 	if (fd != -1) {
+#if FORK_PER_CONNECTION
 	    if (fork() == 0) {
 		serve_connection(fd);
 		exit(0);
 	    }
+#else
+	    serve_connection(fd);
+#endif
 	    close(fd);
 	}
     }
 }
 
-int main(int argc, const char *argv[])
+int main(void)
 {
     listener();
     return 0;
