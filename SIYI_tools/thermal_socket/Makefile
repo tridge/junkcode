@@ -2,7 +2,7 @@ CFLAGS = -static -Wall -Wextra -g3
 
 CC=arm-linux-gnueabihf-gcc
 #CC=gcc
-LIBS = -lz
+LIBS = libz.a
 
 all: thermal_socket
 
