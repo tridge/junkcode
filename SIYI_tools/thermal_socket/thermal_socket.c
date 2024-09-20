@@ -19,6 +19,7 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <zlib.h>
+#include <sys/time.h>
 
 #define LISTEN_PORT 7345
 #define THERMAL_DIR "/mnt/DCIM/102SIYI_TEM"
@@ -36,6 +37,12 @@ struct PACKED header {
     uint32_t compressed_size;
     double timestamp;
 };
+
+/*
+  aim to send each image over 500ms
+  opening, reading and compressing a file takes around 0.3s
+*/
+#define TARGET_SEND_TIME_S 0.5
 
 static int open_socket_in(int port)
 {
@@ -149,6 +156,20 @@ static uint32_t compress_buffer(uint8_t *in_buffer, uint32_t in_size, uint8_t *o
     return out_buf_size - strm.avail_out;
 }
 
+static void rate_limited_send(int fd, const uint8_t *buf, uint32_t buf_size)
+{
+    const uint32_t chunk_size = 1024U;
+    const double sec_per_byte = TARGET_SEND_TIME_S / buf_size;
+    const uint32_t usec_per_chunk = (1e6 * sec_per_byte * chunk_size) + 1;
+    while (buf_size > 0) {
+	const uint32_t chunk = buf_size > chunk_size ? chunk_size : buf_size;
+	write(fd, buf, chunk);
+	buf += chunk;
+	buf_size -= chunk;
+	usleep(usec_per_chunk);
+    }
+}
+
 
 static void serve_connection(int fd)
 {
@@ -186,7 +207,8 @@ static void serve_connection(int fd)
     }
 
     write(fd, &h, sizeof(h));
-    write(fd, compressed_buf, h.compressed_size);
+
+    rate_limited_send(fd, compressed_buf, h.compressed_size);
 
     printf("Sent %s compression %.1f%% compressed_size=%u\n", h.fname, (100.0 * h.compressed_size) / sizeof(buf), (unsigned)h.compressed_size);
 }
