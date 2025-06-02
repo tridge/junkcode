@@ -4,7 +4,7 @@
 # function keys on keyboard
 
 [ $# -eq 1 ] || {
-    echo "vmic.sh DESKTOP|HEADSET"
+    echo "vmic.sh DESKTOP|HEADSET|MSBT|LAPTOP"
     exit 1
 }
 
@@ -16,7 +16,10 @@ jabraoutput="alsa_output.usb-GN_Netcom_A_S_Jabra"
 msout="alsa_output.usb-Microsoft_Microsoft_USB_Link"
 msin="alsa_input.usb-Microsoft_Microsoft_USB_Link"
 lapin="alsa_input.pci-0000_00_1f.3.analog-stereo"
-
+msbtout="bluez_sink.A0_4A_5E_F7_86_2A"
+msbtin="bluez_source.A0_4A_5E_F7_86_2A"
+noxout="bluez_sink.00_02_5B_D5_F6_ED.handsfree_head_unit"
+noxin="bluez_source.00_02_5B_D5_F6_ED.handsfree_head_unit"
 
 if [ $1 = "HEADSET" ]; then
     echo "Using HEADSET"
@@ -26,6 +29,10 @@ elif [ $1 = "MS" ]; then
     echo "Using MS HEADSET"
     source="$msin"
     sink="$msout"
+elif [ $1 = "MSBT" ]; then
+    echo "Using MS HEADSET on bluetooth"
+    source="$msbtin"
+    sink="$msbtout"
 elif [ $1 = "DESKTOP" ]; then
     echo "Using DESKTOP"
     source="$webcam"
@@ -34,6 +41,10 @@ elif [ $1 = "LAPTOP" ]; then
     echo "Using LAPTOP"
     source="$lapin"
     sink="$speakers"
+elif [ $1 = "NOX" ]; then
+    echo "Using NOX39G"
+    source="$noxin"
+    sink="$noxout"
 else
     echo "Bad audio type $1"
     exit 1
