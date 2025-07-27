@@ -45,9 +45,7 @@ ws.on('open', () => {
 		0,  // custom_mode
 		4   // MAV_STATE_ACTIVE
             );
-	    console.log("Send1");
 	    const pkt = msg.pack(parser);
-	    console.log("Send2");
 	    ws.send(pkt);
             console.log("Sent HEARTBEAT");
 	} catch (e) {
@@ -87,9 +85,9 @@ ws.on('message', (data) => {
 
     console.log(`Received ${buf.length} bytes: [${buf.slice(0, 10).toString('hex')}...]`);
 
-    for (const byte of buf) {
+    for (const b of buf) {
         try {
-            const msg = parser.parseChar(byte);
+	    const msg = parser.parseChar(b);
             if (msg) {
                 console.log(`MAVLink message ID: ${msg._id}`);
 		console.log(mav_pretty(msg));

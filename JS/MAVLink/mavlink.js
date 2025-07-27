@@ -107,7 +107,7 @@ mavlink20.message.prototype.sign_packet = function( mav) {
     console.log(`signing with timestamp=${mav.signing.timestamp}`);
 
     var thigh = shift(mav.signing.timestamp,-32) // 2 bytes from the top, shifted right by 32 bits
-    var tlow  = (mav.signing.timestamp & 0xfffffff )  // 4 bytes from the bottom
+    var tlow  = (mav.signing.timestamp & 0xffffffff )  // 4 bytes from the bottom
 
     // I means unsigned 4bytes, H means unsigned 2 bytes
     // first add the linkid(1 byte) and timestamp(6 bytes) that start the signature
@@ -18601,7 +18601,7 @@ MAVLink20Processor.prototype.check_signature = function(msgbuf, srcSystem, srcCo
     console.log(`updating timestamp ${this.signing.timestamp} ${timestamp}`);
     this.signing.timestamp = Math.max(this.signing.timestamp, timestamp+1); // 2952790016)
     console.log(`new timestamp ${this.signing.timestamp}`);
-	return true
+    return true
 } 
 
 /* decode a buffer as a MAVLink message */
