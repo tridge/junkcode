@@ -3,6 +3,8 @@
 simple gtk indicator to make working with hamster more efficient
 '''
 
+DB_PATH = "/home/tridge/snap/hamster-snap/56/.local/share/hamster/hamster.db"
+
 import os
 import signal
 import threading
@@ -16,9 +18,102 @@ from gi.repository import Gtk as gtk
 from gi.repository import AppIndicator3 as appindicator
 from gi.repository import Notify as notify
 
-from hamster import client
+import sqlite3
 
-storage = client.Storage()
+class DirectStorage:
+    def __init__(self):
+        db_path = os.path.expanduser(DB_PATH)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        
+    def get_todays_facts(self):
+        cursor = self.conn.cursor()
+        today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        cursor.execute("""
+            SELECT f.id, f.start_time, f.end_time, a.name as activity, 
+                   c.name as category, f.description
+            FROM facts f
+            JOIN activities a ON f.activity_id = a.id
+            LEFT JOIN categories c ON a.category_id = c.id
+            WHERE f.start_time >= ?
+            ORDER BY f.start_time
+        """, (today,))
+        facts = []
+        for row in cursor:
+            fact = type('Fact', (), {})()
+            fact.id = row['id']
+            fact.start_time = datetime.datetime.fromisoformat(row['start_time'])
+            fact.end_time = datetime.datetime.fromisoformat(row['end_time']) if row['end_time'] else None
+            fact.activity = row['activity']
+            fact.category = row['category']
+            fact.description = row['description']
+            fact.tags = []  # Tags would require additional query
+            facts.append(fact)
+        return facts
+    
+    def get_facts(self, start, end):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT f.id, f.start_time, f.end_time, a.name as activity, 
+                   c.name as category, f.description
+            FROM facts f
+            JOIN activities a ON f.activity_id = a.id
+            LEFT JOIN categories c ON a.category_id = c.id
+            WHERE f.start_time >= ? AND f.start_time < ?
+            ORDER BY f.start_time DESC
+        """, (start, end))
+        facts = []
+        for row in cursor:
+            fact = type('Fact', (), {})()
+            fact.id = row['id']
+            fact.start_time = datetime.datetime.fromisoformat(row['start_time'])
+            fact.end_time = datetime.datetime.fromisoformat(row['end_time']) if row['end_time'] else None
+            fact.activity = row['activity']
+            fact.category = row['category']
+            fact.description = row['description']
+            fact.tags = []
+            facts.append(fact)
+        return facts
+    
+    def add_fact(self, fact):
+        cursor = self.conn.cursor()
+        # Get or create activity
+        cursor.execute("SELECT id, category_id FROM activities WHERE name = ?", (fact.activity,))
+        row = cursor.fetchone()
+        if row:
+            activity_id = row['id']
+        else:
+            category_id = None
+            if fact.category:
+                cursor.execute("SELECT id FROM categories WHERE name = ?", (fact.category,))
+                cat_row = cursor.fetchone()
+                if cat_row:
+                    category_id = cat_row['id']
+                else:
+                    cursor.execute("INSERT INTO categories (name) VALUES (?)", (fact.category,))
+                    category_id = cursor.lastrowid
+            cursor.execute("INSERT INTO activities (name, category_id) VALUES (?, ?)", 
+                         (fact.activity, category_id))
+            activity_id = cursor.lastrowid
+        
+        # Stop any currently running fact
+        cursor.execute("UPDATE facts SET end_time = ? WHERE end_time IS NULL", 
+                      (datetime.datetime.now(),))
+        
+        # Add new fact
+        cursor.execute("""
+            INSERT INTO facts (activity_id, start_time, end_time, description)
+            VALUES (?, ?, ?, ?)
+        """, (activity_id, fact.start_time, fact.end_time, fact.description or ''))
+        self.conn.commit()
+    
+    def stop_tracking(self):
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE facts SET end_time = ? WHERE end_time IS NULL", 
+                      (datetime.datetime.now(),))
+        self.conn.commit()
+
+storage = DirectStorage()
 active = False
 active_str = "inactive"
 last_dt_str = ""
