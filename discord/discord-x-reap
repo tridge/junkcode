@@ -1,0 +1,285 @@
+#!/bin/bash
+# discord-x-reap — close orphaned Xorg client connections leaked by Discord's
+# main browser process (workaround for electron/electron#2922, which leaks one
+# Xorg connection per desktop notification, ~10 yr unfixed upstream).
+#
+# v2 (2026-05-28):
+#   - fd enumeration moved INSIDE the gdb session via a Python helper, so
+#     Discord is suspended for the entire enumerate→shutdown sequence (no
+#     TOCTOU race where a leaked fd could be closed+reused by Discord between
+#     enumeration and the shutdown call).
+#   - /usr/bin/ss hardcoded (PATH may have a shadowing 'ss' from ~/bin).
+#   - sudo dropped entirely — `ss -x` (no -p) sees X11 connections as any user.
+#   - gdb exit code is checked; partial reaps and zero-delta results fail loudly.
+#   - grep on empty input no longer aborts under pipefail.
+#
+# Requires: gdb (with Python support), iproute2 (/usr/bin/ss),
+# kernel.yama.ptrace_scope=0. No sudo needed — `ss -x` (without `-p`) shows
+# all unix sockets including X11 server-side ones to any user; we don't need
+# process attribution from ss because the same socket inode appears in
+# /proc/$pid/fd which we read directly (same uid as Discord).
+
+set -euo pipefail
+
+KEEP_OLDEST=10
+MODE=full        # full | one | dry
+LOG=$HOME/.cache/discord-x-reap.log
+SS=/usr/bin/ss   # hardcoded — `command -v ss` on this box finds ~/bin/ss
+                 # (a counter script), not iproute2; sudo's secure_path would
+                 # still pick /usr/bin/ss but the preflight then validates the
+                 # wrong binary. Hardcoding avoids the mismatch.
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [--dry-run] [--one] [--keep N]
+
+  --dry-run   List candidates that would be closed; do nothing (no gdb attach).
+  --one       Close only the single newest candidate (safety test).
+  --keep N    Number of oldest X-connections to KEEP as legit (default $KEEP_OLDEST).
+
+Exit codes: 0 ok / no work; 1 error (incl. gdb failure or zero delta); 2 usage.
+EOF
+  exit 2
+}
+
+while (( $# )); do
+  case "$1" in
+    --dry-run) MODE=dry ;;
+    --one)     MODE=one ;;
+    --keep)    shift; [[ "${1:-}" =~ ^[0-9]+$ ]] || usage; KEEP_OLDEST=$1 ;;
+    -h|--help) usage ;;
+    *) echo "unknown arg: $1" >&2; usage ;;
+  esac
+  shift
+done
+
+mkdir -p "$(dirname "$LOG")"
+log() { printf '%s %s\n' "$(date -Iseconds)" "$*" >> "$LOG"; }
+
+# --- preflight --------------------------------------------------------------
+[[ -x "$SS" ]] || { echo "$SS not found (install iproute2)" >&2; exit 1; }
+command -v gdb >/dev/null || { echo "gdb not installed" >&2; exit 1; }
+
+# --- 1. find Discord main browser pid ---------------------------------------
+DPID=""
+for p in $(pgrep -u "$UID" -f 'discord/.*Discord' 2>/dev/null || true); do
+  cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
+  [[ "$cmd" == *"--type="* ]] && continue            # skip zygote/renderer/utility/gpu
+  [[ "$cmd" == *"discord/Discord"* ]] || continue    # must be the Discord binary
+  DPID=$p
+  break
+done
+
+if [[ -z "$DPID" ]]; then
+  echo "Discord main process not running; nothing to reap."
+  log "discord-not-running"
+  exit 0
+fi
+echo "Discord main pid: $DPID  ($(ps -o etime= -p "$DPID" 2>/dev/null | tr -d ' ') uptime)"
+
+# --- 2. pre-attach snapshot: X server's view of its live clients -------------
+TMP=$(mktemp -d -t discord-x-reap.XXXXXX)
+trap 'rm -rf "$TMP"' EXIT
+
+SS_OUT=$("$SS" -x 2>/dev/null) || { echo "$SS -x failed" >&2; exit 1; }
+BEFORE=$(awk '/X11-unix/{n++} END{print n+0}' <<< "$SS_OUT")
+echo "Total Xorg clients now: $BEFORE / 256"
+
+# peer inodes on the Xorg side of each X11 connection. awk to survive empty.
+awk '/X11-unix/ {
+       for (i = 1; i <= NF; i++) if ($i == "*") { print $(i+1); break }
+     }' <<< "$SS_OUT" | sort -un > "$TMP/xinodes"
+
+# --- 3a. dry-run path (no gdb attach; pre-attach fd snapshot only) -----------
+if [[ "$MODE" == dry ]]; then
+  declare -A is_xconn
+  while read -r ino; do [[ -n "$ino" ]] && is_xconn[$ino]=1; done < "$TMP/xinodes"
+
+  ALL_PAIRS=()
+  while read -r fd inode; do
+    [[ -n "${is_xconn[$inode]:-}" ]] && ALL_PAIRS+=("$fd $inode")
+  done < <(find "/proc/$DPID/fd" -maxdepth 1 -type l -printf '%f %l\n' 2>/dev/null \
+                | awk '/socket:\[/ { match($2, /[0-9]+/); print $1, substr($2, RSTART, RLENGTH) }' \
+                | sort -k2 -n)
+
+  TOTAL=${#ALL_PAIRS[@]}
+  echo "X11 connections held by Discord main: $TOTAL"
+
+  if (( TOTAL <= KEEP_OLDEST )); then
+    echo "$TOTAL ≤ KEEP_OLDEST=$KEEP_OLDEST — nothing to reap."
+    log "pid=$DPID mode=dry held=$TOTAL keep=$KEEP_OLDEST candidates=0"
+    exit 0
+  fi
+
+  KEPT=( "${ALL_PAIRS[@]:0:$KEEP_OLDEST}" )
+  CANDIDATES=( "${ALL_PAIRS[@]:$KEEP_OLDEST}" )
+
+  print_pairs() {                                       # $1=label rest="fd inode" strings
+    local label=$1; shift
+    echo "$label"
+    local pair
+    for pair in "$@"; do
+      printf '  fd=%-5s inode=%s\n' "${pair%% *}" "${pair##* }"
+    done
+  }
+
+  print_pairs "Keeping oldest $KEEP_OLDEST (legit startup conns):" "${KEPT[@]}"
+  echo "Candidates to close: ${#CANDIDATES[@]}"
+  if (( ${#CANDIDATES[@]} <= 13 )); then
+    print_pairs "--dry-run: would close these fds:" "${CANDIDATES[@]}"
+  else
+    print_pairs "--dry-run: would close these fds (first 10):" "${CANDIDATES[@]:0:10}"
+    echo "  ... (${#CANDIDATES[@]} candidates total, last 3:)"
+    for pair in "${CANDIDATES[@]: -3}"; do
+      printf '  fd=%-5s inode=%s\n' "${pair%% *}" "${pair##* }"
+    done
+  fi
+  echo
+  echo "(Live run re-enumerates fds AFTER gdb suspends Discord; this snapshot"
+  echo " may differ slightly from what's actually reaped.)"
+  log "pid=$DPID mode=dry candidates=${#CANDIDATES[@]} before=$BEFORE"
+  exit 0
+fi
+
+# --- 3b. live (full|one): attach gdb, enumerate while suspended, shutdown ---
+cat > "$TMP/reap.py" <<PYEOF
+# Runs inside gdb after attach — Discord is suspended for the whole script.
+# Enumerates fds from /proc/PID/fd, intersects with the pre-snapshot X-inode
+# set, keeps the N oldest, and calls shutdown(fd, SHUT_RDWR) on the rest.
+import os, sys
+
+pid          = $DPID
+keep_n       = $KEEP_OLDEST
+mode         = '$MODE'
+xinodes_path = '$TMP/xinodes'
+result_path  = '$TMP/result'
+
+def reap():
+    xinodes = set()
+    with open(xinodes_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                xinodes.add(int(line))
+
+    fd_dir = '/proc/{}/fd'.format(pid)
+    pairs = []   # list of (inode, fd) — sorted ascending by inode = oldest first
+    for entry in os.listdir(fd_dir):
+        try:
+            target = os.readlink(fd_dir + '/' + entry)
+        except OSError:
+            continue
+        if target.startswith('socket:['):
+            ino = int(target[len('socket:['):-1])
+            if ino in xinodes:
+                pairs.append((ino, int(entry)))
+    pairs.sort()
+
+    total = len(pairs)
+    print('# discord_xconns_in_pid={}'.format(total))
+    if total <= keep_n:
+        return total, 0, 0, 0
+
+    candidates = pairs[keep_n:]
+    if mode == 'one':
+        candidates = [candidates[-1]]
+    print('# will_close={} (mode={}, keeping oldest {})'.format(len(candidates), mode, keep_n))
+
+    success = 0
+    fail = 0
+    for ino, fd in candidates:
+        try:
+            r = gdb.execute('call (int) shutdown({}, 2)'.format(fd), to_string=True).strip()
+        except Exception as exc:
+            sys.stderr.write('# fd={} inode={} call_exception: {}\n'.format(fd, ino, exc))
+            fail += 1
+            continue
+        # gdb prints e.g. "\$5 = 0" on success, "\$5 = -1" on EBADF/etc.
+        if '= 0' in r:
+            success += 1
+        else:
+            fail += 1
+            sys.stderr.write('# fd={} inode={} shutdown_result={!r}\n'.format(fd, ino, r))
+    return total, len(candidates), success, fail
+
+try:
+    t, c, s, f = reap()
+    with open(result_path, 'w') as rf:
+        rf.write('total={} candidates={} success={} fail={}\n'.format(t, c, s, f))
+    print('# total={} candidates={} success={} fail={}'.format(t, c, s, f))
+except Exception as exc:
+    sys.stderr.write('# reap_exception: {}\n'.format(exc))
+    with open(result_path, 'w') as rf:
+        rf.write('error={}\n'.format(exc))
+    raise
+PYEOF
+
+echo "Attaching gdb to $DPID, enumerating /proc/$DPID/fd while suspended, and reaping..."
+GDB_OUT=""; GDB_RC=0
+GDB_OUT=$(gdb -p "$DPID" -batch -nx \
+            -ex 'set pagination off' \
+            -ex 'set scheduler-locking on' \
+            -ex "source $TMP/reap.py" \
+            -ex 'detach' \
+            -ex 'quit' 2>&1) || GDB_RC=$?
+
+echo "$GDB_OUT" | tail -12 | sed 's/^/  gdb: /'
+
+if (( GDB_RC != 0 )); then
+  echo
+  echo "!!! gdb exited with status $GDB_RC — reap NOT completed" >&2
+  log "ERROR gdb-rc=$GDB_RC pid=$DPID mode=$MODE"
+  exit 1
+fi
+
+# --- 4. verify Discord still alive -------------------------------------------
+if ! kill -0 "$DPID" 2>/dev/null; then
+  echo "!!! Discord pid $DPID is no longer alive after gdb session" >&2
+  log "ERROR discord-died pid=$DPID mode=$MODE"
+  exit 1
+fi
+
+# --- 5. read structured result from the helper -------------------------------
+if [[ ! -s "$TMP/result" ]]; then
+  echo "!!! gdb python helper did not write a result file" >&2
+  log "ERROR no-result pid=$DPID mode=$MODE"
+  exit 1
+fi
+
+RESULT_LINE=""
+read -r RESULT_LINE < "$TMP/result" || true
+if [[ "$RESULT_LINE" == error=* ]]; then
+  echo "!!! gdb python helper raised: ${RESULT_LINE#error=}" >&2
+  log "ERROR helper-raised: $RESULT_LINE pid=$DPID mode=$MODE"
+  exit 1
+fi
+
+extract() { grep -oE "$1=[0-9]+" <<< "$RESULT_LINE" | cut -d= -f2 || true; }
+RES_TOTAL=$(extract total)
+RES_CAND=$(extract candidates)
+RES_SUCCESS=$(extract success)
+RES_FAIL=$(extract fail)
+: "${RES_TOTAL:=0}" "${RES_CAND:=0}" "${RES_SUCCESS:=0}" "${RES_FAIL:=0}"
+
+if (( RES_CAND == 0 )); then
+  echo "Discord held $RES_TOTAL X conns ≤ KEEP_OLDEST=$KEEP_OLDEST — nothing reaped."
+  log "pid=$DPID mode=$MODE total=$RES_TOTAL candidates=0 (no-op)"
+  exit 0
+fi
+echo "shutdown() results: success=$RES_SUCCESS fail=$RES_FAIL of $RES_CAND attempted"
+
+# --- 6. verify X server side actually freed slots ----------------------------
+AFTER=$("$SS" -x 2>/dev/null | awk '/X11-unix/{n++} END{print n+0}')
+DELTA=$(( BEFORE - AFTER ))
+echo "Xorg clients: $BEFORE → $AFTER  (delta -$DELTA, expected -$RES_CAND)"
+log "pid=$DPID mode=$MODE total=$RES_TOTAL candidates=$RES_CAND success=$RES_SUCCESS fail=$RES_FAIL before=$BEFORE after=$AFTER delta=$DELTA"
+
+if (( DELTA <= 0 )); then
+  echo "!!! ERROR: Xorg client count did NOT decrease — no slots freed." >&2
+  exit 1
+fi
+if (( DELTA < RES_CAND )); then
+  echo "warning: delta ($DELTA) < attempted ($RES_CAND) — some sockets may not have"
+  echo "         freed yet, or some shutdown() calls failed (see counts above)."
+fi
+echo "done."
