@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""Per-session view of Claude Code 5-hour rolling quota usage (Max plan).
+
+Claude Code writes one JSONL transcript per session under
+~/.claude/projects/<project>/<session-id>.jsonl, plus separate transcripts for
+each subagent under <session-id>/subagents/agent-*.jsonl. Every assistant turn
+records a `usage` block (input / output / cache-read / cache-write tokens) and
+the `model`. Subagent records carry their PARENT session's `sessionId`, so
+grouping by sessionId folds subagent usage into the session that spawned it.
+
+On a Max plan you are not billed per token; what bites is the rolling 5-hour
+quota. There is no public token number for that ceiling, so this tool:
+  * weights each turn's tokens by the per-model API price RATIO (a proxy for how
+    the quota meter weights cheap input / expensive output / cheap cache reads /
+    different models) into a single "unit" per turn, and
+  * expresses usage as a PERCENTAGE of your 5h ceiling.
+
+Calibrate the ceiling against the real meter: open Claude's built-in /usage,
+read the 5-HOUR percentage (not the weekly one), then run e.g.
+`claude-usage --calibrate 80` to mean "right now my 5h usage is 80% full".
+Calibrate while usage is HIGH for accuracy. The tool warns if a calibration is
+inconsistent with your largest historical 5h burst. Without calibration it falls
+back to that historical peak.
+
+Windows: --window accepts a duration like 5h, 17h, 2d, 30m, 90s, 1w, or 1d6h
+(combine units), plus the keyword "total"/"all". For a window <= 5h the report
+is a straight % of your 5h quota (additive within one quota window). For a window
+> 5h, "% of a 5h quota" is NOT additive (the quota refills every 5h), so each
+session instead shows its PEAK trailing-5h footprint (bounded near 100%).
+
+Usage:
+  claude-usage                  # last 5h: per-session % of quota
+  claude-usage --window 17h     # last 17h: per-session peak-5h footprint
+  claude-usage --window 2d      # last 2 days
+  claude-usage --calibrate 80   # set ceiling so current 5h total == 80%
+  claude-usage --show-quota     # print the ceiling and exit
+  claude-usage --api-cost       # what the window would cost at API pay-as-you-go rates
+  claude-usage --tokens         # absolute token table for the window
+  claude-usage --top N          # rows to show (default 20)
+"""
+
+import argparse
+import json
+import os
+import re
+from datetime import datetime, timezone
+from glob import glob
+
+PROJECTS = os.path.expanduser("~/.claude/projects")
+CONFIG = os.path.expanduser("~/.claude/usage-quota.json")
+FIVE_H = 5 * 3600
+
+# Public API list price, USD per token, used ONLY as a relative weighting of
+# tokens into "units". Cache-write split into 5m / 1h tiers. Unknown -> sonnet.
+PRICING = {
+    "opus":   dict(inp=15e-6, out=75e-6, cw5m=18.75e-6, cw1h=30e-6, cr=1.5e-6),
+    "sonnet": dict(inp=3e-6,  out=15e-6, cw5m=3.75e-6,  cw1h=6e-6,  cr=0.30e-6),
+    "haiku":  dict(inp=0.80e-6, out=4e-6, cw5m=1.0e-6,  cw1h=1.6e-6, cr=0.08e-6),
+}
+DUR_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def parse_window(s):
+    """'5h'/'17h'/'2d'/'30m'/'1w'/'1d6h' -> seconds; 'total'/'all'/'' -> None."""
+    s = (s or "").strip().lower()
+    if s in ("total", "all", "everything"):
+        return None
+    parts = re.findall(r"(\d+(?:\.\d+)?)([smhdw])", s)
+    if not parts or "".join(n + u for n, u in parts) != s.replace(" ", ""):
+        raise ValueError(f"bad --window {s!r}: use e.g. 5h, 17h, 2d, 30m, 1w, 1d6h, or total")
+    return sum(float(n) * DUR_UNITS[u] for n, u in parts)
+
+
+def family(model):
+    if not model:
+        return None
+    m = model.lower()
+    for fam in PRICING:
+        if fam in m:
+            return fam
+    if "synthetic" in m:
+        return None
+    return "sonnet"
+
+
+def units_of(usage, fam):
+    """Token count weighted by API price ratio -> a single 'unit' figure."""
+    p = PRICING[fam]
+    cc = usage.get("cache_creation") or {}
+    cw5m = cc.get("ephemeral_5m_input_tokens")
+    cw1h = cc.get("ephemeral_1h_input_tokens")
+    if cw5m is None and cw1h is None:
+        cw5m = usage.get("cache_creation_input_tokens", 0) or 0
+        cw1h = 0
+    return (
+        (usage.get("input_tokens", 0) or 0) * p["inp"]
+        + (usage.get("output_tokens", 0) or 0) * p["out"]
+        + (cw5m or 0) * p["cw5m"]
+        + (cw1h or 0) * p["cw1h"]
+        + (usage.get("cache_read_input_tokens", 0) or 0) * p["cr"]
+    )
+
+
+def tokens_of(usage):
+    return (
+        (usage.get("input_tokens", 0) or 0)
+        + (usage.get("output_tokens", 0) or 0)
+        + (usage.get("cache_read_input_tokens", 0) or 0)
+        + (usage.get("cache_creation_input_tokens", 0) or 0)
+    )
+
+
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def short(s, n=42):
+    return " ".join((s or "").split())[:n]
+
+
+def human_age(dt, now):
+    if dt is None:
+        return "?"
+    sec = (now - dt).total_seconds()
+    if sec < 90:
+        return f"{int(sec)}s"
+    if sec < 5400:
+        return f"{int(sec//60)}m"
+    if sec < 36 * 3600:
+        return f"{int(sec//3600)}h"
+    return f"{int(sec//86400)}d"
+
+
+def load_config():
+    try:
+        with open(CONFIG) as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_config(cfg):
+    with open(CONFIG, "w") as fh:
+        json.dump(cfg, fh, indent=2)
+        fh.write("\n")
+
+
+def scan():
+    """Return (sessions dict, global events [(epoch, units)], now)."""
+    S = {}
+    events = []
+
+    def acc(sid):
+        if sid not in S:
+            S[sid] = dict(cwd="", title="", first=None, last=None, msgs=0,
+                          events=[], models={})  # events: (epoch, units, tokens)
+        return S[sid]
+
+    now = datetime.now(timezone.utc)
+    files = glob(os.path.join(PROJECTS, "*", "*.jsonl"))
+    files += glob(os.path.join(PROJECTS, "*", "*", "subagents", "*.jsonl"))
+
+    for fp in files:
+        try:
+            fh = open(fp, "r", errors="ignore")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                if '"sessionId"' not in line:
+                    continue
+                try:
+                    o = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                sid = o.get("sessionId")
+                if not sid:
+                    continue
+                rec = acc(sid)
+                ts = parse_ts(o.get("timestamp"))
+                if o.get("cwd"):
+                    rec["cwd"] = o["cwd"]
+                if o.get("slug") and not rec["title"]:
+                    rec["title"] = short(o["slug"])
+                if not rec["title"] and o.get("type") == "user":
+                    c = (o.get("message") or {}).get("content")
+                    if isinstance(c, str):
+                        rec["title"] = short(c)
+                msg = o.get("message") or {}
+                usage = msg.get("usage")
+                if not usage:
+                    continue
+                fam = family(msg.get("model"))
+                if fam is None:
+                    continue
+                u = units_of(usage, fam)
+                t = tokens_of(usage)
+                rec["msgs"] += 1
+                rec["models"][fam] = rec["models"].get(fam, 0) + u
+                if ts:
+                    rec["first"] = ts if rec["first"] is None else min(rec["first"], ts)
+                    rec["last"] = ts if rec["last"] is None else max(rec["last"], ts)
+                    rec["events"].append((ts.timestamp(), u, t))
+                    events.append((ts.timestamp(), u))
+    return S, events, now
+
+
+def sliding_peak(events, span=FIVE_H, since=None):
+    """Largest sum of units inside any `span`-second sliding window.
+
+    `events` is an iterable of (epoch, units[, ...]) tuples. Optionally restrict
+    to events at-or-after `since` (epoch seconds). This is the only quota figure
+    that stays bounded for windows longer than 5h: a session's worst trailing-5h
+    load, i.e. how much of one full quota it ate at its busiest moment."""
+    evs = sorted(e for e in events if since is None or e[0] >= since)
+    if not evs:
+        return 0.0
+    lo = 0
+    run = 0.0
+    best = 0.0
+    for hi in range(len(evs)):
+        run += evs[hi][1]
+        while evs[hi][0] - evs[lo][0] > span:
+            run -= evs[lo][1]
+            lo += 1
+        best = max(best, run)
+    return best
+
+
+def win_sum(rec, cutoff, idx=1):
+    """Sum field `idx` (1=units, 2=tokens) of rec's events at-or-after cutoff."""
+    return sum(e[idx] for e in rec["events"] if cutoff is None or e[0] >= cutoff)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Per-session 5h quota usage for Claude Code (Max plan).")
+    ap.add_argument("--window", default="5h",
+                    help="duration to attribute usage over: 5h, 17h, 2d, 30m, 1w, "
+                         "1d6h, or 'total' (default 5h, the quota window)")
+    ap.add_argument("--calibrate", type=float, metavar="PCT",
+                    help="set the 5h ceiling so the CURRENT 5h total equals PCT %% "
+                         "(read the 5-HOUR PCT from Claude's /usage), then exit")
+    ap.add_argument("--show-quota", action="store_true", help="print the ceiling and exit")
+    ap.add_argument("--top", type=int, default=20, help="max rows (default 20)")
+    ap.add_argument("--tokens", action="store_true", help="absolute token table for the window instead of %%")
+    ap.add_argument("--api-cost", "--dollars", dest="api_cost", action="store_true",
+                    help="show what the window would COST at API pay-as-you-go rates (USD) "
+                         "— i.e. the bill if this usage were billed per token instead of on Max")
+    args = ap.parse_args()
+
+    try:
+        window_s = parse_window(args.window)
+    except ValueError as e:
+        ap.error(str(e))
+
+    S, events, now = scan()
+    cfg = load_config()
+    nowt = now.timestamp()
+
+    cur_5h_total = sum(win_sum(r, nowt - FIVE_H) for r in S.values())
+    hist_peak = sliding_peak(events)  # largest trailing-5h burst ever seen
+
+    if args.calibrate is not None:
+        if args.calibrate <= 0:
+            ap.error("--calibrate PCT must be > 0")
+        if cur_5h_total <= 0:
+            print("No usage in the last 5h to calibrate against — run something first.")
+            return
+        ceiling = cur_5h_total / (args.calibrate / 100.0)
+        cfg["five_hour_units"] = ceiling
+        cfg["calibrated_at"] = now.isoformat()
+        cfg["calibrated_pct"] = args.calibrate
+        save_config(cfg)
+        print(f"Calibrated: current 5h usage ({cur_5h_total:.4f} units) set to "
+              f"{args.calibrate:.0f}% of quota.")
+        print(f"5h ceiling saved to {CONFIG}: {ceiling:.4f} units.")
+        if hist_peak > ceiling * 1.05:
+            print()
+            print(f"  ⚠  WARNING: your largest historical 5h burst is {hist_peak:.1f} units "
+                  f"= {100*hist_peak/ceiling:.0f}% of this ceiling.")
+            print("     A past 5h window can't have exceeded 100%, so this calibration is")
+            print("     almost certainly wrong. Most likely you read the WEEKLY % from")
+            print("     /usage instead of the 5-HOUR %, or calibrated while nearly idle")
+            print(f"     (current 5h was only {cur_5h_total:.1f} units). Re-run --calibrate")
+            print("     with the 5-hour number, ideally when your 5h usage is high.")
+        return
+
+    if "five_hour_units" in cfg and cfg["five_hour_units"] > 0:
+        ceiling = cfg["five_hour_units"]
+        src = (f"calibrated {cfg.get('calibrated_pct','?')}% on "
+               f"{cfg.get('calibrated_at','?')[:16].replace('T',' ')}")
+        if hist_peak > ceiling * 1.05:
+            src += "  [⚠ suspect: historical 5h peak exceeds it — recalibrate]"
+    else:
+        ceiling = hist_peak
+        src = "ESTIMATED from your largest historical 5h burst (uncalibrated)"
+
+    if args.show_quota:
+        print(f"5h quota ceiling: {ceiling:.4f} units  ({src})")
+        print(f"current 5h usage: {cur_5h_total:.4f} units = "
+              f"{(100*cur_5h_total/ceiling) if ceiling else 0:.1f}% of quota")
+        print(f"config: {CONFIG}")
+        return
+
+    pct = lambda x: 100 * x / ceiling if ceiling else 0
+    cutoff = None if window_s is None else nowt - window_s
+    wlabel = "total" if window_s is None else args.window.strip().lower()
+
+    for r in S.values():
+        r["_u"] = win_sum(r, cutoff, 1)
+        r["_t"] = win_sum(r, cutoff, 2)
+    rows = [r for r in S.values() if r["_u"] > 0]
+    win_total = sum(r["_u"] for r in rows)
+    stamp = now.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+
+    # ---- absolute fallbacks -------------------------------------------------
+    if args.tokens or args.api_cost:
+        key = "_t" if args.tokens else "_u"
+        unit = "tokens" if args.tokens else "est. API $ (pay-as-you-go list price)"
+        rows.sort(key=lambda r: r[key], reverse=True)
+
+        def f(x):
+            if args.tokens:
+                return f"{x/1e6:.1f}M" if x >= 1e6 else (f"{x/1e3:.0f}k" if x >= 1e3 else str(int(x)))
+            return f"${x:,.2f}"
+
+        print(f"Claude Code usage by session — {unit} — window {wlabel} — {stamp}")
+        print()
+        hdr = f"{'LAST':>5}  {'PROJECT':<22} {'MSGS':>5}  {'AMOUNT':>11}  TOP-MODEL  TITLE"
+        print(hdr); print("-" * len(hdr))
+        for r in rows[: args.top]:
+            proj = os.path.basename(r["cwd"].rstrip("/")) or "?"
+            topm = max(r["models"], key=r["models"].get) if r["models"] else "-"
+            print(f"{human_age(r['last'],now):>5}  {proj[:22]:<22} {r['msgs']:>5}  "
+                  f"{f(r[key]):>11}  {topm:<9}  {r['title']}")
+        print("-" * len(hdr))
+        print(f"{'ALL':>5}  {'(total)':<22} {'':>5}  {f(sum(r[key] for r in rows)):>11}")
+        if args.api_cost:
+            print()
+            print("What this usage WOULD cost at Anthropic API pay-as-you-go list prices")
+            print("(input/output/cache per-token rates per model). You are on Max, so you")
+            print("are NOT charged this — it just shows the value of the usage. Estimate only.")
+        return
+
+    print(f"Claude Code 5h-quota usage by session — window {wlabel} — {stamp}")
+    print(f"5h ceiling: {src}")
+
+    # ---- window <= 5h: straight % of the 5h quota (additive) ----------------
+    if window_s is not None and window_s <= FIVE_H:
+        rows.sort(key=lambda r: r["_u"], reverse=True)
+        pct_now = pct(cur_5h_total)
+        bar = int(round(pct_now / 5))
+        print(f"quota used now (full 5h): {pct_now:5.1f}%  "
+              f"[{'#'*min(bar,20)}{'.'*(20-min(bar,20))}]"
+              + ("  >>> OVER" if pct_now > 100 else ""))
+        if window_s < FIVE_H:
+            print(f"(rows below cover the last {wlabel}, a slice of that 5h window)")
+        print()
+        hdr = f"{'LAST':>5}  {'PROJECT':<22} {'MSGS':>5}  {'%QUOTA':>7} {'SHARE':>6}  TITLE"
+        print(hdr); print("-" * len(hdr))
+        for r in rows[: args.top]:
+            proj = os.path.basename(r["cwd"].rstrip("/")) or "?"
+            sh = 100 * r["_u"] / win_total if win_total else 0
+            print(f"{human_age(r['last'],now):>5}  {proj[:22]:<22} {r['msgs']:>5}  "
+                  f"{pct(r['_u']):6.1f}% {sh:5.1f}%  {r['title']}")
+        print("-" * len(hdr))
+        print(f"{'ALL':>5}  {'('+str(len(rows))+' sessions)':<22} {'':>5}  "
+              f"{pct(win_total):6.1f}% {100.0:5.1f}%")
+        print()
+        print("%QUOTA = share of your 5h rolling quota. SHARE = slice of the window total.")
+        print("Calibrate to the real meter: read the 5-HOUR %% from /usage, then run")
+        print("  claude-usage --calibrate <that number>   (do it when usage is high)")
+        return
+
+    # ---- window > 5h (or total): bounded peak-5h footprint ------------------
+    # "% of a 5h quota" is not additive over >5h (the quota refills every 5h),
+    # so a running total / ceiling would print impossible numbers. Show each
+    # session's PEAK trailing-5h footprint (bounded ~100%: how much of ONE full
+    # quota it ate at its busiest), plus its SHARE of the window's total work.
+    for r in rows:
+        r["_peak"] = sliding_peak(r["events"], since=cutoff)
+    rows.sort(key=lambda r: r["_peak"], reverse=True)
+    combined_peak = sliding_peak(events, since=cutoff)
+    refills = pct(win_total) / 100.0  # quota-equivalents of total work
+
+    print(f"(over {wlabel}, % of 5h quota is not additive — quota refills every 5h)")
+    print()
+    hdr = f"{'LAST':>5}  {'PROJECT':<22} {'MSGS':>5}  {'PEAK5h':>7} {'SHARE':>6}  TITLE"
+    print(hdr); print("-" * len(hdr))
+    for r in rows[: args.top]:
+        proj = os.path.basename(r["cwd"].rstrip("/")) or "?"
+        sh = 100 * r["_u"] / win_total if win_total else 0
+        print(f"{human_age(r['last'],now):>5}  {proj[:22]:<22} {r['msgs']:>5}  "
+              f"{pct(r['_peak']):6.1f}% {sh:5.1f}%  {r['title']}")
+    print("-" * len(hdr))
+    print(f"peak combined 5h load in this window: {pct(combined_peak):.1f}% of quota   "
+          f"(total work ≈ {refills:.1f}× a full 5h quota)")
+    print()
+    print("PEAK5h = this session's busiest trailing-5h, as % of one full quota (the real")
+    print("'who hammers the quota' number). SHARE = its slice of the window's total work.")
+
+
+if __name__ == "__main__":
+    main()
