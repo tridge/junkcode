@@ -8,6 +8,7 @@ Each lives in its own subdir with a README and install notes.
 | [`cost/`](cost/) | `claude-usage` script + `/cost` command: per-session view of the Max-plan 5-hour rolling quota (which open session is burning the most). | `~/bin/claude-usage`, `/cost` |
 | [`codex/`](codex/) | `/codex` command: run the OpenAI Codex CLI on a task and review its output as a second opinion. | `/codex` |
 | [`handover/`](handover/) | `/handover` command: save a handover note so a fresh session (e.g. after a model switch) can continue the work. | `/handover` |
+| [`reviewprs/`](reviewprs/) | `/reviewprs <label>` command: review every open GitHub PR with a label (main + wiki + submodule repos) into one HTML report with verdicts. | `/reviewprs` |
 
 ## Slash commands
 
