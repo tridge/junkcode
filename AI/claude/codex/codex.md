@@ -1,7 +1,7 @@
 ---
-description: Run OpenAI Codex CLI on the given task and review its output
-argument-hint: <task for codex, e.g. "check foo.doc for accuracy">
-allowed-tools: Bash(codex:*), Bash(codex), Read, Glob, Grep
+description: Run OpenAI Codex CLI on the given task and review its output (retains context across /codex calls)
+argument-hint: <task for codex, e.g. "check foo.doc for accuracy"> | --new <task to start a fresh thread>
+allowed-tools: Bash(codex-session:*), Bash(codex:*), Bash(codex), Read, Glob, Grep
 ---
 
 Run the OpenAI Codex CLI non-interactively with this task:
@@ -11,12 +11,18 @@ Run the OpenAI Codex CLI non-interactively with this task:
 Use the Bash tool to execute the command exactly as written below. Capture full stdout/stderr — Codex's output is the whole point of this command.
 
 ```bash
-codex exec --skip-git-repo-check "$ARGUMENTS" </dev/null
+codex-session "$ARGUMENTS" </dev/null
 ```
 
-(`--skip-git-repo-check` avoids the trusted-directory refusal when not inside a git
-working tree; `</dev/null` keeps codex from blocking on stdin when its output is
-captured by Bash.)
+`codex-session` (a wrapper at `~/bin/codex-session`) threads context across calls:
+it keeps a per-directory Codex session id and `codex exec resume`s it, so each
+`/codex` call in the same working directory continues the previous conversation
+instead of starting cold. It prints a `>> [codex] resuming session <id>` (or
+`starting new session`) line first so you can see which it did. To deliberately
+drop prior context and begin a fresh thread, the user passes `--new` as the first
+word (e.g. `/codex --new review this file`); `/codex --new` on its own just resets
+the thread for the current directory. (The wrapper passes `--skip-git-repo-check`
+so it works outside a git tree, and `</dev/null` keeps codex from blocking on stdin.)
 
 When it finishes:
 
@@ -28,3 +34,4 @@ When it finishes:
 Notes:
 - Codex runs agentically and may take a while on bigger tasks. That's expected.
 - If Codex returns an authentication error, the user needs to run `codex login` once in their own terminal.
+- If a thread gets long/stale or you want a clean slate, start with `--new`.

@@ -1,0 +1,51 @@
+#!/bin/bash
+# Wrapper for the /codex slash command that threads context across calls.
+#
+# Plain `codex exec` is one-shot: each run starts with no memory of the last.
+# This keeps a per-directory Codex session id and resumes it, so successive
+# /codex calls in the same working dir form one ongoing conversation. The id is
+# remembered under $CODEX_HOME/.claude-threads keyed by the cwd, and refreshed to
+# the newest rollout after each run so the chain keeps moving forward.
+#
+# Start a fresh thread (drop prior context):
+#   codex-session --new [prompt]      # also: new | reset | --reset
+set -u
+
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+threads="$CODEX_HOME/.claude-threads"
+mkdir -p "$threads"
+sid_file="$threads/$(pwd | sha1sum | cut -c1-16).sid"
+
+case "${1:-}" in
+  --new|--reset|new|reset)
+    rm -f "$sid_file"; shift
+    [ $# -eq 0 ] && { echo ">> [codex] thread reset for $(pwd)"; exit 0; }
+    ;;
+esac
+
+prompt="$*"
+[ -n "$prompt" ] || { echo "usage: codex-session [--new] <prompt>" >&2; exit 2; }
+
+sid=""
+[ -s "$sid_file" ] && sid=$(cat "$sid_file")
+
+# Resume only if that session's rollout file still exists on disk; otherwise the
+# stored id is stale and we start clean (avoids a confusing resume failure).
+if [ -n "$sid" ] && compgen -G "$CODEX_HOME/sessions/*/*/*/rollout-*-$sid.jsonl" >/dev/null; then
+  echo ">> [codex] resuming session $sid"
+  codex exec resume --skip-git-repo-check "$sid" "$prompt" </dev/null
+  rc=$?
+else
+  echo ">> [codex] starting new session"
+  codex exec --skip-git-repo-check "$prompt" </dev/null
+  rc=$?
+fi
+
+# Remember the newest session id so the next call continues from here. (resume
+# may fork a new rollout; taking the newest keeps the chain pointed at the tip.)
+newest=$(ls -t "$CODEX_HOME"/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1)
+if [ -n "$newest" ]; then
+  uuid=$(basename "$newest" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | tail -1)
+  [ -n "$uuid" ] && printf '%s\n' "$uuid" > "$sid_file"
+fi
+exit $rc
