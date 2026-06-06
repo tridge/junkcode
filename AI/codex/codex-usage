@@ -23,6 +23,7 @@ Usage:
   codex-usage --all           # every session ever
   codex-usage --top N         # rows to show (default 20)
   codex-usage --by-project    # aggregate by project dir instead of per session
+  codex-usage --api-cost      # show USD at OpenAI API list prices instead of tokens
 """
 
 import argparse
@@ -33,6 +34,33 @@ from glob import glob
 
 CODEX_HOME = os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex"))
 SESSIONS = os.path.join(CODEX_HOME, "sessions")
+
+# OpenAI API list price, USD per token, for the --api-cost estimate (what the
+# usage WOULD cost billed pay-as-you-go; on a Codex subscription you are not
+# actually charged this). Keyed by model-name substring; unknown -> gpt-5.5.
+#   gpt-5.5: $5/1M input, $0.50/1M cached input, $30/1M output  (output incl. reasoning)
+PRICING = {
+    "gpt-5.5": dict(inp=5e-6, cached=0.5e-6, out=30e-6),
+    "gpt-5":   dict(inp=5e-6, cached=0.5e-6, out=30e-6),
+}
+DEFAULT_PRICE = PRICING["gpt-5.5"]
+
+
+def price_for(model):
+    m = (model or "").lower()
+    for k, v in PRICING.items():
+        if k in m:
+            return v
+    return DEFAULT_PRICE
+
+
+def cost_of(last, model):
+    """USD API-list-price estimate for one token_count delta."""
+    p = price_for(model)
+    din = last.get("input_tokens", 0) or 0
+    dcached = last.get("cached_input_tokens", 0) or 0
+    dout = last.get("output_tokens", 0) or 0
+    return max(0, din - dcached) * p["inp"] + dcached * p["cached"] + dout * p["out"]
 
 
 def parse_ts(s):
@@ -83,6 +111,12 @@ def fmt_tok(x):
     return str(x)
 
 
+def fmt_money(x):
+    if x >= 1000:
+        return f"${x/1000:.1f}k"
+    return f"${x:.2f}"
+
+
 def scan():
     """Return (sessions dict, latest_rate_limits or None, now)."""
     now = datetime.now(timezone.utc)
@@ -125,12 +159,17 @@ def scan():
                         model=p.get("model_provider", ""), title="",
                         first=None, last=None, turns=0,
                         tok={"5h": 0, "24h": 0, "7d": 0, "total": 0},
-                        out={"5h": 0, "24h": 0, "7d": 0, "total": 0}))
+                        out={"5h": 0, "24h": 0, "7d": 0, "total": 0},
+                        cost={"5h": 0.0, "24h": 0.0, "7d": 0.0, "total": 0.0}))
                     if rec["parent"] is None and parent:
                         rec["parent"] = parent
                     continue
                 if rec is None:
                     # transcript without a leading session_meta we parsed; skip
+                    continue
+                # the actual model (e.g. gpt-5.5) lives in turn_context, not session_meta
+                if typ == "turn_context" and p.get("model"):
+                    rec["model"] = p["model"]
                     continue
                 ts = parse_ts(o.get("timestamp"))
                 # title: first real (non-context) user message
@@ -153,6 +192,7 @@ def scan():
                 last = info.get("last_token_usage") or {}
                 dtot = last.get("total_tokens", 0) or 0
                 dout = last.get("output_tokens", 0) or 0
+                dcost = cost_of(last, rec["model"])
                 rec["turns"] += 1
                 if ts:
                     rec["first"] = ts if rec["first"] is None else min(rec["first"], ts)
@@ -167,8 +207,10 @@ def scan():
                     if ts and (now - ts).total_seconds() <= secs:
                         rec["tok"][w] += dtot
                         rec["out"][w] += dout
+                        rec["cost"][w] += dcost
                 rec["tok"]["total"] += dtot
                 rec["out"]["total"] += dout
+                rec["cost"]["total"] += dcost
     return S, latest_rl, now
 
 
@@ -197,6 +239,9 @@ def main():
     ap.add_argument("--all", action="store_true", help="show all sessions, no active-window filter")
     ap.add_argument("--top", type=int, default=20, help="max rows (default 20)")
     ap.add_argument("--by-project", action="store_true", help="aggregate by project dir, not per session")
+    ap.add_argument("--api-cost", "--dollars", dest="api_cost", action="store_true",
+                    help="show what the usage WOULD cost at OpenAI API pay-as-you-go rates "
+                         "(USD est.) instead of token counts; you are not billed this on a subscription")
     args = ap.parse_args()
 
     win_s = None if args.window == "total" else {"5h": 5 * 3600, "24h": 86400, "7d": 7 * 86400}[args.window]
@@ -214,13 +259,15 @@ def main():
             r = roots[rk] = dict(id=rk, cwd=base.get("cwd", "") or rec["cwd"],
                                  title=base.get("title", ""), model=base.get("model", ""),
                                  first=None, last=None, turns=0, subs=0,
-                                 tok={k: 0 for k in rec["tok"]}, out={k: 0 for k in rec["out"]})
+                                 tok={k: 0 for k in rec["tok"]}, out={k: 0 for k in rec["out"]},
+                                 cost={k: 0.0 for k in rec["cost"]})
         if rec["is_sub"] and rk != sid:
             r["subs"] += 1
         r["turns"] += rec["turns"]
         for k in r["tok"]:
             r["tok"][k] += rec["tok"][k]
             r["out"][k] += rec["out"][k]
+            r["cost"][k] += rec["cost"][k]
         for f in ("first",):
             if rec[f] and (r[f] is None or rec[f] < r[f]):
                 r[f] = rec[f]
@@ -241,12 +288,13 @@ def main():
                 q = proj[key] = dict(cwd=key, title="", model=r["model"], turns=0, subs=0,
                                      first=None, last=None,
                                      tok={k: 0 for k in r["tok"]}, out={k: 0 for k in r["out"]},
-                                     nsess=0)
+                                     cost={k: 0.0 for k in r["cost"]}, nsess=0)
             q["nsess"] += 1
             q["turns"] += r["turns"]
             for k in q["tok"]:
                 q["tok"][k] += r["tok"][k]
                 q["out"][k] += r["out"][k]
+                q["cost"][k] += r["cost"][k]
             if r["last"] and (q["last"] is None or r["last"] > q["last"]):
                 q["last"] = r["last"]
         rows = list(proj.values())
@@ -254,11 +302,13 @@ def main():
         rows = list(roots.values())
 
     wkey = args.window  # one of 5h/24h/7d/total, all precomputed
+    store = "cost" if args.api_cost else "tok"
+    fmt = fmt_money if args.api_cost else fmt_tok
 
     if not args.all and win_s is not None:
         cut = now - timedelta(seconds=win_s)
         rows = [r for r in rows if r["last"] and r["last"] >= cut]
-    rows.sort(key=lambda r: r["tok"][wkey], reverse=True)
+    rows.sort(key=lambda r: r[store][wkey], reverse=True)
 
     # ---- headline: real rate-limit meter ----
     print(f"Codex usage — {now.astimezone().strftime('%Y-%m-%d %H:%M %Z')}")
@@ -281,31 +331,37 @@ def main():
         print("  (no rate-limit data found in session files)")
     print()
 
+    metric = "est. API $" if args.api_cost else "tokens"
     scope = "all-time" if win_s is None else f"active in last {args.window}"
-    print(f"per-{'project' if args.by_project else 'session'} tokens — sorted by {wkey} — {len(rows)} {scope}")
+    print(f"per-{'project' if args.by_project else 'session'} {metric} — sorted by {wkey} — {len(rows)} {scope}")
     subcol = "SESS" if args.by_project else "SUBS"
-    hdr = f"{'LAST':>5}  {'PROJECT':<22} {'TURNS':>5} {subcol:>4}  {'5h':>7} {'24h':>7} {'7d':>7} {'TOTAL':>8}  TITLE"
+    hdr = f"{'LAST':>5}  {'PROJECT':<22} {'TURNS':>5} {subcol:>4}  {'5h':>8} {'24h':>8} {'7d':>8} {'TOTAL':>9}  TITLE"
     print(hdr)
     print("-" * len(hdr))
     tot = {k: 0 for k in ("5h", "24h", "7d", "total")}
     for r in rows:
         for k in tot:
-            tot[k] += r["tok"][k]
+            tot[k] += r[store][k]
     for r in rows[: args.top]:
         proj = os.path.basename((r["cwd"] or "?").rstrip("/")) or "?"
         subs = r.get("subs", 0) if not args.by_project else r.get("nsess", 0)
         title = (r.get("title") or (r["id"][:8] if not args.by_project else "")) or ""
         print(f"{human_age(r['last'], now):>5}  {proj[:22]:<22} {r['turns']:>5} {subs:>4}  "
-              f"{fmt_tok(r['tok']['5h']):>7} {fmt_tok(r['tok']['24h']):>7} {fmt_tok(r['tok']['7d']):>7} "
-              f"{fmt_tok(r['tok']['total']):>8}  {title}")
+              f"{fmt(r[store]['5h']):>8} {fmt(r[store]['24h']):>8} {fmt(r[store]['7d']):>8} "
+              f"{fmt(r[store]['total']):>9}  {title}")
     print("-" * len(hdr))
     print(f"{'ALL':>5}  {'('+str(len(rows))+(' projects' if args.by_project else ' sessions')+')':<22} {'':>5} {'':>4}  "
-          f"{fmt_tok(tot['5h']):>7} {fmt_tok(tot['24h']):>7} {fmt_tok(tot['7d']):>7} {fmt_tok(tot['total']):>8}")
+          f"{fmt(tot['5h']):>8} {fmt(tot['24h']):>8} {fmt(tot['7d']):>8} {fmt(tot['total']):>9}")
     print()
-    print("The 5-hour / weekly %% are Codex's REAL account meter (read from the data, no")
-    print("calibration). Token columns are per-session totals (a proxy for which session")
-    print("drove that usage); SUBS = subagent threads rolled into the parent. The account")
-    print("meter is global, so session tokens explain the share, not the absolute %%.")
+    print("The 5-hour / weekly %% are Codex's REAL account meter (read from the data, no calibration).")
+    if args.api_cost:
+        print("$ columns = what the usage WOULD cost at OpenAI API list prices (gpt-5.5: $5/$0.50/$30")
+        print("per 1M in/cached/out). On a Codex subscription you are NOT billed this — it's an estimate")
+        print("of the value. SUBS = subagent threads rolled into the parent.")
+    else:
+        print("Token columns are per-session totals (a proxy for which session drove that usage); SUBS =")
+        print("subagent threads rolled into the parent. The account meter is global, so session tokens")
+        print("explain the share, not the absolute %%.  (--api-cost shows USD at API rates instead.)")
 
 
 if __name__ == "__main__":

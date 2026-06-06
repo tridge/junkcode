@@ -31,7 +31,15 @@ codex-usage --window 7d     # the weekly window
 codex-usage --all           # every session ever
 codex-usage --by-project    # aggregate by project dir (SUBS column -> SESS count)
 codex-usage --top N         # rows to show (default 20)
+codex-usage --api-cost      # show USD at OpenAI API list prices instead of token counts
 ```
+
+`--api-cost` reweights the per-session token deltas (uncached input / cached input
+/ output) by the model's API list price — for gpt-5.5: **$5 / $0.50 / $30 per 1M**
+in/cached/out — to estimate what the usage *would* cost billed pay-as-you-go. On a
+Codex subscription you are **not** charged this; it's a value estimate. The model
+is read per session from each turn's `turn_context.model` (unknown models fall back
+to gpt-5.5 pricing).
 
 Example:
 
