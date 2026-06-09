@@ -51,6 +51,9 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
      - **REVIEW** — key absent from the manifest (new PR) OR current head differs (changed PR). These are the only PRs that get a diff-fetch + review.
      - **DROPPED** — key in the manifest but no longer in the current labelled set (merged, closed, or label removed). Do not carry it into the open-PR sections/totals; if useful, check `gh pr view <n> --json state,mergedAt` and note it as merged/closed.
    - Report the split before proceeding, e.g. "12 labelled PRs: 2 to review (1 new, 1 changed), 10 reused, 1 dropped (merged)".
+   - **Refresh CI for the REUSE set (cheap).** A reused PR's code is unchanged, but its CI result can still have changed (a flaky job re-run, or its merge-with-master base moved). For each REUSE PR run `gh pr checks <number> [--repo <owner/repo>]` (status only — do NOT re-fetch the diff or re-review). Note which reused PRs have a CI status differing from what their carried-over section currently shows.
+
+
 
 3. **Review only the REVIEW set.** For each such PR (in any repo):
    - Fetch the diff with `gh pr diff <number>` (add `--repo <owner/repo>` for submodule PRs)
@@ -75,7 +78,7 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
      - List of files changed with links to GitHub diff view
      - Review findings with specific file:line references linking to GitHub
      - Overall verdict: APPROVE, COMMENT, or REQUEST CHANGES
-   - Reused sections are copied unchanged (they were reviewed and Codex-validated in a prior run at the same head); only newly reviewed/changed PRs get fresh content. Add a short note near the top summarising the refresh (what was added / changed / dropped, what was reused).
+   - Reused sections are copied unchanged (they were reviewed and Codex-validated in a prior run at the same head) **except for the CI status, which is refreshed** from the step-2 `gh pr checks` result: update the PR's CI indicator in its meta line and in the contents/quick-verdict and summary tables to the current value. If a reused PR's CI flipped, add a brief `CI updated <DATE>: <old> → <new>` note to its section; and if it went green→failing on otherwise-unchanged code, flag it (likely a flaky job or a base-merge regression rather than a fault in the PR diff) so it isn't silently presented as still-passing. Do not change the findings or verdict of a reused PR — only its CI status. Only newly reviewed/changed PRs get fresh content. Add a short note near the top summarising the refresh (what was added / changed / dropped, what was reused, and any CI changes on reused PRs).
    - Include the absolute review date at the top of the report.
    - Summary table at the end
 
