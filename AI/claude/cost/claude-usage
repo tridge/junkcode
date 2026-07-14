@@ -34,8 +34,8 @@ Usage:
   claude-usage --window 2d      # last 2 days
   claude-usage --calibrate 80   # set ceiling so current 5h total == 80%
   claude-usage --show-quota     # print the ceiling and exit
-  claude-usage --api-cost       # what the window would cost at API pay-as-you-go rates
-  claude-usage --tokens         # absolute token table for the window
+  claude-usage --api            # cost at Fable 5 / Mythos 5 rates ($10/M in, $50/M out)
+  claude-usage --tokens         # input/output token table for the window
   claude-usage --top N          # rows to show (default 20)
 """
 
@@ -58,6 +58,15 @@ PRICING = {
     "haiku":  dict(inp=0.80e-6, out=4e-6, cw5m=1.0e-6,  cw1h=1.6e-6, cr=0.08e-6),
 }
 DUR_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+# --api cost pricing: Fable 5 / Mythos 5 list price, USD per token — $10 / 1M input,
+# $50 / 1M output. A single flat tier (both models share it) applied to all usage,
+# since Claude Code transcripts tag each turn by model-id (opus/sonnet/haiku), not by
+# these names. Raw input + cache WRITES bill at the full input rate; cache READS are
+# discounted to 0.1x input ($1/M), as on the real API.
+API_IN = 10e-6
+API_OUT = 50e-6
+CACHE_READ_MULT = 0.1
 
 
 def parse_window(s):
@@ -110,6 +119,22 @@ def tokens_of(usage):
     )
 
 
+def io_tokens(usage):
+    """(input_full, cache_read, output) token split. input_full = raw input + cache
+    WRITES (billed at the full input rate); cache_read is billed at a discount. Total
+    input-side tokens = input_full + cache_read, so the three sum to tokens_of()."""
+    cc = usage.get("cache_creation") or {}
+    cw5m = cc.get("ephemeral_5m_input_tokens")
+    cw1h = cc.get("ephemeral_1h_input_tokens")
+    if cw5m is None and cw1h is None:
+        cwrite = usage.get("cache_creation_input_tokens", 0) or 0
+    else:
+        cwrite = (cw5m or 0) + (cw1h or 0)
+    inp_full = (usage.get("input_tokens", 0) or 0) + cwrite
+    cread = usage.get("cache_read_input_tokens", 0) or 0
+    return inp_full, cread, (usage.get("output_tokens", 0) or 0)
+
+
 def parse_ts(s):
     if not s:
         return None
@@ -158,7 +183,7 @@ def scan():
     def acc(sid):
         if sid not in S:
             S[sid] = dict(cwd="", title="", first=None, last=None, msgs=0,
-                          events=[], models={})  # events: (epoch, units, tokens)
+                          events=[], models={})  # events: (epoch,units,tokens,inp_full,cread,out)
         return S[sid]
 
     now = datetime.now(timezone.utc)
@@ -200,12 +225,13 @@ def scan():
                     continue
                 u = units_of(usage, fam)
                 t = tokens_of(usage)
+                inp_full, cread, out = io_tokens(usage)
                 rec["msgs"] += 1
                 rec["models"][fam] = rec["models"].get(fam, 0) + u
                 if ts:
                     rec["first"] = ts if rec["first"] is None else min(rec["first"], ts)
                     rec["last"] = ts if rec["last"] is None else max(rec["last"], ts)
-                    rec["events"].append((ts.timestamp(), u, t))
+                    rec["events"].append((ts.timestamp(), u, t, inp_full, cread, out))
                     events.append((ts.timestamp(), u))
     return S, events, now
 
@@ -233,7 +259,8 @@ def sliding_peak(events, span=FIVE_H, since=None):
 
 
 def win_sum(rec, cutoff, idx=1):
-    """Sum field `idx` (1=units, 2=tokens) of rec's events at-or-after cutoff."""
+    """Sum field `idx` (1=units, 2=tokens, 3=input_full, 4=cache_read, 5=output)
+    of rec's events at-or-after cutoff."""
     return sum(e[idx] for e in rec["events"] if cutoff is None or e[0] >= cutoff)
 
 
@@ -247,10 +274,10 @@ def main():
                          "(read the 5-HOUR PCT from Claude's /usage), then exit")
     ap.add_argument("--show-quota", action="store_true", help="print the ceiling and exit")
     ap.add_argument("--top", type=int, default=20, help="max rows (default 20)")
-    ap.add_argument("--tokens", action="store_true", help="absolute token table for the window instead of %%")
-    ap.add_argument("--api-cost", "--dollars", dest="api_cost", action="store_true",
-                    help="show what the window would COST at API pay-as-you-go rates (USD) "
-                         "— i.e. the bill if this usage were billed per token instead of on Max")
+    ap.add_argument("--tokens", action="store_true", help="input/output token table for the window instead of %%")
+    ap.add_argument("--api", "--api-cost", "--dollars", dest="api_cost", action="store_true",
+                    help="show API cost (USD) at Fable 5 / Mythos 5 rates — $10/M input, "
+                         "$50/M output — the pay-as-you-go value of this usage (you're on Max)")
     args = ap.parse_args()
 
     try:
@@ -318,33 +345,60 @@ def main():
     win_total = sum(r["_u"] for r in rows)
     stamp = now.astimezone().strftime("%Y-%m-%d %H:%M %Z")
 
-    # ---- absolute fallbacks -------------------------------------------------
+    # ---- absolute views: token counts (input/output) or API $ ---------------
     if args.tokens or args.api_cost:
-        key = "_t" if args.tokens else "_u"
-        unit = "tokens" if args.tokens else "est. API $ (pay-as-you-go list price)"
-        rows.sort(key=lambda r: r[key], reverse=True)
+        for r in rows:
+            r["_inful"] = win_sum(r, cutoff, 3)   # raw input + cache write (full rate)
+            r["_cread"] = win_sum(r, cutoff, 4)   # cache read (discounted)
+            r["_out"] = win_sum(r, cutoff, 5)
+            r["_in"] = r["_inful"] + r["_cread"]  # all input-side tokens (display)
 
-        def f(x):
-            if args.tokens:
-                return f"{x/1e6:.1f}M" if x >= 1e6 else (f"{x/1e3:.0f}k" if x >= 1e3 else str(int(x)))
-            return f"${x:,.2f}"
+        def ft(x):
+            return f"{x/1e6:.1f}M" if x >= 1e6 else (f"{x/1e3:.0f}k" if x >= 1e3 else str(int(x)))
 
-        print(f"Claude Code usage by session — {unit} — window {wlabel} — {stamp}")
+        money = lambda x: f"${x:,.2f}"
+
+        if args.tokens:
+            rows.sort(key=lambda r: r["_in"] + r["_out"], reverse=True)
+            print(f"Claude Code tokens by session (input / output) — window {wlabel} — {stamp}")
+            print()
+            hdr = f"{'LAST':>5}  {'PROJECT':<22} {'MSGS':>5}  {'INPUT':>9} {'OUTPUT':>9} {'TOTAL':>9}  TITLE"
+            print(hdr); print("-" * len(hdr))
+            for r in rows[: args.top]:
+                proj = os.path.basename(r["cwd"].rstrip("/")) or "?"
+                print(f"{human_age(r['last'],now):>5}  {proj[:22]:<22} {r['msgs']:>5}  "
+                      f"{ft(r['_in']):>9} {ft(r['_out']):>9} {ft(r['_in']+r['_out']):>9}  {r['title']}")
+            print("-" * len(hdr))
+            ti = sum(r["_in"] for r in rows); to = sum(r["_out"] for r in rows)
+            print(f"{'ALL':>5}  {'(total)':<22} {'':>5}  {ft(ti):>9} {ft(to):>9} {ft(ti+to):>9}")
+            print()
+            print("INPUT folds in cache read + cache write (all input-side tokens); OUTPUT is")
+            print("generated tokens. INPUT + OUTPUT = total tokens.")
+            return
+
+        # --api / --api-cost: Fable 5 / Mythos 5 rates — $10/M input, $50/M output,
+        # cache reads discounted to 0.1x the input rate.
+        for r in rows:
+            r["_cin"] = r["_inful"] * API_IN + r["_cread"] * API_IN * CACHE_READ_MULT
+            r["_cout"] = r["_out"] * API_OUT
+            r["_cost"] = r["_cin"] + r["_cout"]
+        rows.sort(key=lambda r: r["_cost"], reverse=True)
+        print(f"Claude Code API cost by session — Fable 5 / Mythos 5 rates "
+              f"($10/M in, $50/M out) — window {wlabel} — {stamp}")
         print()
-        hdr = f"{'LAST':>5}  {'PROJECT':<22} {'MSGS':>5}  {'AMOUNT':>11}  TOP-MODEL  TITLE"
+        hdr = f"{'LAST':>5}  {'PROJECT':<22} {'MSGS':>5}  {'IN $':>11} {'OUT $':>10} {'COST':>11}  TITLE"
         print(hdr); print("-" * len(hdr))
         for r in rows[: args.top]:
             proj = os.path.basename(r["cwd"].rstrip("/")) or "?"
-            topm = max(r["models"], key=r["models"].get) if r["models"] else "-"
             print(f"{human_age(r['last'],now):>5}  {proj[:22]:<22} {r['msgs']:>5}  "
-                  f"{f(r[key]):>11}  {topm:<9}  {r['title']}")
+                  f"{money(r['_cin']):>11} {money(r['_cout']):>10} {money(r['_cost']):>11}  {r['title']}")
         print("-" * len(hdr))
-        print(f"{'ALL':>5}  {'(total)':<22} {'':>5}  {f(sum(r[key] for r in rows)):>11}")
-        if args.api_cost:
-            print()
-            print("What this usage WOULD cost at Anthropic API pay-as-you-go list prices")
-            print("(input/output/cache per-token rates per model). You are on Max, so you")
-            print("are NOT charged this — it just shows the value of the usage. Estimate only.")
+        ci = sum(r["_cin"] for r in rows); co = sum(r["_cout"] for r in rows)
+        print(f"{'ALL':>5}  {'(total)':<22} {'':>5}  {money(ci):>11} {money(co):>10} {money(ci+co):>11}")
+        print()
+        print("Cost at Fable 5 / Mythos 5 list price: $10/M input (raw input + cache write),")
+        print("cache reads discounted to 0.1x = $1/M, $50/M output. On Max you are NOT billed")
+        print("per token — this is the equivalent pay-as-you-go value. Estimate only.")
         return
 
     print(f"Claude Code 5h-quota usage by session — window {wlabel} — {stamp}")
