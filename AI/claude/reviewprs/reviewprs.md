@@ -14,6 +14,7 @@ The command is incremental: it records the head commit hash each PR was reviewed
 - Bash(gh pr diff *)
 - Bash(gh pr checks *)
 - Bash(gh pr view *)
+- Bash(gh pr comment *)
 - Bash(gh api *)
 - Bash(git log *)
 - Bash(git diff *)
@@ -108,7 +109,18 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
 
    - Record the validation in the report itself: add a short **"Codex validation"** line near the top (date + one-line outcome, e.g. "Codex cross-checked N findings: X confirmed, Y adjusted, Z refuted, W added"). If any verdicts changed, update the per-PR sections, the contents/quick-verdict table, the summary table, and the final totals so the whole report stays consistent.
 
-8. **Publish the report to the web.** Once the report is finalised (including the Codex revisions), publish it to BOTH the per-label "latest" directory (which the next re-run reads) and a dated archive directory. This is automatic — always do it at the end of the run.
+8. **Post review comments to the PRs — DevCallEU only.** This step runs automatically **only when the label (`$ARGUMENTS`) is exactly `DevCallEU`**. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
+
+   Posting happens **after** the report is finalised, i.e. only once a PR has been reviewed by **both you and Codex** (steps 3 and 7). Therefore comments are posted for the **REVIEW set** (the PRs reviewed this run) — reused PRs were already commented in the prior run at the same head, so skip them.
+
+   - **Scope:** post a comment for each reviewed PR whose verdict is **COMMENT** or **REQUEST CHANGES** (i.e. there is something actionable). Skip clean **APPROVE** PRs with only NOTE-level items to avoid noise (post one only if the user asked for it).
+   - **Content:** mirror that PR's findings from the finalised report — verdict, then findings grouped by severity, each with its `file:line` reference and a one-line description, plus suggested fixes where useful. Use the post-Codex findings (refuted ones removed, line refs corrected). If you dropped a finding as a false positive during validation, you may note that briefly so the author isn't left chasing it.
+   - **Mark every comment as AI-generated.** Begin the body with a marker line, e.g.: `**Automated review note — AI-generated (Claude), validated against the live diff.** Please sanity-check before acting.`
+   - **Update, don't duplicate.** If you have already posted an AI-generated comment to that PR (e.g. in a previous run), **edit the existing comment instead of adding a new one**: `gh pr comment <number> [--repo <owner/repo>] --edit-last --body-file <file>` edits your most recent comment on that PR. If `--edit-last` is not viable, find your prior comment via `gh api repos/<owner>/<repo>/issues/<number>/comments` (look for the "AI-generated (Claude)" marker) and PATCH it by id. Only post a brand-new comment (`gh pr comment <number> [--repo <owner/repo>] --body-file <file>`) if you have not commented on that PR before.
+   - Add `--repo <owner/repo>` for wiki/submodule PRs.
+   - Record in the report (near the top, alongside the Codex line) which PRs got a comment posted/updated, with links to the comments.
+
+9. **Publish the report to the web.** Once the report is finalised (including the Codex revisions and any DevCallEU comment posting), publish it to BOTH the per-label "latest" directory (which the next re-run reads) and a dated archive directory. This is automatic — always do it at the end of the run.
 
    ```bash
    REPORT="$(git rev-parse --show-toplevel)/devcall_pr_reviews.html"
@@ -123,4 +135,4 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
    - Use the SAME `<DATE>` as the report's review date so the directory date and the in-report date agree.
    - Print both public URLs when done.
 
-Report the summary counts when complete, note the skip split and validation outcome, and give the published URLs: X APPROVE | Y COMMENT | Z REQUEST CHANGES (reused N, reviewed M; Codex: X confirmed / Y adjusted / Z refuted / W added) — published at https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html
+Report the summary counts when complete, note the skip split and validation outcome, any PR comments posted/updated (DevCallEU only), and give the published URLs: X APPROVE | Y COMMENT | Z REQUEST CHANGES (reused N, reviewed M; Codex: X confirmed / Y adjusted / Z refuted / W added; comments posted on K PRs) — published at https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html

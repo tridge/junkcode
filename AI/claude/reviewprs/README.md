@@ -18,8 +18,8 @@ cp reviewprs.md <project>/.claude/commands/reviewprs.md # per-project
 Requires the `gh` CLI authenticated (`gh auth status`), the `codex` CLI (via the
 `codex-session` wrapper, see the `codex/` command), and `rsync`/ssh access to the
 web host. The command only allows read-only `gh`/`git` subcommands plus
-`codex`/`curl`/`rsync` — it inspects PRs and publishes a report; it does not post
-or push to GitHub.
+`codex`/`curl`/`rsync` and `gh pr comment` — it never pushes to GitHub, and only
+posts PR comments for the `DevCallEU` label (see below).
 
 ## Usage
 
@@ -47,7 +47,11 @@ a summary table; submodule/wiki PRs are prefixed with their repo (e.g.
 5. **Codex validation** — Codex independently re-checks the newly-reviewed findings
    (CONFIRM / REFUTE / ADJUST / NEW); the report is revised on its own judgement,
    not blind acceptance, and a "Codex validation" line records the outcome.
-6. **Publish** to two places (see below).
+6. **Post PR comments (`DevCallEU` label only)** — after validation, each reviewed
+   PR with an actionable verdict (COMMENT / REQUEST CHANGES) gets its findings
+   posted as a clearly AI-marked PR comment; existing AI comments are edited in
+   place rather than duplicated. Other labels never post unless explicitly asked.
+7. **Publish** to two places (see below).
 
 ## Incremental re-runs (head-hash skip)
 
