@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Scan Claude + Codex usage and write the result to the cache.
+
+This is the SLOW half (~8s: claude-usage ~2s, codex-usage ~6s), which is why
+the panel never calls it synchronously - ai-usage-genmon reads the cache and
+spawns this in the background when the cache goes stale.
+
+flock keeps concurrent refreshes from piling up: if a scan is already running
+this exits immediately rather than starting a second one.
+"""
+
+import fcntl
+import json
+import os
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ai_usage  # noqa: E402
+
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "ai-usage")
+CACHE = os.path.join(CACHE_DIR, "status.json")
+LOCK = os.path.join(CACHE_DIR, "refresh.lock")
+
+
+def main():
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    lf = open(LOCK, "w")
+    try:
+        fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0  # another refresh is already running
+
+    started = time.time()
+    data = ai_usage.collect()
+    data["scan_seconds"] = round(time.time() - started, 2)
+
+    # atomic replace so a reader never sees a half-written file
+    fd, tmp = tempfile.mkstemp(dir=CACHE_DIR, prefix=".status-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=1)
+        os.replace(tmp, CACHE)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+    if "-v" in sys.argv or "--verbose" in sys.argv:
+        print("wrote %s in %.2fs" % (CACHE, data["scan_seconds"]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

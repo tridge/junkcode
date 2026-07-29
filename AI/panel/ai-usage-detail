@@ -1,0 +1,23 @@
+#!/bin/bash
+# Click action for the panel widget: open a terminal showing the full
+# claude-usage / codex-usage reports (see ai-usage-show).
+#
+# Also kicks off a cache refresh, so the panel is up to date right after you
+# have looked at the detail.
+set -u
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SHOW="$HERE/ai-usage-show"
+TITLE="AI usage detail"
+# codex-usage lines run to ~115 chars; narrower than this and rows wrap
+GEOM="132x48"
+
+( "$HERE/ai-usage-refresh" >/dev/null 2>&1 & )
+
+if command -v xfce4-terminal >/dev/null 2>&1; then
+    exec xfce4-terminal --title="$TITLE" --geometry="$GEOM" --command="$SHOW"
+elif command -v gnome-terminal >/dev/null 2>&1; then
+    exec gnome-terminal --title="$TITLE" --geometry="$GEOM" -- "$SHOW"
+else
+    exec x-terminal-emulator -T "$TITLE" -e "$SHOW"
+fi

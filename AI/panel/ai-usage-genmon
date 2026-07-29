@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Emit xfce4-genmon XML for Claude + Codex usage.
+
+MUST be fast - genmon runs it on every poll and the panel blocks while it
+runs. So this only ever reads the cache file (instant) and, if that cache has
+gone stale, spawns ai-usage-refresh detached in the background. The panel
+shows the last known values meanwhile, marked stale, rather than freezing for
+8 seconds.
+
+genmon consumes:
+  <txt>      panel label (Pango markup allowed)
+  <tool>     tooltip
+  <click>    command to run on click (works for both <txt> and <img>)
+"""
+
+import glob
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ai_usage  # noqa: E402
+import ai_usage_icon  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "ai-usage")
+CACHE = os.path.join(CACHE_DIR, "status.json")
+REFRESH = os.path.join(HERE, "ai-usage-refresh")
+DETAIL = os.path.join(HERE, "ai-usage-detail")
+
+# refresh once the cache is older than this
+STALE_AFTER = int(os.environ.get("AI_USAGE_STALE_AFTER", "90"))
+# show the reading as untrusted past this
+TOO_OLD = int(os.environ.get("AI_USAGE_TOO_OLD", "600"))
+
+# thresholds -> colour
+WARN = float(os.environ.get("AI_USAGE_WARN", "60"))
+CRIT = float(os.environ.get("AI_USAGE_CRIT", "85"))
+
+# Saturated mid-tones, not pastels: the panel background is light, and the
+# original gruvbox palette (#8ec07c / #fabd2f) was close to unreadable on it.
+# These keep contrast on both light and dark panels.
+GREEN = os.environ.get("AI_USAGE_COL_OK", "#1b8a3a")
+AMBER = os.environ.get("AI_USAGE_COL_WARN", "#c25e00")
+RED = os.environ.get("AI_USAGE_COL_CRIT", "#cc0000")
+GREY = os.environ.get("AI_USAGE_COL_STALE", "#6b7280")
+EMPTY = os.environ.get("AI_USAGE_COL_EMPTY", "#b9bcc0")   # unfilled cells
+
+# battery-style segmented meter (text mode only)
+SEGMENTS = int(os.environ.get("AI_USAGE_SEGMENTS", "5"))
+CELL_FULL = "▰"
+CELL_EMPTY = "▱"
+
+# icon mode is the default: the text form was ~8x the width of the battery
+# icon beside it. Set AI_USAGE_TEXT=1 to get the wide textual form back.
+TEXT_MODE = os.environ.get("AI_USAGE_TEXT", "") not in ("", "0", "no")
+ICON_EMPTY = os.environ.get("AI_USAGE_ICON_EMPTY", "#00000018")
+ICON_OUTLINE = os.environ.get("AI_USAGE_ICON_OUTLINE", "#00000055")
+ICON_LABEL = os.environ.get("AI_USAGE_ICON_LABEL", "#00000099")
+# rasterised height in px; gdk-pixbuf uses the SVG intrinsic size as-is
+ICON_PX = int(os.environ.get("AI_USAGE_ICON_PX", "40"))
+
+
+def colour_for(pct):
+    if pct >= CRIT:
+        return RED
+    if pct >= WARN:
+        return AMBER
+    return GREEN
+
+
+def short_window(label):
+    """Panel space is tight; the tooltip carries the full name."""
+    return {"weekly": "wk"}.get(label, label)
+
+
+def esc(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
+def spawn_refresh():
+    try:
+        subprocess.Popen([sys.executable, REFRESH],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+    except Exception:
+        pass
+
+
+def read_cache():
+    try:
+        with open(CACHE) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def meter(pct, col):
+    """Battery-style segmented gauge: filled cells in the status colour,
+    remaining cells in a muted grey so the scale stays visible."""
+    filled = int(round(min(pct, 100.0) / 100.0 * SEGMENTS))
+    # anything above zero should light at least one cell, or low usage reads
+    # identically to no data at all
+    if pct > 0:
+        filled = max(filled, 1)
+    filled = min(filled, SEGMENTS)
+    out = ""
+    if filled:
+        out += '<span foreground="%s">%s</span>' % (col, CELL_FULL * filled)
+    if filled < SEGMENTS:
+        out += '<span foreground="%s">%s</span>' % (
+            EMPTY, CELL_EMPTY * (SEGMENTS - filled))
+    return out
+
+
+def provider_chunk(name, prov, stale):
+    """'<name> ▰▰▱▱▱ 55%5h' - gauge plus figure, coloured by severity."""
+    if not prov or not prov.get("ok"):
+        return '<span foreground="%s">%s %s ?</span>' % (
+            GREY, name, CELL_EMPTY * SEGMENTS)
+    w = ai_usage.worst(prov)
+    if not w:
+        return '<span foreground="%s">%s %s ?</span>' % (
+            GREY, name, CELL_EMPTY * SEGMENTS)
+    pct = w["pct"]
+    col = GREY if stale else colour_for(pct)
+    # '~' marks an estimate rather than a real account meter
+    tilde = "~" if w.get("estimated") else ""
+    weight = ' weight="bold"' if (pct >= CRIT and not stale) else ""
+    return '<span foreground="%s"%s>%s</span> %s <span foreground="%s"%s>%s%.0f%%%s</span>' % (
+        col, weight, name, meter(pct, col), col, weight, tilde, pct,
+        esc(short_window(w["label"])))
+
+
+def tooltip(data, age):
+    L = []
+    now = time.time()
+    for name, key in (("Claude", "claude"), ("Codex", "codex")):
+        prov = data.get(key) or {}
+        L.append("%s:" % name)
+        if prov.get("error"):
+            L.append("  error: %s" % prov["error"])
+        elif not prov.get("windows"):
+            L.append("  no data")
+        else:
+            # spell out used vs left. A bare "15.5% [###]" next to a gauge that
+            # drains invites reading the figure as the amount remaining.
+            for w in sorted(prov["windows"], key=lambda x: -x["pct"]):
+                line = "  %-7s %5.1f%% used,  %5.1f%% left" % (
+                    w["label"], w["pct"], max(0.0, 100.0 - w["pct"]))
+                if w.get("resets_at"):
+                    line += "   resets in %s" % ai_usage.human_until(
+                        w["resets_at"], now)
+                L.append(line)
+        if key == "claude" and prov.get("ok"):
+            L.append("  (estimate; %s)" % ("calibrated" if prov.get("calibrated")
+                                           else "UNCALIBRATED - run "
+                                                "claude-usage --calibrate N"))
+        if key == "codex" and prov.get("plan"):
+            L.append("  plan: %s" % prov["plan"])
+    L.append("")
+    L.append("updated %ds ago%s" % (int(age), "  (STALE)" if age > TOO_OLD else ""))
+    L.append("click for full detail")
+    return "\n".join(L)
+
+
+def provider_pct_col(prov, stale):
+    """(pct, colour) for a provider, for the icon."""
+    if not prov or not prov.get("ok"):
+        return None, GREY
+    w = ai_usage.worst(prov)
+    if not w:
+        return None, GREY
+    return w["pct"], (GREY if stale else colour_for(w["pct"]))
+
+
+def write_icon(data, stale):
+    """Render the gauges to SVG and return its path.
+
+    The filename carries a hash of the contents. genmon caches the image by
+    path, so a fixed name would leave the panel showing the first render
+    forever; alternating names on a timer is no good either, since any
+    even-second poll interval keeps landing on the same slot. Hashing gives a
+    new path exactly when the picture changes, and a stable one when it does
+    not.
+    """
+    cp, ccol = provider_pct_col(data.get("claude"), stale)
+    xp, xcol = provider_pct_col(data.get("codex"), stale)
+    # The gauge shows headroom REMAINING so it drains like a battery, while the
+    # colour still comes from how much is USED. Unknown reads as empty rather
+    # than full, so missing data never looks like plenty of quota.
+    cfill = (100.0 - cp) if cp is not None else 0.0
+    xfill = (100.0 - xp) if xp is not None else 0.0
+    svg = ai_usage_icon.render(cfill, xfill, ccol, xcol,
+                               empty=ICON_EMPTY, outline=ICON_OUTLINE,
+                               label_col=ICON_LABEL, px_height=ICON_PX)
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    digest = hashlib.sha1(svg.encode()).hexdigest()[:12]
+    path = os.path.join(CACHE_DIR, "icon-%s.svg" % digest)
+    if not os.path.exists(path):
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(svg)
+        os.replace(tmp, path)
+        # keep the directory from growing without bound
+        try:
+            icons = sorted(glob.glob(os.path.join(CACHE_DIR, "icon-*.svg")),
+                           key=os.path.getmtime, reverse=True)
+            for old in icons[8:]:
+                os.unlink(old)
+        except OSError:
+            pass
+    return path
+
+
+def main():
+    data = read_cache()
+    if data is None:
+        spawn_refresh()
+        print("<txt><span foreground=\"%s\">AI …</span></txt>" % GREY)
+        print("<tool>collecting usage, first scan takes ~8s…</tool>")
+        print("<click>%s</click>" % DETAIL)
+        return 0
+
+    age = time.time() - data.get("generated_at", 0)
+    if age > STALE_AFTER:
+        spawn_refresh()
+    stale = age > TOO_OLD
+
+    if TEXT_MODE:
+        print("<txt>%s %s</txt>" % (
+            provider_chunk("C", data.get("claude"), stale),
+            provider_chunk("X", data.get("codex"), stale)))
+    else:
+        print("<img>%s</img>" % write_icon(data, stale))
+    print("<tool>%s</tool>" % esc(tooltip(data, age)))
+    # <click> is the generic handler and the only one that actually fires for
+    # an <img> widget: <txtclick> fires only on text, and <iconclick> pairs
+    # with <icon> rather than <img>. Emitting two click tags at once made
+    # genmon render nothing at all.
+    print("<click>%s</click>" % DETAIL)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

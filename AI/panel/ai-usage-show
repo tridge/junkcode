@@ -1,0 +1,23 @@
+#!/bin/bash
+# Print the full claude-usage and codex-usage reports, then wait.
+# Kept as its own file rather than inlined into ai-usage-detail: passing this
+# through `xfce4-terminal --command="bash -c '...'"` breaks, because the body
+# contains single quotes of its own and the terminal silently exits.
+set -u
+
+printf '\033[1;36m===== claude-usage =====\033[0m\n'
+if command -v claude-usage >/dev/null 2>&1; then
+    claude-usage || echo "(claude-usage exited non-zero)"
+else
+    echo "claude-usage not on PATH"
+fi
+
+printf '\n\033[1;36m===== codex-usage =====\033[0m\n'
+if command -v codex-usage >/dev/null 2>&1; then
+    codex-usage || echo "(codex-usage exited non-zero)"
+else
+    echo "codex-usage not on PATH"
+fi
+
+printf '\n\033[2mPress Enter to close.\033[0m\n'
+read -r _
