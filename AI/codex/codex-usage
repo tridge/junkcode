@@ -7,9 +7,11 @@ $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<UUID>.jsonl. Every assistant turn
 emits an `event_msg` of type `token_count` that records BOTH:
   * per-turn token usage (`info.last_token_usage`: input / cached_input / output /
     reasoning_output / total), and
-  * the live account rate-limit meter (`rate_limits.primary` = the 5-hour /
-    300-minute window, `rate_limits.secondary` = the weekly / 10080-minute
-    window), each with `used_percent` and `resets_at`, plus `plan_type`.
+  * the live account rate-limit meter (`rate_limits.primary` and
+    `rate_limits.secondary`), each with `used_percent`, `resets_at` and
+    `window_minutes`, plus `plan_type`. The primary/secondary slots do NOT
+    have fixed window lengths — the weekly (10080-minute) window shows up in
+    `primary` too — so each window is labelled from its own window_minutes.
 
 So unlike claude-usage (which has to calibrate the 5h ceiling), this reads the
 REAL quota percentage straight from the data. It shows that headline meter, then
@@ -226,6 +228,24 @@ def root_of(sid, S, _seen=None):
     return rec["parent"]  # parent not scanned -> use its id as the root key
 
 
+def window_label(minutes):
+    """Name a rate-limit window from its length.
+
+    The meter's `primary`/`secondary` slots do not have fixed meanings — the
+    weekly window turns up in `primary` too — so always derive the label from
+    window_minutes rather than from which slot it arrived in.
+    """
+    if minutes is None:
+        return "?"
+    if minutes >= 10080:
+        return "weekly"
+    if minutes >= 1440:
+        return f"{int(round(minutes / 1440))}d"
+    if minutes >= 60:
+        return f"{int(round(minutes / 60))}h"
+    return f"{int(minutes)}m"
+
+
 def bar(pct, width=20):
     pct = max(0.0, min(100.0, pct))
     n = int(round(pct / 100 * width))
@@ -319,14 +339,18 @@ def main():
         sec = rl.get("secondary") or {}
         age = human_age(datetime.fromtimestamp(e, timezone.utc), now)
         print(f"plan: {plan}    (meter as of {age} ago)")
-        if prim:
-            print(f"  5-hour : {prim.get('used_percent',0):5.1f}% used  "
-                  f"[{bar(prim.get('used_percent',0))}]  resets in {human_until(prim.get('resets_at'), now)}")
-        if sec:
-            wm = sec.get("window_minutes", 10080)
-            label = "weekly " if wm >= 10080 else f"{int(wm/60)}h-win"
-            print(f"  {label}: {sec.get('used_percent',0):5.1f}% used  "
-                  f"[{bar(sec.get('used_percent',0))}]  resets in {human_until(sec.get('resets_at'), now)}")
+        # Label each window from its own window_minutes. Do NOT assume
+        # primary == 5-hour: the API puts the weekly window in `primary` at
+        # least some of the time, which used to print as
+        # "5-hour : 3.0% used ... resets in 6d4h" — a 5h window cannot reset
+        # six days out.
+        for w in (prim, sec):
+            if not w:
+                continue
+            print(f"  {window_label(w.get('window_minutes')):<7}: "
+                  f"{w.get('used_percent',0):5.1f}% used  "
+                  f"[{bar(w.get('used_percent',0))}]  "
+                  f"resets in {human_until(w.get('resets_at'), now)}")
     else:
         print("  (no rate-limit data found in session files)")
     print()

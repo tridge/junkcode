@@ -9,10 +9,14 @@ Codex writes one rollout transcript per session under
 `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<UUID>.jsonl`. Every assistant turn
 emits a `token_count` event that records BOTH the per-turn token usage
 (`info.last_token_usage`) AND the live account rate-limit meter
-(`rate_limits.primary` = the 5-hour window, `rate_limits.secondary` = the weekly
-window), each with `used_percent` and `resets_at`. So — unlike claude-usage,
-which has to calibrate the 5h ceiling against `/usage` — this reads the **real**
-quota percentage straight from the data, no calibration.
+(`rate_limits.primary` and `rate_limits.secondary`), each with `used_percent`,
+`resets_at` and `window_minutes`. So — unlike claude-usage, which has to
+calibrate the 5h ceiling against `/usage` — this reads the **real** quota
+percentage straight from the data, no calibration.
+
+The primary/secondary slots do **not** have fixed window lengths: the weekly
+(10080-minute) window turns up in `primary` too. Each window is therefore
+labelled from its own `window_minutes`, never from which slot it arrived in.
 
 ## Install
 
