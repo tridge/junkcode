@@ -5,7 +5,15 @@
 # contains single quotes of its own and the terminal silently exits.
 set -u
 
-printf '\033[1;36m===== claude-usage =====\033[0m\n'
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+# first, the same figures the panel shows: real account meters for both.
+# claude-usage below only knows the local 5h estimate, so without this the
+# detail view contradicts the panel.
+printf '\033[1;36m===== account meters =====\033[0m\n'
+python3 "$HERE/ai_usage.py" || echo "(meter summary failed)"
+
+printf '\n\033[1;36m===== claude-usage =====\033[0m\n'
 if command -v claude-usage >/dev/null 2>&1; then
     claude-usage || echo "(claude-usage exited non-zero)"
 else

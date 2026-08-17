@@ -1,24 +1,37 @@
 # AI usage panel widget (xfce4)
 
 An xfce4 panel widget showing Claude Code and Codex CLI quota usage at a
-glance, so you can see whether you are near a 5-hour or weekly limit without
-opening a terminal. Click it for the full `claude-usage` / `codex-usage`
+glance - real account meters for both, including Claude's per-model weekly cap
+- so you can see whether you are near a limit without opening a terminal. Click it for the full `claude-usage` / `codex-usage`
 reports.
 
-By default it draws a small **icon**: two vertical gauges, `C` = Claude on the
-left, `X` = Codex on the right. About 27px wide, so it sits alongside the other
-panel icons instead of dominating the panel. The numbers live in the tooltip.
+By default it draws a small **icon**: one vertical gauge per window, about 51px
+wide in total. The numbers live in the tooltip.
+
+```
+ F  W  5   X
+ └──┴──┘   └── Codex, its window closest to the limit
+    │
+    └── Claude:  F = weekly cap for that model (Fable here)
+                 W = weekly cap, all models
+                 5 = the rolling 5-hour window
+```
+
+Claude's three windows run out independently - you can be at 21% of the 5h
+window and 78% of the week while being completely out of Fable - so collapsing
+them to a single worst-case gauge hides which one you are actually up against.
+The wider gap separates the providers.
 
 **The gauges drain like a battery.** A full bar means plenty of quota left; it
 empties as you use it up:
 
 ```
- ┌─┐┌─┐  ┌─┐┌─┐  ┌─┐┌─┐  ┌─┐┌─┐
- │▓││▓│  │ ││ │  │ ││ │  │ ││ │
- │▓││▓│  │▓││▓│  │ ││ │  │ ││ │
- └─┘└─┘  └─┘└─┘  └─┘└─┘  └─┘└─┘
-  0% used  50%     70%     ~100%
-  green    green   amber   red sliver -> empty
+ ┌─┐   ┌─┐   ┌─┐   ┌─┐   ┏━┓
+ │▓│   │ │   │ │   │ │   ┃ ┃
+ │▓│   │▓│   │ │   │▒│   ┃ ┃
+ └─┘   └─┘   └─┘   └─┘   ┗━┛
+ 0%    50%   70%   ~99%   100% used
+ green green amber amber  empty, red outline
 ```
 
 Filling them with the *used* fraction instead reads exactly backwards: a
@@ -27,24 +40,28 @@ glance. The fill is headroom remaining; the colour still comes from how much is
 used (green `<60%`, amber `>=60%`, red `>=85%`, grey = stale).
 
 A sliver stays visible while any headroom remains, so "almost out" is still
-distinguishable from "completely out". A provider with no data reads as empty,
-never as full.
+distinguishable from "completely out". A gauge with *nothing* left has no
+coloured pixels of its own, which would make being out of quota look exactly
+like having no data - so it gets a thick outline in its own colour instead. A
+provider with no data reads as empty with the usual thin grey outline, never as
+full.
 
 ### Text mode
 
 `AI_USAGE_TEXT=1` swaps the icon for the original wide textual form:
 
 ```
-C ▰▰▰▱▱ ~58%5h   X ▰▱▱▱▱ 4%wk
-│ │      │  │      └── window the figure applies to (5h / wk)
-│ │      │  └───────── percent of that limit used
-│ │      └──────────── "~" = estimate, not a real meter (Claude only)
-│ └─────────────────── battery-style gauge, 5 cells
-└───────────────────── C = Claude, X = Codex
+C ▰▰▰▱▱ 58%wk:Fable   X ▰▱▱▱▱ 4%wk
+│ │     │  │            └── window it applies to (5h / wk / wk:<model>)
+│ │     │  └─────────────── percent of that limit used
+│ │     └────────────────── "~" = estimate, not a real meter (Claude only)
+│ └────────────────────────── battery-style gauge, 5 cells
+└──────────────────────────── C = Claude, X = Codex
 ```
 
-It is far wider - a couple of hundred pixels against the icon's ~27 - which is
-why it is no longer the default.
+It shows only each provider's worst window - one line per provider, not per
+window - and is far wider even so: a couple of hundred pixels against the
+icon's ~51. Hence it is no longer the default.
 
 The colour defaults are saturated mid-tones rather than pastels, because the
 original gruvbox palette (`#8ec07c` green, `#fabd2f` amber) was close to
@@ -67,6 +84,7 @@ to re-run (it will not add a second copy).
 | file | role |
 |---|---|
 | `ai_usage.py` | collects both providers into one dict |
+| `claude_quota.py` | Claude's real meters from the OAuth usage endpoint |
 | `ai-usage-refresh` | the slow scan (~8s); writes the cache |
 | `ai-usage-genmon` | what the panel runs (~0.05s); reads the cache |
 | `ai-usage-detail` | click action; opens a terminal |
@@ -82,32 +100,56 @@ their `scan()` directly rather than screen-scraping their output. Both guard
 `main()` with `__name__ == "__main__"`, so they import cleanly; they have no
 `.py` extension, so the import needs an explicit `SourceFileLoader`.
 
-A full scan takes about **8 seconds** (claude ~2s, codex ~6s) - far too slow to
+A full scan takes about **6 seconds** (codex ~6s, plus one HTTP request for
+Claude - only if that request fails does the ~2s local claude scan run) - far too slow to
 run inside a panel poll, which blocks the panel while it runs. So the widget is
 split: `ai-usage-genmon` only ever reads the cache (~0.05s) and, when the cache
 is older than 90s, spawns `ai-usage-refresh` detached. The panel shows the last
 known values meanwhile, greyed out once they pass 10 minutes old.
 
-## What the two numbers actually mean
+## Where the numbers come from
 
-They are not equally trustworthy, which is why Claude's is marked with `~`:
+Both providers now report real account meters; the widget shows whichever
+window of a provider is closest to its limit.
 
-**Codex** publishes a real account meter. It is read straight out of the
-session files (`rate_limits.primary` / `.secondary`, each with
-`used_percent`, `window_minutes`, `resets_at`), so the percentage and the reset
-time are exact.
+**Codex** publishes its meter in the session files (`rate_limits.primary` /
+`.secondary`, each with `used_percent`, `window_minutes`, `resets_at`), so the
+percentage and reset time are read straight off disk.
 
-**Claude** stores no meter anywhere locally. Its figure is `claude-usage`'s
-estimate: local token usage over the trailing 5h as a share of a ceiling that
-is either calibrated or guessed from your largest historical 5h burst. Improve
-it by reading the 5-HOUR figure from Claude's `/usage` and running:
+**Claude** stores nothing locally, but the endpoint behind `/usage` has it:
+`claude_quota.py` does a `GET https://api.anthropic.com/api/oauth/usage` with
+the OAuth token Claude Code already keeps in `~/.claude/.credentials.json`. It
+never refreshes that token - the refresh token belongs to Claude Code, and
+racing it could invalidate the session you are sitting in.
+
+The useful part of the response is `limits`, one entry per window:
+
+| kind | shown as | what it is |
+|---|---|---|
+| `session` | `5h` | the rolling 5-hour window |
+| `weekly_all` | `weekly` | the weekly cap across all models |
+| `weekly_scoped` | `weekly:Fable` | the weekly cap for one model |
+
+The scoped window is the one that matters most: you can be at 21% of the 5h
+window and 78% of the week while being **completely out of Fable**. The flat
+`five_hour`/`seven_day` keys in the same response cannot express that, so they
+are only a fallback.
+
+### The estimate fallback
+
+If the call fails (no token, expired token -> `HTTP 401`, offline), the widget
+falls back to `claude-usage`'s local estimate: token usage over the trailing 5h
+as a share of a calibrated or guessed ceiling. The tooltip then says
+`meter unavailable (...)` above a line marked `5h ESTIMATE, this machine only`,
+and the panel figure carries a `~`.
+
+The estimate is a rough floor, not a reading: it sees only this machine, not
+other devices or claude.ai, and has no notion of the weekly windows at all.
+Calibrate it with the 5-hour figure from `/usage`:
 
 ```sh
 claude-usage --calibrate <that number>
 ```
-
-The tooltip says `UNCALIBRATED` until you do. There is **no Claude weekly
-figure** - the data to compute one is not available locally.
 
 ## Two traps worth recording
 

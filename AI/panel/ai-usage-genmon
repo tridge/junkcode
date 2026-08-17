@@ -74,8 +74,14 @@ def colour_for(pct):
 
 
 def short_window(label):
-    """Panel space is tight; the tooltip carries the full name."""
-    return {"weekly": "wk"}.get(label, label)
+    """Panel space is tight; the tooltip carries the full name.
+
+    Scoped windows arrive as 'weekly:Fable' - keep the qualifier, since which
+    model ran out is the whole point of that window.
+    """
+    base, _, tag = label.partition(":")
+    base = {"weekly": "wk"}.get(base, base)
+    return "%s:%s" % (base, tag) if tag else base
 
 
 def esc(s):
@@ -143,24 +149,29 @@ def tooltip(data, age):
     for name, key in (("Claude", "claude"), ("Codex", "codex")):
         prov = data.get(key) or {}
         L.append("%s:" % name)
-        if prov.get("error"):
-            L.append("  error: %s" % prov["error"])
-        elif not prov.get("windows"):
-            L.append("  no data")
+        if not prov.get("windows"):
+            L.append("  error: %s" % prov["error"] if prov.get("error")
+                     else "  no data")
+
         else:
+            # an error alongside windows means a fallback source is in use
+            if prov.get("error"):
+                L.append("  %s" % prov["error"])
             # spell out used vs left. A bare "15.5% [###]" next to a gauge that
             # drains invites reading the figure as the amount remaining.
             for w in sorted(prov["windows"], key=lambda x: -x["pct"]):
-                line = "  %-7s %5.1f%% used,  %5.1f%% left" % (
+                line = "  %-12s %5.1f%% used,  %5.1f%% left" % (
                     w["label"], w["pct"], max(0.0, 100.0 - w["pct"]))
                 if w.get("resets_at"):
                     line += "   resets in %s" % ai_usage.human_until(
                         w["resets_at"], now)
                 L.append(line)
-        if key == "claude" and prov.get("ok"):
-            L.append("  (estimate; %s)" % ("calibrated" if prov.get("calibrated")
-                                           else "UNCALIBRATED - run "
-                                                "claude-usage --calibrate N"))
+        if key == "claude" and prov.get("extra_pct") is not None:
+            L.append("  extra usage: %.0f%% used" % prov["extra_pct"])
+        if key == "claude" and prov.get("source") == "estimate":
+            L.append("  (5h ESTIMATE, this machine only; %s)"
+                     % ("calibrated" if prov.get("calibrated")
+                        else "UNCALIBRATED - run claude-usage --calibrate N"))
         if key == "codex" and prov.get("plan"):
             L.append("  plan: %s" % prov["plan"])
     L.append("")
@@ -169,14 +180,59 @@ def tooltip(data, age):
     return "\n".join(L)
 
 
-def provider_pct_col(prov, stale):
-    """(pct, colour) for a provider, for the icon."""
-    if not prov or not prov.get("ok"):
-        return None, GREY
-    w = ai_usage.worst(prov)
-    if not w:
-        return None, GREY
-    return w["pct"], (GREY if stale else colour_for(w["pct"]))
+def bar_label(label, fallback):
+    """One glyph for a gauge, from the window label.
+
+    'weekly:Fable' -> F, 'weekly' -> W, '5h' -> 5. The scoped window is named
+    after its model rather than the window, because with three Claude gauges
+    the question is always which one ran out.
+    """
+    base, _, tag = label.partition(":")
+    if tag:
+        return tag[0].upper()
+    if base.startswith("weekly"):
+        return "W"
+    if base and base[0].isdigit():
+        return base[0]
+    return fallback
+
+
+def icon_bars(prov, tag, stale, collapse=False):
+    """Gauges for one provider: one per window, tightest scope first.
+
+    Order is deliberate and must stay stable: the panel is read by shape, and
+    gauges that reorder as percentages move are unreadable. Scoped weekly,
+    then all-model weekly, then the short window.
+
+    collapse keeps a provider to a single gauge showing its worst window,
+    labelled with the provider's own glyph. Used for Codex: it has one window
+    worth watching, and a second 'W' next to Claude's would just be ambiguous.
+    """
+    if not prov or not prov.get("windows"):
+        return [{"fill": None, "colour": GREY, "label": tag, "group": tag}]
+
+    if collapse:
+        w = ai_usage.worst(prov)
+        return [{"fill": 100.0 - w["pct"], "group": tag, "label": tag,
+                 "colour": GREY if stale else colour_for(w["pct"])}]
+
+    def rank(w):
+        label = w["label"]
+        return (0 if ":" in label else 1 if label.startswith("weekly") else 2,
+                label)
+
+    out = []
+    for w in sorted(prov["windows"], key=rank):
+        pct = w["pct"]
+        out.append({
+            # the gauge shows headroom REMAINING so it drains like a battery,
+            # while the colour still comes from how much is USED
+            "fill": 100.0 - pct,
+            "colour": GREY if stale else colour_for(pct),
+            "label": bar_label(w["label"], tag),
+            "group": tag,
+        })
+    return out
 
 
 def write_icon(data, stale):
@@ -189,15 +245,9 @@ def write_icon(data, stale):
     new path exactly when the picture changes, and a stable one when it does
     not.
     """
-    cp, ccol = provider_pct_col(data.get("claude"), stale)
-    xp, xcol = provider_pct_col(data.get("codex"), stale)
-    # The gauge shows headroom REMAINING so it drains like a battery, while the
-    # colour still comes from how much is USED. Unknown reads as empty rather
-    # than full, so missing data never looks like plenty of quota.
-    cfill = (100.0 - cp) if cp is not None else 0.0
-    xfill = (100.0 - xp) if xp is not None else 0.0
-    svg = ai_usage_icon.render(cfill, xfill, ccol, xcol,
-                               empty=ICON_EMPTY, outline=ICON_OUTLINE,
+    bars = (icon_bars(data.get("claude"), "C", stale)
+            + icon_bars(data.get("codex"), "X", stale, collapse=True))
+    svg = ai_usage_icon.render(bars, empty=ICON_EMPTY, outline=ICON_OUTLINE,
                                label_col=ICON_LABEL, px_height=ICON_PX)
     os.makedirs(CACHE_DIR, exist_ok=True)
     digest = hashlib.sha1(svg.encode()).hexdigest()[:12]

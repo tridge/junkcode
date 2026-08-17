@@ -10,11 +10,13 @@ The two providers expose very different things:
   codex  - a REAL account meter, read straight out of the session files
            (rate_limits.primary / .secondary, each with used_percent,
            window_minutes and resets_at). Trustworthy.
-  claude - no meter is stored locally anywhere, so the 5h figure is an
-           ESTIMATE: local token usage over the trailing 5h expressed as a
-           share of a ceiling that is either calibrated (claude-usage
-           --calibrate) or guessed from the largest historical 5h burst.
-           There is no weekly figure available at all.
+  claude - a REAL account meter too, but only over the network: nothing is
+           stored locally, so claude_quota asks the same endpoint /usage uses.
+           When that fails we fall back to an ESTIMATE from local token usage
+           over the trailing 5h, as a share of a ceiling that is either
+           calibrated (claude-usage --calibrate) or guessed from the largest
+           historical burst. The estimate sees only this machine and knows
+           nothing about the weekly windows, so treat it as a rough floor.
 
 Do not label a codex window from its primary/secondary position - the API
 puts the weekly window in `primary` at least some of the time. Always derive
@@ -23,7 +25,11 @@ the label from window_minutes.
 
 import importlib.util
 import os
+import sys
 from importlib.machinery import SourceFileLoader
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import claude_quota  # noqa: E402
 
 HOME = os.path.expanduser("~")
 CLAUDE_USAGE = os.path.join(HOME, "bin", "claude-usage")
@@ -49,8 +55,25 @@ def _window_label(minutes):
 
 
 def claude_status():
-    """{'ok', 'windows': [...], 'calibrated': bool, 'error'}"""
-    out = {"ok": False, "windows": [], "calibrated": False, "error": None}
+    """{'ok', 'source', 'windows': [...], 'calibrated': bool, 'error'}
+
+    Real account meters when the endpoint answers, local estimate otherwise.
+    """
+    q = claude_quota.fetch()
+    if q["ok"]:
+        return {"ok": True, "source": "api", "windows": q["windows"],
+                "calibrated": True, "extra_pct": q["extra_pct"], "error": None}
+    out = _claude_estimate()
+    # keep why the real meter was unavailable; the estimate is much weaker
+    out["error"] = "meter unavailable (%s)%s" % (
+        q["error"], "; " + out["error"] if out["error"] else "")
+    return out
+
+
+def _claude_estimate():
+    """Local-token fallback: 5h only, this machine only."""
+    out = {"ok": False, "source": "estimate", "windows": [],
+           "calibrated": False, "extra_pct": None, "error": None}
     try:
         cu = _load("_claude_usage", CLAUDE_USAGE)
         sessions, events, now = cu.scan()
@@ -142,3 +165,31 @@ def human_until(epoch, now=None):
     if h:
         return "%dh%dm" % (h, m)
     return "%dm" % m
+
+
+def _report():
+    """Plain-text dump of both providers, for the click-through terminal.
+
+    Worth printing there because `claude-usage` alone shows only the local
+    estimate, which now disagrees with what the panel is showing.
+    """
+    import time
+    d = collect()
+    now = time.time()
+    for name, key in (("Claude", "claude"), ("Codex", "codex")):
+        prov = d[key]
+        print("%s:" % name)
+        if prov.get("error"):
+            print("  %s" % prov["error"])
+        for w in sorted(prov["windows"], key=lambda x: -x["pct"]):
+            line = "  %-14s %5.1f%% used,  %5.1f%% left" % (
+                w["label"], w["pct"], max(0.0, 100.0 - w["pct"]))
+            if w["resets_at"]:
+                line += "   resets in %s" % human_until(w["resets_at"], now)
+            print(line)
+        if not prov["windows"]:
+            print("  no data")
+
+
+if __name__ == "__main__":
+    _report()
