@@ -1,13 +1,33 @@
-# Review PRs by Label
+# Review PRs by Label or Author
 
-Review all GitHub PRs with the specified label and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, and all ArduPilot-owned submodule repos.
+Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, and all ArduPilot-owned submodule repos.
 
 Run this from the root of an ArduPilot checkout (it reads `.gitmodules` in the working directory). The report is written to the repository root and works in any ArduPilot checkout, not just one.
 
 The command is incremental: it records the head commit hash each PR was reviewed at, and on a re-run it reuses the previously-published report for any PR whose head is unchanged, only re-reviewing PRs that are new or have changed. This makes a re-run to pick up new/updated PRs very fast.
 
 ## Arguments
-- `$ARGUMENTS` - The GitHub label to filter PRs (e.g., DevCallTopic, Copter, Plane)
+
+`$ARGUMENTS` selects which PRs to review, in one of two **modes**:
+
+- **LABEL mode** — a GitHub label (e.g. `DevCallTopic`, `Copter`, `Plane`). Reviews every open PR
+  carrying that label.
+- **AUTHOR mode** — a GitHub username, optionally written `@name`. Reviews every **open** PR by that
+  author that was **updated in the last 7 days**.
+
+**Resolve the mode first and say which one you picked**, before anything else — discovery, the publish
+path and the comment policy all differ:
+
+1. A leading `@` forces AUTHOR mode; strip it and use the rest as the username.
+2. Otherwise test it as a label on the main repo and look for an exact, case-insensitive match:
+   `gh label list --repo ArduPilot/ardupilot --search "$ARGUMENTS" --json name --jq '.[].name'`.
+   Match → LABEL mode.
+3. Otherwise test it as a user: `gh api users/<arg> --jq .login`. Resolves → AUTHOR mode.
+4. If neither resolves, **stop and say so**. Do not guess: a mistyped label would otherwise sweep zero
+   PRs and publish a confidently empty report.
+
+If a string is both a real label and a real username, prefer LABEL and say so, so the user can re-run
+with `@name` to force the other.
 
 ## Allowed Tools
 - Bash(gh pr list *)
@@ -29,13 +49,43 @@ The command is incremental: it records the head commit hash each PR was reviewed
 
 ## Task
 
-The report file is `devcall_pr_reviews.html` in the repository root — i.e. `$(git rev-parse --show-toplevel)/devcall_pr_reviews.html`. Use this path everywhere below (so it lands beside the checkout you ran it from, whatever that is).
+The report file lives in the repository root, i.e. beside the checkout you ran from, whatever that is —
+`$(git rev-parse --show-toplevel)/<report>`. The filename and the published location depend on the mode,
+so **the two modes never overwrite each other's local file or published report**:
 
-The label is `$ARGUMENTS`. Two published locations matter (see step 8):
-- per-label "latest": `https://uav.tridgell.net/DevCallReviews/$ARGUMENTS/devcall_pr_reviews.html` — the canonical current report for this label, and the one a re-run reads to decide what to skip.
-- dated archive: `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html`.
+| | LABEL mode | AUTHOR mode |
+|---|---|---|
+| local file | `devcall_pr_reviews.html` | `user_pr_reviews_<user>.html` |
+| published "latest" | `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` | `https://uav.tridgell.net/UserReviews/<USERNAME>.html` |
+| dated archive | `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html` | none |
+| re-run reads | the per-label latest | the per-user page |
 
-1. Find all PRs with the label "$ARGUMENTS" across the main repo, the wiki repo, and submodules. **Capture each PR's current head commit** (`headRefOid`); the short hash is its first 10 characters.
+The "latest" URL for the active mode is the one a re-run fetches to decide what to skip (step 2), and the
+one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page is simply kept current.
+
+1. Find the PRs to review. **Capture each PR's current head commit** (`headRefOid`); the short hash is its first 10 characters.
+
+   **LABEL mode** — every open PR carrying the label, across the main repo, the wiki repo and submodules
+   (the per-repo commands are listed below).
+
+   **AUTHOR mode** — every **open** PR by that author, in the same set of repos, **updated within the last
+   7 days**. Use `--author` and filter on `updatedAt`:
+   ```bash
+   CUTOFF=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+   gh pr list --repo <owner/repo> --author "<user>" --state open \
+              --json number,title,author,url,updatedAt,headRefOid --limit 100 \
+     | jq --arg c "$CUTOFF" '[.[] | select(.updatedAt > $c)]'
+   ```
+   Note the differences from LABEL mode, all of which matter:
+   - `--state open` is explicit. An author sweep would otherwise pull in their merged and closed PRs,
+     which is a lot of noise and nothing actionable.
+   - The 7-day window is on `updatedAt`, not `createdAt` — the point is "what has this person been working
+     on lately", so an old PR they pushed to yesterday belongs in, and a PR they opened last month and
+     have not touched does not.
+   - `--limit 100`, since a prolific author across a week can exceed the default page.
+   - **Report the window explicitly** in the summary and in the report header ("open PRs updated since
+     `<CUTOFF>`"), because unlike a label the set is time-dependent: the same command run tomorrow
+     legitimately returns a different set, and a reader needs to know the boundary that produced it.
 
    **Do not use `gh api .../contents/<path>?ref=<sha>` to check a file at a PR head.** That call plus
    `--jq .content | base64 -d` fails silently — on 2026-08-04 it returned empty for an entire run, and
@@ -69,6 +119,8 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
    delta is small — `gh pr diff` at both heads and compare), or post with the review's own head hash and
    say plainly in the opening line that the PR has moved since, so the author knows the scope. Do not
    silently post the old hash as though it were current.
+   Per-repo commands. In AUTHOR mode substitute `--author "<user>" --state open --limit 100` for
+   `--label "$ARGUMENTS" --limit 50`, and apply the `updatedAt` cutoff above to each result:
    - Main repo: `gh pr list --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Wiki repo: `gh pr list --repo ArduPilot/ardupilot_wiki --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Parse `.gitmodules` to find all submodule URLs hosted under `ArduPilot/` or `ardupilot/` on GitHub
@@ -76,7 +128,9 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
    - Combine all results, tracking which repo each PR belongs to. Give each PR a stable **key**: the PR number for the main repo, or `<reponame>#<number>` for wiki/submodule PRs (e.g. `mavlink#360`, `wiki#7730`). Note that wiki PRs are documentation-focused (ReST under `*/source/docs/`); review for technical accuracy vs the current ArduPilot codebase, broken `:ref:` cross-references, ReST syntax, and consistency with existing wiki conventions.
 
 2. **Fast incremental skip — decide what actually needs reviewing.** Fetch the previously-published report for this label and compare head hashes:
-   - `curl -fsS https://uav.tridgell.net/DevCallReviews/$ARGUMENTS/devcall_pr_reviews.html` (a 404/failure means this is the first run for this label — treat every PR as new and review all of them).
+   - LABEL mode: `curl -fsS https://uav.tridgell.net/DevCallReviews/$ARGUMENTS/devcall_pr_reviews.html`
+     AUTHOR mode: `curl -fsS https://uav.tridgell.net/UserReviews/<USERNAME>.html`
+     (a 404/failure means this is the first run for this label/author — treat every PR as new and review all of them).
    - Parse its review manifest, an HTML comment of the form:
      `<!-- reviewprs-manifest v1 label="..." generated="YYYY-MM-DD" heads="<key>:<shorthash> <key>:<shorthash> ..." -->`
      giving the head each PR was last reviewed at.
@@ -354,7 +408,15 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
 
    - Record the validation in the report itself: add a short **"Codex validation"** line near the top (date + one-line outcome, e.g. "Codex cross-checked N findings: X confirmed, Y adjusted, Z refuted, W added; spot-checked K APPROVE PRs cold, J moved out of APPROVE"). Name which APPROVE PRs were spot-checked, so a reader can see which clean verdicts were independently tested and which were taken on one reviewer's word. If any verdicts changed, update the per-PR sections, the contents/quick-verdict table, the summary table, and the final totals so the whole report stays consistent.
 
-8. **Post review comments to the PRs — DevCallEU and DevCallTopic.** This step runs automatically when the label (`$ARGUMENTS`) is exactly **`DevCallEU`** or **`DevCallTopic`**. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
+8. **Post review comments to the PRs — LABEL mode, DevCallEU and DevCallTopic only.** This step runs automatically when the mode is LABEL and the label is exactly **`DevCallEU`** or **`DevCallTopic`**. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
+
+   **AUTHOR mode does not post, ever, unless explicitly asked in the user's message.** The default is a
+   report only. The dev-call labels are a standing, publicly-understood process — an author sweep is not:
+   it is a lens someone chose to point at a particular person, the PRs in it have not been put forward for
+   review by anyone, and several may be drafts or work the author has not asked anybody to look at.
+   Auto-commenting on every recently-touched PR by one person would be both surprising and, aimed at
+   someone other than the person running the command, pointed. If the user does ask, follow the same
+   mechanics below unchanged.
 
    Posting happens **after** the report is finalised, i.e. only once a PR has been reviewed by **both you and Codex** (steps 3 and 7). Therefore comments are posted for the **REVIEW set** (the PRs reviewed this run) — reused PRs were already commented in the prior run at the same head, so skip them.
 
@@ -428,16 +490,36 @@ The label is `$ARGUMENTS`. Two published locations matter (see step 8):
 9. **Publish the report to the web.** Once the report is finalised (including the Codex revisions and any comment posting), publish it to BOTH the per-label "latest" directory (which the next re-run reads) and a dated archive directory. This is automatic — always do it at the end of the run.
 
    ```bash
+   # LABEL mode
    REPORT="$(git rev-parse --show-toplevel)/devcall_pr_reviews.html"
    LABEL="$ARGUMENTS"
    DATE=$(date +%Y_%m_%d)   # e.g. 2026_06_09 — must match the report's review date
    rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/$LABEL/   # per-label latest
    rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/$DATE/    # dated archive
+
+   # AUTHOR mode — a single page per user, kept current; no dated archive.
+   # Note the destination is a FILENAME, not a directory: the trailing path component
+   # is <USERNAME>.html, so rsync must be given that exact target path.
+   USER_NAME=<username>
+   REPORT="$(git rev-parse --show-toplevel)/user_pr_reviews_${USER_NAME}.html"
+   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/UserReviews/${USER_NAME}.html
    ```
 
-   - Latest serves at `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html`; the dated snapshot at `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html`.
+   - LABEL mode serves at `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html`, with the dated snapshot at `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html`.
+   - AUTHOR mode serves at `https://uav.tridgell.net/UserReviews/<USERNAME>.html`. Because it is one page per user rather than a directory, publishing **replaces** the previous run's page — that is intended, since the 7-day window means an archive of author sweeps would mostly be duplicates. Print the URL when done, as for LABEL mode.
    - `--mkpath` creates the destination directory if it doesn't exist (the `UAV-web/DevCallReviews/` parent already exists). If a host's rsync predates 3.2.3 and lacks `--mkpath`, first `ssh tridgell.net mkdir -p UAV-web/DevCallReviews/<dir>`, then rsync without `--mkpath`.
    - Use the SAME `<DATE>` as the report's review date so the directory date and the in-report date agree.
    - Print both public URLs when done.
 
-Report the summary counts when complete, note the skip split and validation outcome (including which APPROVE PRs were spot-checked cold), any PR comments posted/updated, and give the published URLs: X APPROVE | Y COMMENT | Z REQUEST CHANGES (reused N, reviewed M; Codex: X confirmed / Y adjusted / Z refuted / W added, K APPROVE spot-checked / J reclassified; comments posted on P PRs) — published at https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html
+Report the summary counts when complete. Say which **mode** was used and what selected the set — the
+label, or the username plus the `updatedAt` cutoff that produced it. Note the skip split and validation
+outcome (including which APPROVE PRs were spot-checked cold), any PR comments posted/updated, and give
+the published URL:
+
+X APPROVE | Y COMMENT | Z REQUEST CHANGES (reused N, reviewed M; Codex: X confirmed / Y adjusted /
+Z refuted / W added, K APPROVE spot-checked / J reclassified; comments posted on P PRs) — published at
+`https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` (LABEL mode) or
+`https://uav.tridgell.net/UserReviews/<USERNAME>.html` (AUTHOR mode).
+
+In AUTHOR mode, if the sweep returns **no** PRs, say that plainly — "no open PRs by `<user>` updated
+since `<cutoff>`" — and do not publish an empty page over a previously useful one.

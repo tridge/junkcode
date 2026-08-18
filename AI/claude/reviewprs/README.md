@@ -1,10 +1,10 @@
 # /reviewprs
 
-A Claude Code slash command that reviews every open GitHub PR carrying a given
-**label** and writes a single self-contained **HTML report** with per-PR findings
-and an APPROVE / COMMENT / REQUEST CHANGES verdict. Built for the ArduPilot dev
-call workflow: it sweeps the **main repo, the wiki repo, and every ArduPilot-owned
-submodule** (parsed from `.gitmodules`) for that label, so one command covers the
+A Claude Code slash command that reviews a set of open GitHub PRs — selected either by
+**label** or by **author** — and writes a single self-contained **HTML report** with
+per-PR findings and an APPROVE / COMMENT / REQUEST CHANGES verdict. Built for the
+ArduPilot dev call workflow: it sweeps the **main repo, the wiki repo, and every
+ArduPilot-owned submodule** (parsed from `.gitmodules`), so one command covers the
 whole tree.
 
 Every PR gets **two independent reviews** — Claude's own, and a cross-check by a
@@ -25,21 +25,30 @@ subcommands plus `codex`/`curl`/`rsync` and `gh pr comment` — it never pushes 
 ## Usage
 
 ```
-/reviewprs DevCallTopic
+/reviewprs DevCallTopic     # label mode: every open PR with that label
 /reviewprs Copter
+/reviewprs @tridge          # author mode: that author's open PRs, updated in the last 7 days
+/reviewprs peterbarker
 ```
 
-`$ARGUMENTS` is the label. Run it from the root of an ArduPilot checkout. Output is
-written to `devcall_pr_reviews.html` in the **repository root**
-(`git rev-parse --show-toplevel`). The report has a click-to-sort table of contents
+`$ARGUMENTS` is either a **label** or a **GitHub username**. The mode is resolved automatically — a
+leading `@` forces author mode, otherwise it is tried as a label first and then as a user, and the command
+stops rather than guessing if it is neither (a mistyped label would otherwise publish a confidently empty
+report). Author mode selects **open** PRs only, filtered on `updatedAt` within 7 days, so it answers
+"what has this person been working on lately" rather than "everything they ever opened".
+
+Run it from the root of an ArduPilot checkout. Output goes to the **repository root**
+(`git rev-parse --show-toplevel`) — `devcall_pr_reviews.html` in label mode,
+`user_pr_reviews_<user>.html` in author mode. The report has a click-to-sort table of contents
 with author, verdict, reviewers and CI status; per-PR changed-file links; file:line
 findings that deep-link into GitHub's diff view; and a summary table. Submodule and
 wiki PRs are prefixed with their repo (e.g. `[ChibiOS] #123`, `[wiki] #7730`).
 
 ## Pipeline
 
-1. **Find** every PR with the label across main + wiki + ArduPilot submodules,
-   capturing each PR's current head commit.
+1. **Find** the PRs — every open PR with the label, or every open PR by the author
+   updated in the last 7 days — across main + wiki + ArduPilot submodules, capturing
+   each PR's current head commit.
 2. **Fast incremental skip** — fetch the previously-published report, parse its
    manifest and compare head hashes. Only new/changed PRs are reviewed; CI status is
    refreshed for the reused ones (cheap, and it does change).
@@ -88,17 +97,23 @@ report embeds a machine-readable manifest near the top:
 
 ```
 <!-- reviewprs-manifest v1 label="DevCallTopic" generated="2026-06-09" heads="33372:69bff866c7 ..." -->
+<!-- reviewprs-manifest v1 author="tridge"      generated="2026-06-09" heads="34088:de0f387af8 ..." -->
 ```
 
-On a re-run each currently-labelled PR is **reused** if its head is unchanged (the
-section was already reviewed and validated at that exact commit), **reviewed** if it
-is new or its head moved, or **dropped** if it merged, closed or lost the label. So a
-re-run pays only for what actually changed.
+On a re-run each PR still in the selected set is **reused** if its head is unchanged
+(the section was already reviewed and validated at that exact commit), **reviewed** if
+it is new or its head moved, or **dropped** if it left the set — merged, closed, lost
+the label, or in author mode simply fell outside the 7-day window. So a re-run pays
+only for what actually changed. Note that "dropped" is not a synonym for "merged":
+check and report which, since a PR that merely lost its label is still open and its
+findings still stand.
 
 ## Posting comments back to the PRs
 
-Runs automatically for the `DevCallEU` and `DevCallTopic` labels; any other label
-posts nothing unless you ask. Every reviewed PR gets a comment, **including clean
+Runs automatically for the `DevCallEU` and `DevCallTopic` labels; any other label posts nothing
+unless you ask. **Author mode never posts unless explicitly asked** — the dev-call labels are a standing,
+publicly-understood process, whereas an author sweep is a lens someone chose to point at a particular
+person, over PRs nobody put forward for review. Every reviewed PR gets a comment, **including clean
 APPROVEs** — silence is ambiguous between "reviewed, fine" and "nobody looked", and
 an APPROVE is the verdict least likely to have been checked, so it says specifically
 what was verified. All comments are marked AI-generated.
@@ -117,9 +132,14 @@ whether an in-place edit would be buried.
 
 The finished report is rsynced to a web host in two locations:
 
-- per-label **latest** — `.../DevCallReviews/<LABEL>/devcall_pr_reviews.html`
+- label mode, **latest** — `.../DevCallReviews/<LABEL>/devcall_pr_reviews.html`
   (canonical current report; the one re-runs read for the skip check);
-- dated **archive** — `.../DevCallReviews/<DATE>/devcall_pr_reviews.html`.
+- label mode, dated **archive** — `.../DevCallReviews/<DATE>/devcall_pr_reviews.html`;
+- author mode — `.../UserReviews/<USERNAME>.html`, a single page per user kept current, with no dated
+  archive (with a 7-day window an archive would be mostly duplicates).
+
+The two modes use different local filenames and different published paths, so they never overwrite each
+other.
 
 The reports are public and **auto-generated — they may contain errors**; always
 confirm against the actual PR before acting.
