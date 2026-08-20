@@ -22,6 +22,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 #include <zlib.h>
 
@@ -341,7 +342,7 @@ static bool write_all(int fd, const uint8_t *buffer, size_t length)
     return true;
 }
 
-static void rate_limited_send(int fd, const uint8_t *buffer, uint32_t size)
+static bool rate_limited_send(int fd, const uint8_t *buffer, uint32_t size)
 {
     const uint32_t chunk_size = 1024;
     const useconds_t delay =
@@ -351,13 +352,35 @@ static void rate_limited_send(int fd, const uint8_t *buffer, uint32_t size)
         uint32_t chunk = size > chunk_size ? chunk_size : size;
 
         if (!write_all(fd, buffer, chunk)) {
-            return;
+            return false;
         }
         buffer += chunk;
         size -= chunk;
         usleep(delay);
     }
+    return true;
 }
+
+static void log_sent(const char *filename, uint32_t compressed_size)
+{
+    struct timespec now;
+    struct tm tm;
+    char timestamp[32] = "unknown-time";
+
+    if (clock_gettime(CLOCK_REALTIME, &now) == 0 &&
+        gmtime_r(&now.tv_sec, &tm) != NULL) {
+        size_t length = strftime(timestamp, sizeof(timestamp),
+                                 "%Y-%m-%dT%H:%M:%S", &tm);
+
+        if (length > 0) {
+            snprintf(timestamp + length, sizeof(timestamp) - length,
+                     ".%03ldZ", now.tv_nsec / 1000000L);
+        }
+    }
+    printf("%s Sent %s compressed_size=%u\n", timestamp, filename,
+           (unsigned)compressed_size);
+}
+
 
 static void serve_connection(int fd, const char *filename)
 {
@@ -402,7 +425,10 @@ static void serve_connection(int fd, const char *filename)
     if (!write_all(fd, (const uint8_t *)&header, sizeof(header))) {
         goto cleanup;
     }
-    rate_limited_send(fd, compressed, header.compressed_size);
+    if (!rate_limited_send(fd, compressed, header.compressed_size)) {
+        goto cleanup;
+    }
+    log_sent(header.fname, header.compressed_size);
 
 cleanup:
     if (file_fd >= 0) {
