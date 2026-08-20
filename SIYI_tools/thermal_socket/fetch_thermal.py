@@ -44,7 +44,8 @@ def click_callback(event, x, y, flags, param):
 
 def display_file(fname, data):
     global last_data, tmin, tmax
-    a = np.frombuffer(data, dtype='>u2')
+    # MT11 raw thermal samples are little-endian Kelvin multiplied by 64.
+    a = np.frombuffer(data, dtype='<u2')
     if len(a) != 640 * 512:
         print("Bad size %u" % len(a))
         return
