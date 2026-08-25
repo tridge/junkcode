@@ -1,6 +1,9 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sched.h>
 
 static struct timeval tp1,tp2;
 
@@ -24,7 +27,14 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		start_timer();
+#if 0
 		usleep(t);
+#else
+		struct timespec ts;
+		ts.tv_nsec = t*1000;
+		ts.tv_sec = 0;
+		nanosleep(&ts, NULL);
+#endif
 		printf("%f milliseconds\n", end_timer() * 1000);
 	}
 	return 0;
