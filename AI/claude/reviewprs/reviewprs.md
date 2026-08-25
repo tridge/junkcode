@@ -1,6 +1,6 @@
-# Review PRs by Label or Author
+# Review PRs by Label, Author, or Follow-up
 
-Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, and all ArduPilot-owned submodule repos.
+Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the `ArduPilot/SupportProxy` repo, and the upstream `mavlink/mavlink` repo.
 
 Run this from the root of an ArduPilot checkout (it reads `.gitmodules` in the working directory). The report is written to the repository root and works in any ArduPilot checkout, not just one.
 
@@ -8,22 +8,76 @@ The command is incremental: it records the head commit hash each PR was reviewed
 
 ## Arguments
 
-`$ARGUMENTS` selects which PRs to review, in one of two **modes**:
+`$ARGUMENTS` selects which PRs to review. **With no argument at all** it is the **triple-run**: a
+`DevCallTopic`, `DevCallEU` and `followup` sweep back to back, producing up to three sets of review web
+pages plus PR comments (see resolution step 0 below). Otherwise the argument picks one of four **modes**:
 
 - **LABEL mode** — a GitHub label (e.g. `DevCallTopic`, `Copter`, `Plane`). Reviews every open PR
   carrying that label.
 - **AUTHOR mode** — a GitHub username, optionally written `@name`. Reviews every **open** PR by that
   author that was **updated in the last 7 days**.
+- **FOLLOWUP mode** — the literal word `followup`. Reviews every PR that this workflow has already
+  reviewed and commented on, which is **still open** and whose code has **changed since that comment**.
+  Its purpose is to shorten the loop for a developer who has pushed changes to address an AI review and
+  is waiting to hear whether they landed — so unlike the other modes it is designed to be run often and
+  to do nothing at all when nothing has moved.
+- **RSYNC mode** — the literal word `rsync`. A **completely separate** review target from all ArduPilot
+  work: it reviews the open PRs labelled **`AIReview`** on the **`RsyncProject/rsync`** repo (the rsync
+  file-transfer tool, a C codebase — **not** ArduPilot, so ArduPilot house rules do not apply). It has
+  its own single-page report at `https://uav.tridgell.net/RsyncReviews/index.html` and its own manifest,
+  and — like the dev-call labels — it **auto-posts** comments (this is tridge's own project). It is
+  incremental and re-runnable exactly like LABEL mode: a re-run re-reviews only the PRs whose head has
+  changed (or that are newly labelled), reusing the rest, and posts/updates comments with the same
+  deprecate-and-repost rules. See the RSYNC-specific notes in steps 1, 3, 8 and 9.
 
 **Resolve the mode first and say which one you picked**, before anything else — discovery, the publish
 path and the comment policy all differ:
 
-1. A leading `@` forces AUTHOR mode; strip it and use the rest as the username.
-2. Otherwise test it as a label on the main repo and look for an exact, case-insensitive match:
+0. **No argument at all — the TRIPLE-RUN.** If `$ARGUMENTS` is empty or only whitespace, this invocation
+   is shorthand for three back-to-back runs: **`DevCallTopic` (LABEL), then `DevCallEU` (LABEL), then
+   `followup` (FOLLOWUP)**, in exactly that order. Run them **sequentially, as three complete independent
+   runs** — each does its own full step 1-9 (discovery, incremental skip, review + Codex, report, comment
+   posting, publish) under its own mode's rules, exactly as if invoked with that argument on its own.
+   Do **not** try to merge them into one report or run them in parallel: the two label runs share the same
+   local file (`devcall_pr_reviews.html`) so cannot overlap, and — the reason for the order — **`followup`
+   must run last**, because it discovers its set from the *published* per-label reports and the *posted*
+   comments, so it needs the two label runs to have already published and commented at the current heads.
+   Consequences of that ordering, all intended:
+   - The two label runs each publish their per-label latest **and** their call-dated archive
+     (`DevCallTopic` → upcoming Tuesday, `DevCallEU` → upcoming Wednesday, Canberra time) and each
+     auto-posts comments (both are comment-posting labels — step 8).
+   - `followup` then reads those fresh reports; every PR the two label runs just re-reviewed is now at its
+     told-head with a current comment, so `followup` correctly **skips** it. `followup` therefore acts
+     only on PRs from *other* published label reports whose code moved since their last comment — often a
+     small set or none. That is the design working, not a bug: it is why this is "**up to** 3 sets of
+     review web pages" — if nothing else has moved, `followup` publishes and posts nothing and that third
+     set is simply absent.
+   - Publish paths never collide: `DevCallTopic/`, `DevCallEU/`, and `followups/<DATE_TIME>/` are three
+     distinct destinations, so the three runs' web pages coexist.
+   - Report a **combined summary** at the end — one clearly-labelled block per sub-run (mode, skip split,
+     verdict counts, comments posted, published URL), plus the `followup` funnel line. If a sub-run fails,
+     say so and continue with the others rather than aborting the whole triple-run; never let a later
+     sub-run's result silently overwrite an earlier one's summary.
+
+   This empty-argument case is checked **before** everything below. A bare `/reviewprs` is never AUTHOR
+   mode on an empty username or any other guess.
+
+1. `followup` (case-insensitive, with or without a leading `/` or `--`) is a **reserved word** and wins
+   over everything else. Check it before the label/user tests. This matters: there is no `followup` label on
+   ArduPilot/ardupilot, but **`FollowUp` is a real GitHub username**, so without this step the argument
+   resolves to AUTHOR mode and sweeps a stranger's PRs. If someone genuinely wants that user, `@FollowUp`
+   forces AUTHOR mode.
+1a. `rsync` (case-insensitive, with or without a leading `/` or `--`) is likewise a **reserved word** →
+   RSYNC mode. Check it here, before the label/user tests: `rsync` is neither an ArduPilot label nor the
+   intended GitHub user, and RSYNC mode is a wholly separate target (repo `RsyncProject/rsync`, label
+   `AIReview`, report `RsyncReviews/index.html`). It does **not** touch any ArduPilot repo or report. If
+   someone genuinely wants a GitHub user named `rsync`, `@rsync` forces AUTHOR mode.
+2. A leading `@` forces AUTHOR mode; strip it and use the rest as the username.
+3. Otherwise test it as a label on the main repo and look for an exact, case-insensitive match:
    `gh label list --repo ArduPilot/ardupilot --search "$ARGUMENTS" --json name --jq '.[].name'`.
    Match → LABEL mode.
-3. Otherwise test it as a user: `gh api users/<arg> --jq .login`. Resolves → AUTHOR mode.
-4. If neither resolves, **stop and say so**. Do not guess: a mistyped label would otherwise sweep zero
+4. Otherwise test it as a user: `gh api users/<arg> --jq .login`. Resolves → AUTHOR mode.
+5. If neither resolves, **stop and say so**. Do not guess: a mistyped label would otherwise sweep zero
    PRs and publish a confidently empty report.
 
 If a string is both a real label and a real username, prefer LABEL and say so, so the user can re-run
@@ -53,20 +107,40 @@ The report file lives in the repository root, i.e. beside the checkout you ran f
 `$(git rev-parse --show-toplevel)/<report>`. The filename and the published location depend on the mode,
 so **the two modes never overwrite each other's local file or published report**:
 
-| | LABEL mode | AUTHOR mode |
-|---|---|---|
-| local file | `devcall_pr_reviews.html` | `user_pr_reviews_<user>.html` |
-| published "latest" | `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` | `https://uav.tridgell.net/UserReviews/<USERNAME>.html` |
-| dated archive | `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html` | none |
-| re-run reads | the per-label latest | the per-user page |
+| | LABEL mode | AUTHOR mode | FOLLOWUP mode | RSYNC mode |
+|---|---|---|---|---|
+| local file | `devcall_pr_reviews.html` | `user_pr_reviews_<user>.html` | `devcall_pr_reviews.html`, rebuilt once per affected label | `rsync_pr_reviews.html` |
+| published "latest" | `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` | `https://uav.tridgell.net/UserReviews/<USERNAME>.html` | `https://uav.tridgell.net/DevCallReviews/followups/<DATE_TIME>/devcall_pr_reviews.html` (one report per run), **plus** a refresh of every per-label report containing a re-reviewed PR | `https://uav.tridgell.net/RsyncReviews/index.html` (a single living page — destination is the filename `index.html`, not a directory) |
+| dated archive | `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html` | none | n/a — the run's own report **is** the dated one | none — the single page is simply kept current |
+| re-run reads | the per-label latest | the per-user page | every per-label latest, plus the posted comments | `RsyncReviews/index.html` |
+
+`<DATE>` is the date of the **upcoming dev call**, not the day the review ran — the upcoming Tuesday for
+`DevCallTopic`, the upcoming Wednesday for `DevCallEU`, both in Canberra time, with "upcoming" including
+today. That is what lets a review be published days before the meeting and still land where people will
+look on the day. Any other label uses today. Full rule and the traps in step 9, "Dated archive: use the
+call date, in Canberra time".
 
 The "latest" URL for the active mode is the one a re-run fetches to decide what to skip (step 2), and the
 one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page is simply kept current.
+FOLLOWUP mode does not own a report of its own: it updates the existing per-label reports in place, so
+that their manifests stay truthful and a later LABEL run does not redo the same work.
 
 1. Find the PRs to review. **Capture each PR's current head commit** (`headRefOid`); the short hash is its first 10 characters.
 
    **LABEL mode** — every open PR carrying the label, across the main repo, the wiki repo and submodules
    (the per-repo commands are listed below).
+
+   **RSYNC mode** — every **open** PR carrying the `AIReview` label on **`RsyncProject/rsync`** only. There
+   are no submodules, wiki or upstream repos to sweep — it is a single repo:
+   ```bash
+   gh pr list --repo RsyncProject/rsync --label "AIReview" --state open \
+              --json number,title,author,url,updatedAt,headRefOid --limit 100
+   ```
+   Key each PR by its bare number (all one repo, no collision). This set — open PRs with the `AIReview`
+   label — is exactly the "current reviews" the single `RsyncReviews/index.html` page shows: a PR that is
+   closed/merged or has the label removed is **DROPPED** from the page on the next run (step 2), and a PR
+   whose head moved is **re-reviewed** and its comment updated (step 8). Nothing about the ArduPilot
+   discovery below (`.gitmodules`, wiki, `mavlink`, `SupportProxy`) applies in RSYNC mode.
 
    **AUTHOR mode** — every **open** PR by that author, in the same set of repos, **updated within the last
    7 days**. Use `--author` and filter on `updatedAt`:
@@ -86,6 +160,117 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
    - **Report the window explicitly** in the summary and in the report header ("open PRs updated since
      `<CUTOFF>`"), because unlike a label the set is time-dependent: the same command run tomorrow
      legitimately returns a different set, and a reader needs to know the boundary that produced it.
+
+   **FOLLOWUP mode** — the set is derived from what has already been reviewed and commented on, not from
+   a label or an author. Build it like this:
+
+   1. **List the published reports.** `curl -fsS https://uav.tridgell.net/DevCallReviews/` returns a
+      browsable index. Take the directory entries that are **not** dated archives and **not** this mode's
+      own output — i.e. drop anything matching `^[0-9]{4}_[0-9]{2}_[0-9]{2}` (which also correctly drops
+      oddities like `2026_07_15_DevCallTopic/`), drop **`followups/`**, and drop `README.txt`:
+      ```bash
+      curl -fsS https://uav.tridgell.net/DevCallReviews/ \
+        | grep -oE 'href="[^"]+/"' | sed 's/href="//;s#/"##' \
+        | grep -vE '^([0-9]{4}_[0-9]{2}_[0-9]{2}|followups|\.|/|\?)' | sort -u
+      ```
+      **`followups` must be excluded explicitly** — it does *not* match the dated pattern, so without its
+      own rule it is treated as a label, and fetching `followups/devcall_pr_reviews.html` 404s (it is a
+      parent directory holding per-run subdirectories, not a report). A 404 there is silent under
+      `curl -fsS`, so the run would simply see one fewer label and skip whatever only that label covered.
+      What remains is the set of per-label "latest" reports, e.g. `DevCallEU/`, `DevCallTopic/`. Fetch each
+      one's `devcall_pr_reviews.html` and parse its manifest comment.
+   2. **Union the manifest keys into one candidate set**, remembering *every* label a PR appears under —
+      a PR commonly appears in more than one, and step 9 has to update all of them.
+   3. **Get the last-told head from the posted comment, not from the manifest.** This is the crux of the
+      mode and getting it wrong produces duplicate reviews. The manifests disagree with each other by
+      design, because each label was last run on a different day: as of 2026-08-19, `#34094` sits at
+      `a6537afc71` in `DevCallEU` but `db80aa4121` in `DevCallTopic`, and `#34073` and `#33933` differ the
+      same way. Keying off a manifest would therefore re-review a PR that another label reviewed at the
+      current head only hours earlier, and post a second comment saying nothing new. What actually matters
+      is **what the developer was last told**, which is the head quoted in the newest AI comment on the PR:
+      ```bash
+      ME=$(gh api user --jq .login)
+      LAST=$(gh api --paginate repos/<owner>/<repo>/issues/<n>/comments \
+        --jq "[.[] | select(.user.login==\"$ME\") | select(.body|test(\"AI-generated\"))] | last | .body")
+      TOLD=$(grep -oE 'head \`[0-9a-f]{10}\`' <<<"$LAST" | head -1 | grep -oE '[0-9a-f]{10}')
+      ```
+      A PR with **no** such comment is not a follow-up case at all — nobody has been given feedback to
+      respond to — so drop it and say how many you dropped for that reason.
+   4. **Filter to the actual work.** Keep a PR only if all of these hold, and report the count that fails
+      each test rather than silently narrowing:
+      - `state == OPEN` (skip merged/closed; note them, since a merged PR with an unaddressed finding may
+        deserve a follow-up issue instead — see `#34107` on 2026-08-19 for exactly that case);
+      - it is not a draft (a draft is still being worked on; note it and move on);
+      - `current head != TOLD`.
+   5. **Drop no-op head moves before reviewing, not after — but do it by comparing the PR's own patch at
+      each head, NOT with the compare API.** Head movement is often a rebase or a merge from master with no
+      change to the author's own work, and re-reviewing those burns budget while telling the developer
+      nothing. The correct test:
+      ```bash
+      git fetch -q origin <TOLD> && git fetch -q origin pull/<n>/head
+      BO=$(git merge-base origin/master <TOLD>);   BN=$(git merge-base origin/master <current>)
+      gh pr view <n> --repo <owner/repo> --json files --jq '.files[].path' | sort > own.txt
+      git diff $BO <TOLD>    -- $(tr '\n' ' ' < own.txt) > old.patch
+      git diff $BN <current> -- $(tr '\n' ' ' < own.txt) > new.patch
+      diff -q old.patch new.patch && echo REBASE-ONLY || echo REAL-CHANGE
+      ```
+      Identical patches ⇒ rebase-only: **skip it, do not post, and list it in the summary as "moved but
+      unchanged"** so the skip is visible rather than looking like an oversight.
+
+      **Do not use `gh api .../compare/<old>...<new>` for this.** It is a *three-dot* compare, so its base
+      is `merge-base(old, new)` — and on a **force-pushed or rebased branch that is the branch point, so it
+      returns the entire PR** and any file-overlap test is trivially 100%. Verified on `#34094` on
+      2026-08-20: `compare` reported `status: diverged, ahead=86, behind=12`, 128 files of which all 37 of
+      the PR's own files "changed" — while the true delta was 42 lines. Restricting to the PR's own files
+      does not save you either, for the same reason. Force-pushes are the common case in this mode, since
+      an author responding to review usually amends rather than appends.
+
+      Two further traps the patch-diff method also avoids: the merge-base moves between the two heads, so
+      files that master changed in between (on `#34094`, `Tools/ros2/*` and a workflow file) show up as
+      spurious differences unless you restrict to the PR's own file list; and a rebase inflates raw counts
+      enormously — on `#31355`, `compare` reported 114 changed files of which only 21 belonged to the PR,
+      so sizing a review off that number would wildly overestimate the work.
+   6. Give each surviving PR the same **key** as the other modes (`<number>`, or `<reponame>#<number>`),
+      and record which labels' reports must be updated for it.
+
+   **The funnel is heavily weighted towards skipping, and that is the design working.** Measured on
+   2026-08-20 against the two published label reports: 27 unique candidates → 6 merged, 13 open but
+   unchanged, 0 without a comment → **8 re-reviewed**. Of the 7 PRs present under both labels, 3 had
+   disagreeing manifest heads (`#33933`, `#34073`, `#34094`); keying off a manifest would have re-reviewed
+   all three, whereas the posted-comment head correctly skipped two of them as already current. Expect the
+   great majority of candidates to fall out at the state/unchanged tests, and treat a run where most
+   candidates survive as a signal that something is wrong with the head extraction rather than as a real
+   backlog.
+
+   The step 3 rule about batch size applies here too: 8 PRs needing a full double review is a real batch,
+   not a quick check. Count the survivors before starting and, if it is more than can be done properly,
+   say so and offer to split — oldest-first is usually right in this mode, since those authors have been
+   waiting longest.
+
+   If the surviving set is empty, that is the expected and healthy outcome for a frequently-run mode: say
+   plainly that nothing has moved since the last review, publish nothing, post nothing, and stop.
+
+   **Re-check the SKIPPED-as-unchanged set at the end of the run, not only the set you are posting to.**
+   A follow-up run takes 30-60 minutes, and an author who is actively responding to review is exactly the
+   person likely to push during it — so the skip decision made at discovery can be stale by the time the
+   run finishes. The step-8 head re-check covers only the PRs being commented on and will not catch this.
+   Before writing the summary, re-fetch `headRefOid` for every PR you skipped as unchanged and compare it
+   against the head you recorded at discovery:
+   ```bash
+   for n in $(cut -d'|' -f1 "$SCRATCH/skipped_unchanged.txt"); do
+     cur=$(gh pr view $n --repo <owner/repo> --json headRefOid --jq '.headRefOid[0:10]')
+     was=$(grep "^$n|" "$SCRATCH/skipped_unchanged.txt" | cut -d'|' -f2)
+     [ "$cur" = "$was" ] || echo "MOVED DURING RUN: $n ($was -> $cur)"
+   done
+   ```
+   Any output is a decision: either fold that PR into this run (usually right if the run has not finished
+   publishing) or **name it explicitly in the summary as deferred to the next run**, with the new head, so
+   it is visible rather than silently absent. Never let it fall out unmentioned.
+
+   This is not hypothetical. On 2026-08-20 `#34094` was correctly skipped at discovery (23:53Z), its author
+   force-pushed at 00:04:57Z — twelve minutes later, mid-run — and that push *removed the watchdog pats*
+   the previous review had flagged, i.e. it was a direct response to the feedback. The run finished and
+   published without mentioning the PR at all, which is the one outcome this mode exists to prevent.
 
    **Do not use `gh api .../contents/<path>?ref=<sha>` to check a file at a PR head.** That call plus
    `--jq .content | base64 -d` fails silently — on 2026-08-04 it returned empty for an entire run, and
@@ -123,14 +308,27 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
    `--label "$ARGUMENTS" --limit 50`, and apply the `updatedAt` cutoff above to each result:
    - Main repo: `gh pr list --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Wiki repo: `gh pr list --repo ArduPilot/ardupilot_wiki --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
+   - Upstream MAVLink: `gh pr list --repo mavlink/mavlink --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
+   - SupportProxy: `gh pr list --repo ArduPilot/SupportProxy --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50` — an ArduPilot-owned standalone repo that is **not** a submodule, so the `.gitmodules` sweep below will not find it; key its PRs `SupportProxy#<number>`. It is an ArduPilot repo, so it is treated like the main/wiki/submodule repos (the `mavlink/mavlink` upstream exceptions do **not** apply): comment-posting in step 8 happens normally for DevCallEU/DevCallTopic.
    - Parse `.gitmodules` to find all submodule URLs hosted under `ArduPilot/` or `ardupilot/` on GitHub
    - For each ArduPilot-owned submodule repo, run: `gh pr list --repo <owner/repo> --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Combine all results, tracking which repo each PR belongs to. Give each PR a stable **key**: the PR number for the main repo, or `<reponame>#<number>` for wiki/submodule PRs (e.g. `mavlink#360`, `wiki#7730`). Note that wiki PRs are documentation-focused (ReST under `*/source/docs/`); review for technical accuracy vs the current ArduPilot codebase, broken `:ref:` cross-references, ReST syntax, and consistency with existing wiki conventions.
+   - **Disambiguate the two mavlink repos.** `mavlink/mavlink` and `ArduPilot/mavlink` share the basename `mavlink`, and the fork is a submodule so it is swept as well — a bare `<reponame>` key is therefore ambiguous between them. Key the upstream repo `upstream-mavlink#<number>` and the fork `mavlink#<number>`, and label them `[upstream-mavlink]` and `[mavlink]` in the report. Without this, two different PRs collide on one manifest key and the incremental skip in step 2 silently reuses one PR's review for the other — the failure is invisible, because the report still looks complete. Apply the same rule to any future non-ArduPilot repo whose basename already exists in the submodule set.
+   - **Upstream `mavlink/mavlink` is not an ArduPilot repo**, so weigh findings accordingly: it serves every MAVLink implementation, not just ArduPilot. A message or enum change there affects PX4, QGC, MAVSDK and pymavlink users too, XML dialect changes are effectively permanent once released, and ArduPilot conventions (parameter name limits, `new` returning zeroed memory, per-subsystem commits) do **not** apply. Review for dialect/XML correctness, backward compatibility of message and enum changes, and whether `common.xml` is the right place versus a vendor dialect. Do not tell an upstream author to follow an ArduPilot house rule.
 
-2. **Fast incremental skip — decide what actually needs reviewing.** Fetch the previously-published report for this label and compare head hashes:
+2. **Fast incremental skip — decide what actually needs reviewing.**
+
+   **In FOLLOWUP mode step 1 has already done this**, and by a stricter test (posted-comment head, plus
+   the rebase check), so do not redo it here: every surviving PR is a REVIEW, there is no REUSE set to
+   compute, and nothing is DROPPED. Skip to step 3. The one part of this step that still applies is the
+   cheap CI refresh, which you need for the *other* PRs in each report you are about to rebuild — see
+   step 9.
+
+   For LABEL, AUTHOR and RSYNC modes, fetch the previously-published report and compare head hashes:
    - LABEL mode: `curl -fsS https://uav.tridgell.net/DevCallReviews/$ARGUMENTS/devcall_pr_reviews.html`
      AUTHOR mode: `curl -fsS https://uav.tridgell.net/UserReviews/<USERNAME>.html`
-     (a 404/failure means this is the first run for this label/author — treat every PR as new and review all of them).
+     RSYNC mode: `curl -fsS https://uav.tridgell.net/RsyncReviews/index.html`
+     (a 404/failure means this is the first run — treat every PR as new and review all of them).
    - Parse its review manifest, an HTML comment of the form:
      `<!-- reviewprs-manifest v1 label="..." generated="YYYY-MM-DD" heads="<key>:<shorthash> <key>:<shorthash> ..." -->`
      giving the head each PR was last reviewed at.
@@ -144,6 +342,22 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
 
 
 3. **Review only the REVIEW set — and review every one of them yourself.** For each such PR (in any repo):
+
+   **In FOLLOWUP mode the previous round's comment is the most important input to this step.** The whole
+   point of the mode is that the developer has pushed changes in response to it, so the review is not a
+   fresh read that happens to land on a moved PR — it is an answer to a specific question they are waiting
+   on. Before writing anything, fetch your own previous comment (step 1 already located it) and the delta
+   since:
+   ```bash
+   gh api repos/<owner>/<repo>/compare/<TOLD>...<current head> --jq '.files[] | "\(.status) \(.filename)"'
+   ```
+   Then go through **every finding in that previous comment** and classify it explicitly as **RESOLVED**
+   (say how, referencing the change), **STILL OPEN** (say why the new code does not cover it, and mark it
+   re-raised rather than presenting it as new), or **DISPUTED** (the author answered in the thread or in a
+   commit message — engage with their reasoning on the merits; if they are right, say so plainly and drop
+   the finding). A follow-up comment that silently omits a previous finding is the worst outcome here,
+   because the developer cannot tell whether it was fixed, forgotten, or withdrawn. New findings on newly
+   added code are of course still in scope.
 
    **You must read every diff in the REVIEW set with your own eyes. This is not negotiable and does not
    scale down when the batch is large.** Codex is a *second* reviewer in this workflow, never a substitute
@@ -210,8 +424,20 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
      - Memory concerns for embedded targets
      - Alignment with ArduPilot coding patterns
 
-4. Write the HTML report directly to the report file (`devcall_pr_reviews.html` in the repository root) — do not read the file first, it is pure generated output. Build it from the REUSE sections (copied verbatim from the fetched prior report) plus freshly-written sections for the REVIEW set:
-   - As the first line inside `<body>`, emit the review manifest comment covering **every** PR in the final report (reused + reviewed): `<!-- reviewprs-manifest v1 label="$ARGUMENTS" generated="<DATE>" heads="<key>:<shorthash> ..." -->`. The next run depends on this.
+   - **RSYNC mode reviews the rsync codebase, not ArduPilot — weigh findings accordingly.** `RsyncProject/rsync`
+     is a portable C program (client/server file transfer over a wire protocol), so the relevant angles are
+     different from an ArduPilot PR and the ArduPilot house rules (16-char params, `new`/`malloc` returning
+     zeroed memory, per-subsystem commits) **do not apply**. Review for: memory safety in C (buffer
+     overflows, off-by-one, unchecked `malloc`, use-after-free, integer overflow in size math — rsync has a
+     CVE history here); **wire-protocol compatibility** (a change to the protocol must stay compatible with
+     older peers or bump `PROTOCOL_VERSION` deliberately, and both sender and receiver sides must agree);
+     correct handling of untrusted input from the remote peer (path traversal, filename sanitisation);
+     signed/unsigned and 32-bit/64-bit portability across the many platforms rsync targets; and matching the
+     project's own C style and existing idioms. As with upstream `mavlink`, review it on its own terms; do
+     not tell an rsync author to follow an ArduPilot convention.
+
+4. Write the HTML report directly to the report file (`devcall_pr_reviews.html` in the repository root; in RSYNC mode `rsync_pr_reviews.html`, which is published as `RsyncReviews/index.html`) — do not read the file first, it is pure generated output. Build it from the REUSE sections (copied verbatim from the fetched prior report) plus freshly-written sections for the REVIEW set:
+   - As the first line inside `<body>`, emit the review manifest comment covering **every** PR in the final report (reused + reviewed): `<!-- reviewprs-manifest v1 label="$ARGUMENTS" generated="YYYY-MM-DD" heads="<key>:<shorthash> ..." -->`. The next run depends on this. **`generated` is the date the review actually ran**, not the call date the archive directory is named for (step 9) — it records when the heads were captured, which is exactly what the incremental skip in step 2 reasons about.
    - Table of contents with author name next to each PR number and quick verdict
 
    - **Every table in the report must be click-to-sort.** Give each `<table>` a `sortable` class, real
@@ -277,7 +503,10 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
      record rather than a recollection. Any output from that loop means the run is incomplete — finish it
      or tell the user which PRs you are not covering and why, **before** publishing anything.
    - Reused sections are copied unchanged (they were reviewed and Codex-validated in a prior run at the same head) **except for the CI status, which is refreshed** from the step-2 `gh pr checks` result: update the PR's CI indicator in its meta line and in the contents/quick-verdict and summary tables to the current value. If a reused PR's CI flipped, add a brief `CI updated <DATE>: <old> → <new>` note to its section; and if it went green→failing on otherwise-unchanged code, flag it (likely a flaky job or a base-merge regression rather than a fault in the PR diff) so it isn't silently presented as still-passing. Do not change the findings or verdict of a reused PR — only its CI status. Only newly reviewed/changed PRs get fresh content. Add a short note near the top summarising the refresh (what was added / changed / dropped, what was reused, and any CI changes on reused PRs).
-   - Include the absolute review date at the top of the report.
+   - Include the absolute review date at the top of the report. For `DevCallTopic` and `DevCallEU`, name
+     the call it is for as well, since the two are usually different days and the dated archive directory
+     is keyed on the call — e.g. "Review date: **2026-08-24** · for the `DevCallTopic` call on
+     **2026-08-25**". Do not silently print only one of them.
    - Summary table at the end
 
 5. Verdicts should be:
@@ -408,7 +637,40 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
 
    - Record the validation in the report itself: add a short **"Codex validation"** line near the top (date + one-line outcome, e.g. "Codex cross-checked N findings: X confirmed, Y adjusted, Z refuted, W added; spot-checked K APPROVE PRs cold, J moved out of APPROVE"). Name which APPROVE PRs were spot-checked, so a reader can see which clean verdicts were independently tested and which were taken on one reviewer's word. If any verdicts changed, update the per-PR sections, the contents/quick-verdict table, the summary table, and the final totals so the whole report stays consistent.
 
-8. **Post review comments to the PRs — LABEL mode, DevCallEU and DevCallTopic only.** This step runs automatically when the mode is LABEL and the label is exactly **`DevCallEU`** or **`DevCallTopic`**. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
+8. **Post review comments to the PRs — LABEL mode (DevCallEU/DevCallTopic) and RSYNC mode.** This step runs automatically when the mode is LABEL and the label is exactly **`DevCallEU`** or **`DevCallTopic`**, **and in RSYNC mode** (`RsyncProject/rsync`, `AIReview` label — tridge's own project, opted in). **Exception: PRs in `mavlink/mavlink` are not commented on without asking first.** That is a third-party upstream project rather than an ArduPilot one — a posted review there goes to maintainers who have not opted into this process and lands under the running user's name on someone else's repo. Include those PRs in the report as normal, then say plainly which upstream PRs would get a comment and wait for a yes. Everything else about the mechanics is unchanged. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
+
+   **RSYNC mode posts exactly like the dev-call labels, with two specifics.** (a) Post only **after both the
+   Claude read (step 3) and the Codex pass (step 7) are complete and reconciled** — never on the strength of
+   one pass alone (this is the same rule as everywhere, restated because it is what the user asked for). (b)
+   Add `--repo RsyncProject/rsync` to every `gh`/`gh api` call, and link the comment to the single page
+   `https://uav.tridgell.net/RsyncReviews/index.html#pr<number>`. The comment scope (comment on every
+   reviewed PR, including clean APPROVEs), the AI-generated marker, and the **edit-in-place vs
+   deprecate-and-repost** decision are all identical to LABEL mode: if your prior AI comment is still the
+   last thing on the PR, edit it in place; if anything has been posted since, deprecate-and-repost so the
+   update lands at the bottom and notifies. A re-run that finds a PR's head unchanged posts nothing (it is a
+   REUSE); a re-run that finds the head moved re-reviews and updates the comment by that same test.
+
+   **FOLLOWUP mode always posts, and always as a NEW comment — never an in-place edit.** Posting *is* the
+   mode's purpose, and it needs no label check, because every PR in its set was selected precisely by
+   already having one of our comments on it. The upstream `mavlink/mavlink` exception above still applies.
+
+   **Skip the edit-vs-repost test in this mode and always deprecate-and-repost.** The test asks "would an
+   in-place edit be buried?", which is the wrong question here. An in-place edit generates **no
+   notification at all** — and in this mode the author has, by construction, just pushed changes in
+   response to the previous comment and is waiting to hear whether they landed. Editing silently means
+   they are told nothing, which defeats the entire purpose of the mode. Observed on 2026-08-20 on `#34094`:
+   the author pushed ~670 lines answering nearly every finding but posted no comment alongside it, so the
+   `NEWER == 0` branch said "edit in place" — i.e. respond to a developer actively waiting for feedback by
+   silently rewriting a comment they had already read. The mechanics of deprecating the old comment and
+   posting the new one are exactly as described below; only the choice is removed.
+
+   In this mode the comment should **open with the verdict on the previous round**, not with the new
+   findings — that is the thing the developer is waiting to read. Something like "Re-reviewed at head `X`:
+   3 of the 4 findings from my previous comment are resolved, 1 is still open, details below." Then the
+   RESOLVED / STILL OPEN / DISPUTED triage from step 3, then anything new. If every previous finding is
+   resolved and nothing new turned up, say exactly that in a couple of lines and move the verdict — an
+   author who has fixed everything should be told so unambiguously and promptly, which is the entire
+   reason this mode exists.
 
    **AUTHOR mode does not post, ever, unless explicitly asked in the user's message.** The default is a
    report only. The dev-call labels are a standing, publicly-understood process — an author sweep is not:
@@ -426,6 +688,23 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
      On an **APPROVE**, open with that plainly ("no blockers") so the author is not left guessing whether the comment is a merge objection.
      For a **clean APPROVE with nothing actionable**, the comment is short and its job is to say what was actually checked, not to pad. Name the specific things verified — the paths traced, the callers audited, whether a cold review was run and what it looked for — so the author can judge how much the clearance is worth and challenge it if a risk was missed. A bare "looks good to me" is worse than nothing, because it claims review effort without evidencing any. Keep it to a few lines.
    - **Mark every comment as AI-generated.** Begin the body with a marker line, e.g.: `**Automated review note — AI-generated (Claude), validated against the live diff.** Please sanity-check before acting.`
+   - **Link the comment to the report it came from**, on its own line near the top, so the author can see
+     the full context and what else was checked. **The URL differs per mode — use the one for the mode you
+     are actually running**, and construct it from the path you published to in step 9 rather than from
+     memory:
+     - LABEL mode → `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html`
+     - AUTHOR mode → `https://uav.tridgell.net/UserReviews/<USERNAME>.html` (only relevant if the user
+       explicitly asked for comments, since this mode does not post by default)
+     - FOLLOWUP mode → `https://uav.tridgell.net/DevCallReviews/followups/<DATE_TIME>/devcall_pr_reviews.html`
+       — the run's own directory, **not** a per-label URL. A follow-up comment linking to a label report is
+       wrong twice over: that report is a different document, and it will be overwritten by the next label
+       run, so the link rots.
+     - RSYNC mode → `https://uav.tridgell.net/RsyncReviews/index.html#pr<number>` — the single page, with the
+       per-PR anchor.
+     Because the comment must contain the published URL, publish (step 9) **before** posting (step 8) in
+     FOLLOWUP **and RSYNC** modes — the two steps are in the reverse of their usual order there, since the
+     comment links to the page you just published. Verify the URL returns 200 before putting it in a comment
+     that goes to an author.
    - **Update, don't duplicate — unless the update would be buried.** If you have never commented on that PR, post a new comment. If you have already posted an AI-generated comment, the choice between editing it and posting a second one is decided entirely by the test below: edit in place with `gh pr comment <number> [--repo <owner/repo>] --edit-last --body-file <file>`, or PATCH it by id if `--edit-last` is not viable.
 
      **The exception: deprecate-and-repost.** Editing in place has a failure mode — the edited comment stays at its original position in the thread. If the discussion has moved on since, the updated review sits far up the page where nobody sees it, and the author has no notification that it changed.
@@ -489,11 +768,29 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
 
 9. **Publish the report to the web.** Once the report is finalised (including the Codex revisions and any comment posting), publish it to BOTH the per-label "latest" directory (which the next re-run reads) and a dated archive directory. This is automatic — always do it at the end of the run.
 
+   **For the two dev-call labels the dated directory is the date of the CALL, not the date you ran the
+   review** — see "Dated archive: use the call date, in Canberra time" below. That is what lets a report,
+   and the PR comments linking to it, be published days ahead of the meeting and still land in the folder
+   people will look in on the day.
+
    ```bash
    # LABEL mode
    REPORT="$(git rev-parse --show-toplevel)/devcall_pr_reviews.html"
    LABEL="$ARGUMENTS"
-   DATE=$(date +%Y_%m_%d)   # e.g. 2026_06_09 — must match the report's review date
+
+   # Dated archive directory: DevCallTopic -> upcoming Tuesday, DevCallEU -> upcoming Wednesday,
+   # both reckoned in Canberra time. "Upcoming" includes today. Any other label -> today.
+   case "$LABEL" in
+       DevCallTopic) CALL_DAY=Tuesday ;;
+       DevCallEU)    CALL_DAY=Wednesday ;;
+       *)            CALL_DAY= ;;
+   esac
+   if [ -n "$CALL_DAY" ] && [ "$(TZ=Australia/Sydney date +%A)" != "$CALL_DAY" ]; then
+       DATE=$(TZ=Australia/Sydney date -d "next $CALL_DAY" +%Y_%m_%d)
+   else
+       DATE=$(TZ=Australia/Sydney date +%Y_%m_%d)
+   fi
+
    rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/$LABEL/   # per-label latest
    rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/$DATE/    # dated archive
 
@@ -503,13 +800,95 @@ one step 9 publishes to. AUTHOR mode has no dated archive — the per-user page 
    USER_NAME=<username>
    REPORT="$(git rev-parse --show-toplevel)/user_pr_reviews_${USER_NAME}.html"
    rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/UserReviews/${USER_NAME}.html
+
+   # RSYNC mode — a single living page, kept current; no dated archive.
+   # Like AUTHOR mode, the destination is a FILENAME (index.html), not a directory,
+   # and it lives in its own RsyncReviews/ tree, entirely separate from DevCallReviews/.
+   REPORT="$(git rev-parse --show-toplevel)/rsync_pr_reviews.html"
+   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/RsyncReviews/index.html
    ```
 
-   - LABEL mode serves at `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html`, with the dated snapshot at `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html`.
+   **FOLLOWUP mode writes its own dated report under `followups/`, and additionally refreshes the label
+   reports** so their manifests stay truthful:
+
+   ```bash
+   DATE_TIME=$(date +%Y_%m_%d_%H%M)     # e.g. 2026_08_20_1432 — one directory per run
+   # 1. the run's own report — this is the URL the posted comments link to
+   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/followups/$DATE_TIME/
+   # 2. for each label whose report contained a re-reviewed PR, refresh that label's latest
+   rsync -Pavz --mkpath "$LABEL_REPORT" tridgell.net:UAV-web/DevCallReviews/$LABEL/
+   ```
+
+   The `followups/` report covers only the PRs re-reviewed in that run and is the run's deliverable. The
+   per-label refresh is a separate, secondary write whose only job is to stop the label reports showing a
+   stale review and re-triggering the same follow-up; it replaces just those PRs' sections and manifest
+   heads and carries everything else over verbatim.
+
+   - Rebuild each affected label's report by taking its **published** version, replacing only the sections
+     for the PRs re-reviewed this run, and updating those PRs' entries in the manifest, the
+     contents/quick-verdict table and the summary table. Every other section is carried over verbatim, and
+     its CI status refreshed as in step 2 — the report must stay a complete, accurate picture of that
+     label, not become a followup-only page.
+   - **A PR that appears under several labels must be written into all of them at the same head.** That is
+     what stops the manifests drifting apart again and re-triggering the same follow-up next run. Verify
+     it before publishing: for each re-reviewed key, grep the new head out of every rebuilt report and
+     confirm they agree.
+   - Do **not** write the plain `<DATE>/` archive in this mode — that name belongs to full LABEL runs, and
+     it is now a *call* date, so a follow-up report covering three PRs would masquerade as the complete
+     sweep prepared for that dev call. `followups/<DATE_TIME>/` is deliberately a separate subtree, and is
+     timestamped to the minute (from the local clock — it is a run stamp, not a call date) because this
+     mode is expected to run several times a day.
+   - If a re-reviewed PR is no longer in any label's report (it was reviewed once and then the label was
+     removed), there is nothing to rebuild — the comment on the PR is the deliverable. Say so in the
+     summary rather than inventing a report for it.
+
+   - LABEL mode serves at `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html`, with the dated snapshot at `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html` — where `<DATE>` is the call date computed above, so for the dev-call labels that URL is usually in the future when you print it. Print it anyway: it is the link to hand out ahead of the meeting.
    - AUTHOR mode serves at `https://uav.tridgell.net/UserReviews/<USERNAME>.html`. Because it is one page per user rather than a directory, publishing **replaces** the previous run's page — that is intended, since the 7-day window means an archive of author sweeps would mostly be duplicates. Print the URL when done, as for LABEL mode.
-   - `--mkpath` creates the destination directory if it doesn't exist (the `UAV-web/DevCallReviews/` parent already exists). If a host's rsync predates 3.2.3 and lacks `--mkpath`, first `ssh tridgell.net mkdir -p UAV-web/DevCallReviews/<dir>`, then rsync without `--mkpath`.
-   - Use the SAME `<DATE>` as the report's review date so the directory date and the in-report date agree.
-   - Print both public URLs when done.
+   - RSYNC mode serves at `https://uav.tridgell.net/RsyncReviews/index.html`. It is one living page listing every currently-open `AIReview` PR; publishing **replaces** it each run (with reused sections carried over verbatim), so it always reflects the current set — a PR that closed/merged or lost the label simply drops off. There is no dated archive. Print the URL when done.
+   - `--mkpath` creates the destination directory if it doesn't exist (the `UAV-web/DevCallReviews/` and `UAV-web/RsyncReviews/` parents already exist, or `--mkpath` creates them). If a host's rsync predates 3.2.3 and lacks `--mkpath`, first `ssh tridgell.net mkdir -p UAV-web/<dir>`, then rsync without `--mkpath`.
+   - Print both public URLs when done (in RSYNC mode, the single `RsyncReviews/index.html` URL).
+
+   **Dated archive: use the call date, in Canberra time.** The two dev-call labels name real meetings with
+   fixed weekdays, and the whole point of running the review early is that the report and the PR comments
+   are already in place when people arrive. So `<DATE>` is the date of the **upcoming call**, not the date
+   the review ran:
+
+   | label | call | `<DATE>` |
+   |---|---|---|
+   | `DevCallTopic` | Tuesday morning Canberra time (09:00 AEST / 10:00 AEDT) | the upcoming **Tuesday** |
+   | `DevCallEU` | Wednesday evening Canberra time (17:00 AEST / 18:00 AEDT) | the upcoming **Wednesday** |
+   | anything else | no associated call | today |
+
+   Four things about that computation, each of which is a way to get it wrong:
+
+   - **"Upcoming" includes today.** If it is already Tuesday in Canberra, `DevCallTopic` uses *today's*
+     date, not next week's. This is not what `date -d "next Tuesday"` does — GNU `date` skips to the
+     following week when the base day already is that weekday (verified: base `2026-08-25` (Tue) gives
+     `2026-09-01`). Hence the explicit same-day test in the snippet; do not simplify it away.
+     Note the consequence at the far end of the day: a run late on Tuesday evening, after the Topic call
+     has already happened, still writes that Tuesday's directory. That is deliberate — the rule is "the
+     current call week", and a same-day re-run should update the day's report rather than start next
+     week's.
+   - **Canberra, not UTC and not the runner's clock.** Use `TZ=Australia/Sydney` explicitly (Canberra
+     shares Sydney's rules; `Australia/Canberra` is an alias for the same zone). Canberra is UTC+10/+11, so
+     for the whole local morning the UTC date is still *yesterday* — at 2026-08-23 22:52 UTC it was already
+     Monday the 24th in Canberra. That is not a cosmetic difference: at Wednesday 09:00 Canberra (= Tuesday
+     23:00 UTC), `DevCallTopic` computed in Canberra gives **2026_09_01** and computed in UTC gives
+     **2026_08_25** — a full week out, and pointing at a Tuesday that has already gone.
+   - **DST needs no special handling** *for the date*, which is the only thing this affects. The clock time
+     of each call shifts by an hour across the AEST/AEDT boundary (first Sunday in October, first Sunday
+     in April) but the weekday does not, and the tz database applies the shift for you. The hours are
+     recorded in the table above only so the report can state them; nothing computes from them.
+   - **The dated directory and the report's own review date now differ, and that is correct.** The report
+     header carries the date the review was actually performed (step 4: "Include the absolute review date
+     at the top of the report"), while the directory carries the call it is for. When they differ, say so
+     in the report header — e.g. "Reviewed 2026-08-24 · for the DevCallTopic call on 2026-08-25" — so a
+     reader who notices the mismatch is not left wondering which one is stale. The manifest's
+     `generated="..."` attribute stays the **review** date; it records when the heads were captured, which
+     is what step 2's incremental skip reasons about.
+
+   The per-label "latest" directory is unaffected by any of this — it is always overwritten with the newest
+   report regardless of which call it was built for.
 
 Report the summary counts when complete. Say which **mode** was used and what selected the set — the
 label, or the username plus the `updatedAt` cutoff that produced it. Note the skip split and validation
@@ -518,8 +897,24 @@ the published URL:
 
 X APPROVE | Y COMMENT | Z REQUEST CHANGES (reused N, reviewed M; Codex: X confirmed / Y adjusted /
 Z refuted / W added, K APPROVE spot-checked / J reclassified; comments posted on P PRs) — published at
-`https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` (LABEL mode) or
-`https://uav.tridgell.net/UserReviews/<USERNAME>.html` (AUTHOR mode).
+`https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` (LABEL mode),
+`https://uav.tridgell.net/UserReviews/<USERNAME>.html` (AUTHOR mode), or
+`https://uav.tridgell.net/RsyncReviews/index.html` (RSYNC mode).
 
 In AUTHOR mode, if the sweep returns **no** PRs, say that plainly — "no open PRs by `<user>` updated
 since `<cutoff>`" — and do not publish an empty page over a previously useful one.
+
+In RSYNC mode, report the same split as LABEL mode (reviewed / reused / dropped), name the RSYNC repo and
+`AIReview` label as what selected the set, and give the single `RsyncReviews/index.html` URL. If there are
+**no** open `AIReview` PRs, say so plainly and do not overwrite a previously useful page with an empty one.
+
+In FOLLOWUP mode, report the funnel rather than just the outcome, because the interesting number is
+usually how much was correctly skipped:
+
+    N candidates from M label reports → S still open with one of our comments → T heads moved →
+    U re-reviewed (V skipped as rebase-only) — P comments posted; W findings resolved since last round,
+    X still open, Y new. Reports updated: <label list>.
+
+If nothing has moved, say "no reviewed PR has changed since its last review" and stop — publishing and
+posting are both skipped. That is a successful run, not an empty one, and it should be cheap enough to
+run on a schedule.
