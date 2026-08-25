@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-main()
+int main()
 {
         printf("char  : %d\n", sizeof(char));
         printf("short : %d\n", sizeof(short));
@@ -17,5 +17,6 @@ main()
         printf("ino_t : %d\n", sizeof(ino_t));
         printf("float : %d\n", sizeof(float));
         printf("double : %d\n", sizeof(double));
-        printf("pid_t : %d\n", sizeof(pid_t));
+	printf("pid_t : %d\n", sizeof(pid_t));
+	return 0;
 }
