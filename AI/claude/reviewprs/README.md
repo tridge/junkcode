@@ -125,9 +125,10 @@ findings still stand.
 
 ## Posting comments back to the PRs
 
-Runs automatically for the `DevCallEU` and `DevCallTopic` labels, in **follow-up mode** (posting *is* its
-purpose — always a fresh notifying comment), and in **rsync mode** (`RsyncProject/rsync`, an opted-in
-project); any other label posts nothing unless you ask. **Author mode never posts unless explicitly
+Runs automatically for the `DevCallEU`, `DevCallTopic`, and `AIReview` labels, in **follow-up mode** (posting
+*is* its purpose — always a fresh notifying comment), and in **rsync mode** (`RsyncProject/rsync`, an opted-in
+project); any other label posts nothing unless you ask. The `AIReview` label on an ArduPilot PR is the same
+opted-in signal ArduPilot shares with the rsync repo — someone applied it to ask for an auto-posted review. **Author mode never posts unless explicitly
 asked** — the dev-call labels are a standing, publicly-understood process, whereas an author sweep is a
 lens someone chose to point at a particular person, over PRs nobody put forward for review. Every reviewed
 PR gets a comment, **including clean
