@@ -5,8 +5,9 @@ A Claude Code slash command that reviews a set of open GitHub PRs — selected b
 project (the **rsync** target) — and writes a single self-contained **HTML report** with
 per-PR findings and an APPROVE / COMMENT / REQUEST CHANGES verdict. Built for the
 ArduPilot dev call workflow: it sweeps the **main repo, the wiki repo, every
-ArduPilot-owned submodule** (parsed from `.gitmodules`), and the standalone
-`ArduPilot/SupportProxy` repo, so one command covers the whole tree.
+ArduPilot-owned submodule** (parsed from `.gitmodules`), and the standalone ArduPilot
+repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `CustomBuild`,
+`MethodicConfigurator`, `ArduRemoteID`), so one command covers the whole tree.
 
 Every PR gets **two independent reviews** — Claude's own, and a cross-check by a
 second AI reviewer (OpenAI Codex) — and the report is **published to the web** and

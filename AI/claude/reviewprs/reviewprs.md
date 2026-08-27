@@ -1,6 +1,6 @@
 # Review PRs by Label, Author, or Follow-up
 
-Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the `ArduPilot/SupportProxy` repo, and the upstream `mavlink/mavlink` repo.
+Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
 
 Run this from the root of an ArduPilot checkout (it reads `.gitmodules` in the working directory). The report is written to the repository root and works in any ArduPilot checkout, not just one.
 
@@ -312,6 +312,15 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
    - Wiki repo: `gh pr list --repo ArduPilot/ardupilot_wiki --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Upstream MAVLink: `gh pr list --repo mavlink/mavlink --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - SupportProxy: `gh pr list --repo ArduPilot/SupportProxy --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50` — an ArduPilot-owned standalone repo that is **not** a submodule, so the `.gitmodules` sweep below will not find it; key its PRs `SupportProxy#<number>`. It is an ArduPilot repo, so it is treated like the main/wiki/submodule repos (the `mavlink/mavlink` upstream exceptions do **not** apply): comment-posting in step 8 happens normally for DevCallEU/DevCallTopic (and for the `AIReview` label).
+   - Other ArduPilot-owned standalone repos — also **not** submodules, so the `.gitmodules` sweep below will not find them; **sweep each one explicitly** with the same command shape (`gh pr list --repo ArduPilot/<repo> --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`) and key its PRs `<reponame>#<number>`:
+     - `ArduPilot/pymavlink`
+     - `ArduPilot/useralerts`
+     - `ArduPilot/MissionPlanner`
+     - `ArduPilot/CustomBuild`
+     - `ArduPilot/MethodicConfigurator`
+     - `ArduPilot/ArduRemoteID`
+
+     These are ArduPilot repos, so they are treated exactly like the main/wiki/submodule repos — the `mavlink/mavlink` upstream exceptions do **not** apply, and comment-posting in step 8 happens normally for `DevCallEU`/`DevCallTopic`/`AIReview`. Two disambiguations: `ArduPilot/pymavlink` is a distinct repo from the nested `pymavlink` submodule (there is no key collision — the submodule sweep only reaches ardupilot's *top-level* submodules, and pymavlink is nested under `mavlink`), and `ArduPilot/mavlink` (the fork) is already swept via `.gitmodules` and keyed `mavlink#`, so do **not** add it here. Keep this list current: if ArduPilot adds another standalone repo that people put dev-call/AIReview labels on, add it here.
    - Parse `.gitmodules` to find all submodule URLs hosted under `ArduPilot/` or `ardupilot/` on GitHub
    - For each ArduPilot-owned submodule repo, run: `gh pr list --repo <owner/repo> --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Combine all results, tracking which repo each PR belongs to. Give each PR a stable **key**: the PR number for the main repo, or `<reponame>#<number>` for wiki/submodule PRs (e.g. `mavlink#360`, `wiki#7730`). Note that wiki PRs are documentation-focused (ReST under `*/source/docs/`); review for technical accuracy vs the current ArduPilot codebase, broken `:ref:` cross-references, ReST syntax, and consistency with existing wiki conventions.
