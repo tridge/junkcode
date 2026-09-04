@@ -1,16 +1,91 @@
 # Review PRs by Label, Author, or Follow-up
 
-Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
+Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `MAVProxy`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
 
 Run this from the root of an ArduPilot checkout (it reads `.gitmodules` in the working directory). The report is written to the repository root and works in any ArduPilot checkout, not just one.
 
 The command is incremental: it records the head commit hash each PR was reviewed at, and on a re-run it reuses the previously-published report for any PR whose head is unchanged, only re-reviewing PRs that are new or have changed. This makes a re-run to pick up new/updated PRs very fast.
 
+> **Scratch space:** all temporary checkouts, clones, tarballs and build trees for this
+> command go under `/data/review/` (e.g. `mktemp -d -p /data/review pr34225-XXXX`). Never `/tmp` —
+> it is a 46G tmpfs on this machine and filling it crashes X. Remove the dir when the review is done.
+>
+> **No partial clones.** Never `git clone --filter=blob:none` (or any other `--filter=`) here, and
+> never run `git grep <sha>`, `git log -S`, or `git show <sha>:<path>` against a clone made that way.
+> Every missing blob triggers a lazy `git fetch` subprocess, and `git grep` defaults to one thread per
+> core, so a single grep spawns dozens of concurrent fetches that each write a promisor pack. On
+> 2026-09-05 that turned one validate agent into ~2500 processes, load 630, and 46 GB of packs, and
+> systemd-oomd killed the whole terminal cgroup — emacs included. Instead: `gh pr diff` for the diff,
+> and if a real tree is needed, `git clone --shared --no-checkout <existing /data/review checkout>` (or
+> `--reference` against one). Those are local, cost nothing, and fetch no blobs.
+>
+> **This rule goes into every Codex/agent task prompt verbatim**, alongside the `/tmp` rule — the
+> agents are the ones that make the clones, and they will reach for `--filter=blob:none` by habit.
+
+## Unattended runs — the default
+
+**This command must never block on a question.** It is run on a schedule (session cron today,
+system cron later), so a prompt that waits for a human is not a pause: it is a run that did
+nothing, reported nothing, and will not be noticed until someone looks. A scheduled run that
+stops half way is strictly worse than one that never started, because the labels look swept.
+
+**Unattended is the default posture.** Every decision point that used to ask now has a
+documented default, takes it, and says so in the report and the summary. Pass `--interactive`
+explicitly — as a separate word in the argument — to restore the asking behaviour. Nothing else
+enables it: a bare `/reviewprs`, `/reviewprs followup`, or any cron-fired invocation is
+unattended.
+
+Four rules make a run non-blocking. They override any "ask the user" wording later in this file.
+
+1. **Never end the turn mid-run.** Emitting user-facing prose ends the turn, and in a scheduled
+   context there is no next message to resume from — the run simply stops, usually right after a
+   tidy-looking progress summary, which is the most misleading possible place to die. So produce
+   **exactly one** user-facing message per run, at the very end, after step 9 has published.
+   Everything before that goes into tool calls: write progress to `$SCRATCH/progress.log` if it
+   is worth recording. Waiting on Codex is not an exception — set the monitor and keep working on
+   whatever does not depend on it. "I'll continue in a moment" is a stop.
+
+2. **A batch too large to review properly is deferred, never asked about.** Count the REVIEW set.
+   If it exceeds what can be done at full depth, review **oldest-first** up to what can, and defer
+   the rest. Deferral is explicit, not silent — it must satisfy all four of:
+   - name every deferred PR, with its head, in the report and in the final summary;
+   - carry each deferred PR's **previous section over verbatim**, clearly marked
+     `DEFERRED — not re-reviewed this run`, so the report never implies a review that did not
+     happen (a newly-labelled PR with no previous section is listed as deferred and unreviewed);
+   - **keep its old manifest head** (or omit it entirely if it is new). This is what makes
+     deferral self-healing: the next scheduled run compares the current head against that stale
+     entry, still sees a difference, and retries the PR automatically. Writing the current head
+     for a PR you did not review is the one thing that turns a deferral into a permanent skip;
+   - never substitute a shallower method for the deferred PRs — no Codex-only pass, no skim.
+     Depth is fixed; the *number of PRs* is what flexes.
+
+3. **Upstream `mavlink/mavlink` comments are held, never waited on.** Review the PR and include it
+   in the report exactly as normal, then **skip posting** and record it as
+   `comment held — upstream repo, needs approval`, naming it in the summary. Do not wait for a
+   yes. The user can approve them in one message afterwards; a held comment costs a day, a hung
+   run costs the whole sweep.
+
+4. **A failure in one part does not abort the rest.** This already applies to the four sub-runs of
+   an all-labels run; it applies equally to a single PR whose diff will not fetch, a Codex agent
+   that returns nothing, or a publish that fails. Record it, carry on, and name it in the summary.
+   The only condition that legitimately stops a run before it starts is an argument that resolves
+   to no mode at all (step 5 below) — under cron the argument is fixed and known-good, so that
+   should never fire.
+
+**What still reaches the user.** None of this makes the run quieter about substance. Deferrals,
+held comments, failures and skips are all named explicitly in the one closing message. The rule
+being removed is "stop and wait", not "tell the user".
+
 ## Arguments
 
-`$ARGUMENTS` selects which PRs to review. **With no argument at all** it is the **triple-run**: a
-`DevCallTopic`, `DevCallEU` and `followup` sweep back to back, producing up to three sets of review web
-pages plus PR comments (see resolution step 0 below). Otherwise the argument picks one of four **modes**:
+**Strip `--interactive` first, before anything else.** It is a posture flag, not a mode selector: remove
+it from the argument, remember that the run is interactive, and resolve what remains by the rules below.
+An argument of `--interactive` alone is therefore an interactive **all-labels run**, not an unresolvable
+mode. Without it the run is unattended (see **Unattended runs** above), which is the default.
+
+`$ARGUMENTS` selects which PRs to review. **With no argument at all** it is the **all-labels run**: a
+`DevCallTopic`, `DevCallEU`, `AIReview` and `followup` sweep back to back, producing up to four sets of
+review web pages plus PR comments (see resolution step 0 below). Otherwise the argument picks one of four **modes**:
 
 - **LABEL mode** — a GitHub label (e.g. `DevCallTopic`, `Copter`, `Plane`). Reviews every open PR
   carrying that label. Most labels produce a report only; the labels that **auto-post** comments are
@@ -35,30 +110,33 @@ pages plus PR comments (see resolution step 0 below). Otherwise the argument pic
 **Resolve the mode first and say which one you picked**, before anything else — discovery, the publish
 path and the comment policy all differ:
 
-0. **No argument at all — the TRIPLE-RUN.** If `$ARGUMENTS` is empty or only whitespace, this invocation
-   is shorthand for three back-to-back runs: **`DevCallTopic` (LABEL), then `DevCallEU` (LABEL), then
-   `followup` (FOLLOWUP)**, in exactly that order. Run them **sequentially, as three complete independent
-   runs** — each does its own full step 1-9 (discovery, incremental skip, review + Codex, report, comment
-   posting, publish) under its own mode's rules, exactly as if invoked with that argument on its own.
-   Do **not** try to merge them into one report or run them in parallel: the two label runs share the same
-   local file (`devcall_pr_reviews.html`) so cannot overlap, and — the reason for the order — **`followup`
-   must run last**, because it discovers its set from the *published* per-label reports and the *posted*
-   comments, so it needs the two label runs to have already published and commented at the current heads.
-   Consequences of that ordering, all intended:
-   - The two label runs each publish their per-label latest **and** their call-dated archive
-     (`DevCallTopic` → upcoming Tuesday, `DevCallEU` → upcoming Wednesday, Canberra time) and each
-     auto-posts comments (both are comment-posting labels — step 8).
-   - `followup` then reads those fresh reports; every PR the two label runs just re-reviewed is now at its
+0. **No argument at all — the ALL-LABELS RUN.** If `$ARGUMENTS` is empty or only whitespace, this invocation
+   is shorthand for four back-to-back runs: **`DevCallTopic` (LABEL), then `DevCallEU` (LABEL), then
+   `AIReview` (LABEL), then `followup` (FOLLOWUP)**, in exactly that order. Run them **sequentially, as four
+   complete independent runs** — each does its own full step 1-9 (discovery, incremental skip, review +
+   Codex, report, comment posting, publish) under its own mode's rules, exactly as if invoked with that
+   argument on its own. Do **not** try to merge them into one report or run them in parallel: the three
+   label runs share the same local file (`devcall_pr_reviews.html`) so cannot overlap, and — the reason for
+   the order — **`followup` must run last**, because it discovers its set from the *published* per-label
+   reports and the *posted* comments, so it needs the three label runs to have already published and
+   commented at the current heads. Consequences of that ordering, all intended:
+   - The three label runs each publish their per-label latest **and** a dated archive
+     (`DevCallTopic` → upcoming Tuesday, `DevCallEU` → upcoming Wednesday, both Canberra time; `AIReview`
+     → today, since it has no associated dev call) and each auto-posts comments (all three are
+     comment-posting labels — step 8). Each sweeps **all repos** (main, wiki, the ArduPilot submodules and
+     the standalone ArduPilot repos — SupportProxy, pymavlink, useralerts, MissionPlanner, MAVProxy, CustomBuild,
+     MethodicConfigurator, ArduRemoteID — plus, for the report only, upstream `mavlink/mavlink`).
+   - `followup` then reads those fresh reports; every PR the three label runs just re-reviewed is now at its
      told-head with a current comment, so `followup` correctly **skips** it. `followup` therefore acts
      only on PRs from *other* published label reports whose code moved since their last comment — often a
-     small set or none. That is the design working, not a bug: it is why this is "**up to** 3 sets of
-     review web pages" — if nothing else has moved, `followup` publishes and posts nothing and that third
+     small set or none. That is the design working, not a bug: it is why this is "**up to** 4 sets of
+     review web pages" — if nothing else has moved, `followup` publishes and posts nothing and that fourth
      set is simply absent.
-   - Publish paths never collide: `DevCallTopic/`, `DevCallEU/`, and `followups/<DATE_TIME>/` are three
-     distinct destinations, so the three runs' web pages coexist.
+   - Publish paths never collide: `DevCallTopic/`, `DevCallEU/`, `AIReview/`, and `followups/<DATE_TIME>/`
+     are four distinct destinations, so the four runs' web pages coexist.
    - Report a **combined summary** at the end — one clearly-labelled block per sub-run (mode, skip split,
      verdict counts, comments posted, published URL), plus the `followup` funnel line. If a sub-run fails,
-     say so and continue with the others rather than aborting the whole triple-run; never let a later
+     say so and continue with the others rather than aborting the whole run; never let a later
      sub-run's result silently overwrite an earlier one's summary.
 
    This empty-argument case is checked **before** everything below. A bare `/reviewprs` is never AUTHOR
@@ -80,7 +158,10 @@ path and the comment policy all differ:
    Match → LABEL mode.
 4. Otherwise test it as a user: `gh api users/<arg> --jq .login`. Resolves → AUTHOR mode.
 5. If neither resolves, **stop and say so**. Do not guess: a mistyped label would otherwise sweep zero
-   PRs and publish a confidently empty report.
+   PRs and publish a confidently empty report. This is the **only** legitimate halt in the whole workflow,
+   and it happens before any work is done — everything after this point runs to completion under the
+   **Unattended runs** rules. Under a schedule the argument is fixed and known-good, so it should never
+   fire; if it does, the cron entry itself is wrong and needs fixing.
 
 If a string is both a real label and a real username, prefer LABEL and say so, so the user can re-run
 with `@name` to force the other.
@@ -194,8 +275,19 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
       ME=$(gh api user --jq .login)
       LAST=$(gh api --paginate repos/<owner>/<repo>/issues/<n>/comments \
         --jq "[.[] | select(.user.login==\"$ME\") | select(.body|test(\"AI-generated\"))] | last | .body")
-      TOLD=$(grep -oE 'head \`[0-9a-f]{10}\`' <<<"$LAST" | head -1 | grep -oE '[0-9a-f]{10}')
+      TOLD=$(sed -nE 's/.*head `([0-9a-f]{10})`.*/\1/p' <<<"$LAST" | head -1)
       ```
+      **Extract it with `sed`, not `grep -oE 'head \`...'`.** A backslash-backtick inside a
+      `grep` pattern is a GNU extension meaning *start of buffer*, not a literal backtick, so under GNU
+      grep that pattern matches nothing and `TOLD` comes back empty — every candidate then falls out as
+      "no head in the comment" and the mode reports a clean, empty, completely wrong sweep. It is easy to
+      miss because it depends on which `grep` is on PATH: verified 2026-09-02 that this machine's
+      interactive `grep` is a ugrep wrapper, under which the bad pattern works, while `/usr/bin/grep`
+      (GNU 3.12) returns no match for the same input. **A cron run gets the GNU one**, so the bug is
+      invisible in an interactive test and fatal in the scheduled run it matters for. `sed -nE` sidesteps
+      it entirely and yields the hash in one step. If you prefer grep, put the backtick in a bracket
+      class instead of escaping it — that form is literal under both greps.
+
       A PR with **no** such comment is not a follow-up case at all — nobody has been given feedback to
       respond to — so drop it and say how many you dropped for that reason.
    4. **Filter to the actual work.** Keep a PR only if all of these hold, and report the count that fails
@@ -210,14 +302,74 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
       nothing. The correct test:
       ```bash
       git fetch -q origin <TOLD> && git fetch -q origin pull/<n>/head
-      BO=$(git merge-base origin/master <TOLD>);   BN=$(git merge-base origin/master <current>)
+      OLD=<TOLD>; NEW=<current>
+      BO=$(git merge-base origin/master $OLD);   BN=$(git merge-base origin/master $NEW)
       gh pr view <n> --repo <owner/repo> --json files --jq '.files[].path' | sort > own.txt
-      git diff $BO <TOLD>    -- $(tr '\n' ' ' < own.txt) > old.patch
-      git diff $BN <current> -- $(tr '\n' ' ' < own.txt) > new.patch
-      diff -q old.patch new.patch && echo REBASE-ONLY || echo REAL-CHANGE
+      mapfile -t OWN < own.txt
+
+      # 1. TEXT delta, immune to line shifts.  Strip the hunk headers and the
+      #    index blob line: master changing lines ABOVE the PR's hunks moves the
+      #    @@ offsets and the blob ids without the author touching anything.
+      norm() { sed -E 's/^@@ -[0-9,]+ \+[0-9,]+ @@.*/@@/; /^index [0-9a-f]+\.\.[0-9a-f]+/d'; }
+      git diff $BO $OLD -- "${OWN[@]}" | norm > old.patch
+      git diff $BN $NEW -- "${OWN[@]}" | norm > new.patch
+      cmp -s old.patch new.patch && TEXT_SAME=yes || TEXT_SAME=no
+
+      # 2. BINARY delta, which step 1 cannot see: git renders a binary as
+      #    "Binary files ... differ" with NO content, so once the index line is
+      #    stripped the patch is identical however much the blob changed.
+      #    Compare the author's contribution directly - the (merge-base blob ->
+      #    head blob) pair at each head.
+      blob() { git rev-parse --quiet --verify "$1:$2" 2>/dev/null || echo -; }
+      BIN_SAME=yes; BIN_WHY=
+      for f in "${OWN[@]}"; do
+          [ "$(git diff --numstat $BN $NEW -- "$f" | cut -f1)" = - ] || continue  # text: done above
+          ob=$(blob $BO "$f"); oh=$(blob $OLD "$f")
+          nb=$(blob $BN "$f"); nh=$(blob $NEW "$f")
+          [ "$oh" = "$nh" ] && continue
+          BIN_SAME=no
+          if   [ "$ob" = - ] && [ "$nb" = - ]; then BIN_WHY="$BIN_WHY $f(added,regenerated)"
+          elif [ "$ob" = "$nb" ];             then BIN_WHY="$BIN_WHY $f(modified,base-stable)"
+          else                                     BIN_WHY="$BIN_WHY $f(modified,base-moved)"
+          fi
+      done
+
+      if [ "$TEXT_SAME" = yes ] && [ "$BIN_SAME" = yes ]; then
+          echo REBASE-ONLY
+      else
+          R=REAL-CHANGE
+          [ "$TEXT_SAME" = no ] && R="$R text"
+          [ -n "$BIN_WHY" ]     && R="$R binary:$BIN_WHY"
+          echo "$R"
+      fi
       ```
-      Identical patches ⇒ rebase-only: **skip it, do not post, and list it in the summary as "moved but
-      unchanged"** so the skip is visible rather than looking like an oversight.
+      Both dimensions unchanged ⇒ rebase-only: **skip it, do not post, and list it in the summary as
+      "moved but unchanged"** so the skip is visible rather than looking like an oversight.
+
+      **Normalise the hunk headers, or every rebase reads as a real change.** A rebase onto a master that
+      touched lines *above* the PR's own hunks shifts every `@@ -a,b +c,d @@` offset and every `index
+      <old>..<new>` line, while the author's content is byte-identical — so a raw `diff -q` of the two
+      patches reports REAL-CHANGE and the PR gets a full pointless re-review. Verified on `#28530` on
+      2026-09-02: the entire difference between the two patches was one `index` line and
+      `@@ -8114` → `@@ -8116`. Because a rebase-only skip deliberately posts no comment, the told-head
+      never advances, so such a PR resurfaces on *every* subsequent follow-up run — misclassifying it is
+      therefore a permanent cost, not a one-off.
+
+      **But do not stop at the normalised text compare, because it is blind to binaries.** Git prints
+      `Binary files a/x and b/x differ` with no content, so the `index <old>..<new>` line is the *only*
+      textual evidence a binary changed — and step 1 has just deleted it. The two fixes pull in opposite
+      directions and both are needed: normalising is what makes the text test correct, and it is exactly
+      what destroys the binary signal. Verified on `#34117` on 2026-09-02, where a 105 KB `.hex` bootloader
+      had been regenerated between heads: the normalised patches are identical, so text alone says
+      REBASE-ONLY and the run would have skipped a PR whose committed firmware image had changed.
+
+      The blob comparison must distinguish **added** from **modified** files, because a changed head blob
+      means different things in each case. For a file the PR *adds*, the author's contribution is the whole
+      file, so a different head blob is unambiguously new content. For a file the PR *modifies*, the head
+      blob also moves whenever master edits that file under a rebase — so compare the merge-base blob too:
+      base identical and head moved means the author changed it, while base moved as well is ambiguous and
+      should be treated as REAL-CHANGE (reviewing an unchanged PR costs budget; skipping a changed one
+      costs the author their answer).
 
       **Do not use `gh api .../compare/<old>...<new>` for this.** It is a *three-dot* compare, so its base
       is `merge-base(old, new)` — and on a **force-pushed or rebased branch that is the branch point, so it
@@ -246,8 +398,9 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
 
    The step 3 rule about batch size applies here too: 8 PRs needing a full double review is a real batch,
    not a quick check. Count the survivors before starting and, if it is more than can be done properly,
-   say so and offer to split — oldest-first is usually right in this mode, since those authors have been
-   waiting longest.
+   review oldest-first and defer the remainder per **Unattended runs** rule 2 — oldest-first is especially
+   right in this mode, since those authors have been waiting longest. Deferral is cheap here: a deferred
+   follow-up keeps its old told-head, so the very next run of this mode picks it up again.
 
    If the surviving set is empty, that is the expected and healthy outcome for a frequently-run mode: say
    plainly that nothing has moved since the last review, publish nothing, post nothing, and stop.
@@ -316,6 +469,7 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      - `ArduPilot/pymavlink`
      - `ArduPilot/useralerts`
      - `ArduPilot/MissionPlanner`
+     - `ArduPilot/MAVProxy`
      - `ArduPilot/CustomBuild`
      - `ArduPilot/MethodicConfigurator`
      - `ArduPilot/ArduRemoteID`
@@ -408,12 +562,17 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
    anything quantitative, and anything you would not want to defend to the author. Agents disagreeing with
    the Codex pass on the same PR is a useful signal about where to look, not something to average out.
 
-   **When the batch is still genuinely too large to review properly, say so up front — do not silently
-   ration depth.** Count the REVIEW set before starting. If even the parallel form will not cover it, tell
-   the user the count and ask whether to split the run (by label subset, by repo, or oldest-first), or to
-   raise the reuse window. Stopping to ask is correct; quietly downgrading half the batch to a shallower
-   method and disclosing it in the report afterwards is not. The user cannot redirect a decision you made
-   silently.
+   **When the batch is still genuinely too large to review properly, defer the excess — do not silently
+   ration depth, and do not stop to ask.** Count the REVIEW set before starting. If even the parallel form
+   will not cover it, review oldest-first up to what will, and defer the rest under the deferral rules in
+   **Unattended runs** rule 2: named in the report and summary, previous section carried over and marked
+   `DEFERRED`, old manifest head preserved so the next scheduled run retries it automatically.
+
+   Quietly downgrading half the batch to a shallower method and disclosing it in the report afterwards is
+   still wrong — depth per PR is fixed, and it is the *number* of PRs that flexes. What has changed is only
+   that the run no longer halts for an answer: under a schedule that answer never comes, and the whole
+   sweep is lost rather than the tail of it. In `--interactive` mode, and only there, ask instead: report
+   the count and offer to split by label subset, by repo, or oldest-first.
 
    - Fetch the diff with `gh pr diff <number>` (add `--repo <owner/repo>` for submodule PRs)
    - Check CI status with `gh pr checks <number>` (add `--repo <owner/repo>` for submodule PRs)
@@ -566,7 +725,9 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      EOS
 
      rm -f "$SCRATCH/POOL_DONE"
-     setsid nohup bash -c "
+     SCOPE=codexpool-$$
+     setsid nohup systemd-run --user --scope --quiet -p MemoryMax=40G -p TasksMax=500 \
+        --unit="$SCOPE" bash -c "
         export SCRATCH_DIR=$SCRATCH
         cat $SCRATCH/todo.txt | xargs -P 6 -I{} bash $SCRATCH/worker.sh {}
         touch $SCRATCH/POOL_DONE
@@ -575,9 +736,23 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
 
      # wait for it — poll the SENTINEL, never the process table
      until [ -f "$SCRATCH/POOL_DONE" ]; do sleep 30; done
+
+     # reap leftovers: codex exec's 30s command timeout leaves backgrounded work running,
+     # so the sentinel does not mean the pool's descendants are gone
+     systemctl --user stop "$SCOPE.scope" 2>/dev/null
      ```
 
-     Two traps, both of which cause a partial run that looks like a complete one:
+     **The pool MUST run in its own transient systemd scope**, as above. `setsid` detaches it from the
+     terminal but leaves it in the terminal's cgroup, so when a runaway agent drives memory up,
+     systemd-oomd kills that whole cgroup — which on 2026-09-05 meant the gnome-terminal tab holding
+     emacs and every Claude and Codex session in it. A `--user --scope` with `MemoryMax` makes the pool
+     its own kill target: oomd takes the pool and nothing else. `TasksMax` caps a process-spawning
+     runaway before it reaches load 600 — 500 leaves room for six agents each running a parallel build,
+     and still stops the ~2500-task storm well short. Verify the scope exists once after launch
+     (`systemctl --user show "$SCOPE.scope" -p MemoryMax`); if `systemd-run` is unavailable, fall back to
+     plain `setsid nohup` but say so in the report, because the blast radius is then the whole terminal.
+
+     Three traps, all of which cause a partial run that looks like a complete one:
 
      - **A backgrounded `xargs -P` pool dies with its launcher.** Started via `run_in_background`,
        the tool reported "completed" as soon as the wrapper returned, having launched only the first
@@ -586,6 +761,11 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      - **`pgrep -x codex` is NOT a completion signal.** It matches every Codex process on the
        machine, including other Claude sessions', so it reports "still running" long after your own
        pool has died and "finished" is never reliable either. Poll the sentinel file instead.
+     - **The sentinel does not mean the work stopped.** `codex exec` yields after ~30 s and does not
+       reap what it backgrounded, so an agent that finishes can leave its commands running. On
+       2026-09-05 the reviewers "finished" at 02:42 and the orphaned git storm ran until oomd fired at
+       03:27. Always `systemctl --user stop "$SCOPE.scope"` after the sentinel, and check the scratch
+       dir's size before declaring the run clean.
 
      Then **count the logs against the input set before using any of them**, and re-run the
      stragglers — a missing agent is a PR that received no validation at all:
@@ -598,6 +778,11 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      `BUG`/`ISSUE`/`NOTE` markers you asked for rather than by slicing the end of the log.
 
      Measured on 2026-07-29: three agents launched this way completed in **47 s** wall-clock, against roughly 3.5 min per PR when the same work was done serially in one agent. Verified that concurrent `codex exec` runs leave `~/.codex/.claude-threads/` byte-identical — no session state is written, so there is nothing to race on.
+
+     Every task prompt — finding-validation and cold spot-check alike — must open with the scratch-space
+     and **no-partial-clone** rules from the top of this file, quoted verbatim. Both exist because an
+     agent broke them, and an agent that has not been told will reach for `/tmp` and
+     `git clone --filter=blob:none` by default.
 
      Each **finding-validation** agent is told to handle exactly one PR, and is given only that PR's findings — not the whole report. Its task should instruct it to:
      - Fetch that PR's diff itself (`gh pr diff <number> [--repo <owner/repo>]`, plus `gh pr checks` / `gh pr view` as needed). Give it the PR number and the findings inline; do **not** point it at the HTML report, so it cannot be primed by the other PRs' conclusions.
@@ -648,7 +833,7 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
 
    - Record the validation in the report itself: add a short **"Codex validation"** line near the top (date + one-line outcome, e.g. "Codex cross-checked N findings: X confirmed, Y adjusted, Z refuted, W added; spot-checked K APPROVE PRs cold, J moved out of APPROVE"). Name which APPROVE PRs were spot-checked, so a reader can see which clean verdicts were independently tested and which were taken on one reviewer's word. If any verdicts changed, update the per-PR sections, the contents/quick-verdict table, the summary table, and the final totals so the whole report stays consistent.
 
-8. **Post review comments to the PRs — LABEL mode (DevCallEU/DevCallTopic/AIReview) and RSYNC mode.** This step runs automatically when the mode is LABEL and the label is exactly **`DevCallEU`**, **`DevCallTopic`**, or **`AIReview`**, **and in RSYNC mode** (`RsyncProject/rsync`, `AIReview` label — tridge's own project, opted in). The **`AIReview` label on an ArduPilot PR is the same opted-in signal as on the rsync repo** — someone applied it to request an auto-posted AI review — so it auto-posts exactly like the dev-call labels (same scope, AI-generated marker, and edit-vs-repost mechanics below); it simply has no associated dev call, so its dated archive uses today's date (step 9), not a call date. **Exception: PRs in `mavlink/mavlink` are not commented on without asking first** (this covers an `AIReview`-labelled upstream-mavlink PR too — report it, name it, and wait for a yes). That is a third-party upstream project rather than an ArduPilot one — a posted review there goes to maintainers who have not opted into this process and lands under the running user's name on someone else's repo. Include those PRs in the report as normal, then say plainly which upstream PRs would get a comment and wait for a yes. Everything else about the mechanics is unchanged. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
+8. **Post review comments to the PRs — LABEL mode (DevCallEU/DevCallTopic/AIReview) and RSYNC mode.** This step runs automatically when the mode is LABEL and the label is exactly **`DevCallEU`**, **`DevCallTopic`**, or **`AIReview`**, **and in RSYNC mode** (`RsyncProject/rsync`, `AIReview` label — tridge's own project, opted in). The **`AIReview` label on an ArduPilot PR is the same opted-in signal as on the rsync repo** — someone applied it to request an auto-posted AI review — so it auto-posts exactly like the dev-call labels (same scope, AI-generated marker, and edit-vs-repost mechanics below); it simply has no associated dev call, so its dated archive uses today's date (step 9), not a call date. **Exception: PRs in `mavlink/mavlink` are never auto-commented** (this covers an `AIReview`-labelled upstream-mavlink PR too). That is a third-party upstream project rather than an ArduPilot one — a posted review there goes to maintainers who have not opted into this process and lands under the running user's name on someone else's repo. Review and include those PRs in the report exactly as normal, then **hold** the comment: record it in the report as `comment held — upstream repo, needs approval`, name it in the closing summary with the exact `gh pr comment` that would post it, and carry on. **Do not wait for a yes** — under a schedule nobody is there to give one, and blocking here throws away a completed sweep for a comment that can just as well go out a day later (**Unattended runs** rule 3). In `--interactive` mode you may ask instead. Everything else about the mechanics is unchanged. For every other label, do **not** post any comments unless the user explicitly asks you to in their message. (When they do ask for another label, follow the same mechanics below.)
 
    **RSYNC mode posts exactly like the dev-call labels, with two specifics.** (a) Post only **after both the
    Claude read (step 3) and the Codex pass (step 7) are complete and reconciled** — never on the strength of
@@ -703,19 +888,35 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      the full context and what else was checked. **The URL differs per mode — use the one for the mode you
      are actually running**, and construct it from the path you published to in step 9 rather than from
      memory:
-     - LABEL mode → `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html`
+     - LABEL mode → the **DATED archive**, never the per-label "latest":
+       `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html#pr<key>`, where `<DATE>` is
+       exactly the archive directory step 9 computes for this label (`DevCallTopic` → the upcoming Tuesday,
+       `DevCallEU` → the upcoming Wednesday, both Canberra time; any other label → today).
+       **Never link `DevCallReviews/<LABEL>/devcall_pr_reviews.html` from a comment.** That path is
+       overwritten by every later run of the label, so an author or maintainer opening the link weeks
+       afterwards lands on a different report and cannot find the review being referenced. The dated
+       directory is the stable anchor, and for the dev-call labels it names the call the review was
+       prepared for — exactly what someone looking back wants.
+       Two consequences worth stating rather than hiding: the dated directory is the *current call week's*
+       folder, so a later run in the same week rewrites it, and a PR that merges (or loses the label) is
+       dropped from the set and loses its section there — if you are commenting on such a PR, say so in the
+       comment instead of leaving a link to a section that is no longer present. And since the comment must
+       contain a live URL, **publish (step 9) before posting (step 8) in LABEL mode too**, not just in
+       FOLLOWUP/RSYNC.
      - AUTHOR mode → `https://uav.tridgell.net/UserReviews/<USERNAME>.html` (only relevant if the user
-       explicitly asked for comments, since this mode does not post by default)
+       explicitly asked for comments, since this mode does not post by default). That single page is
+       deliberately kept current and has no dated archive, so it is the only available target.
      - FOLLOWUP mode → `https://uav.tridgell.net/DevCallReviews/followups/<DATE_TIME>/devcall_pr_reviews.html`
        — the run's own directory, **not** a per-label URL. A follow-up comment linking to a label report is
        wrong twice over: that report is a different document, and it will be overwritten by the next label
-       run, so the link rots.
-     - RSYNC mode → `https://uav.tridgell.net/RsyncReviews/index.html#pr<number>` — the single page, with the
-       per-PR anchor.
+       run, so the link rots. This path is already dated, so it needs no further adjustment.
+     - RSYNC mode → `https://uav.tridgell.net/RsyncReviews/index.html#pr<number>` — the single living page
+       with the per-PR anchor; it has no dated archive, so it is the only available target.
      Because the comment must contain the published URL, publish (step 9) **before** posting (step 8) in
-     FOLLOWUP **and RSYNC** modes — the two steps are in the reverse of their usual order there, since the
-     comment links to the page you just published. Verify the URL returns 200 before putting it in a comment
-     that goes to an author.
+     **every** mode that links to a report — the two steps are in the reverse of their usual order there,
+     since the comment links to the page you just published. Verify the URL returns 200, **and that the
+     `#pr<key>` anchor is actually present in the published page**, before putting it in a comment that goes
+     to an author.
    - **Update, don't duplicate — unless the update would be buried.** If you have never commented on that PR, post a new comment. If you have already posted an AI-generated comment, the choice between editing it and posting a second one is decided entirely by the test below: edit in place with `gh pr comment <number> [--repo <owner/repo>] --edit-last --body-file <file>`, or PATCH it by id if `--edit-last` is not viable.
 
      **The exception: deprecate-and-repost.** Editing in place has a failure mode — the edited comment stays at its original position in the thread. If the discussion has moved on since, the updated review sits far up the page where nobody sees it, and the author has no notification that it changed.
@@ -759,8 +960,36 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      a snippet is rewritten to the command's argument: `awk 'DevCallTopic > t'`, which is still valid awk,
      always false, and fails silently. Only dollar-zero is affected — the dollar-one in the `worker.sh`
      heredoc above survives substitution and is needed there, so leave it alone.)
-     `NEWER == 0` ⇒ your comment is still last ⇒ **edit in place**.
      `NEWER > 0` ⇒ something came after it ⇒ **deprecate-and-repost**.
+     `NEWER == 0` ⇒ nobody has spoken since ⇒ apply the head test below before concluding "edit".
+
+     **A push counts too, and the comment count alone will not see it.** The three sources above are
+     comments and reviews; a force-push or new commits are none of those, so an author who answered your
+     review *in code* and said nothing leaves `NEWER == 0` — and an in-place edit generates no
+     notification, so the one person actively waiting to hear is told nothing. Compare the head you are
+     about to quote against the head your previous comment quoted:
+     ```bash
+     TOLD=$(jq -r .body <<<"$MINE" | sed -nE 's/.*head `([0-9a-f]{10})`.*/\1/p' | head -1)
+     NOW=<the head this run reviewed>          # the same hash the new comment will open with
+     if [ -n "$TOLD" ] && [ "$TOLD" != "$NOW" ]; then
+         DECISION=repost      # the PR moved since we last told them
+     elif [ "$NEWER" -gt 0 ]; then
+         DECISION=repost      # somebody else spoke after us
+     else
+         DECISION=edit        # same head, nobody spoke - an edit is seen and a second comment is noise
+     fi
+     ```
+     This is the same reasoning FOLLOWUP mode already applies unconditionally, and it belongs here for
+     the same reason: that mode reaches these PRs only when it happens to run first, and a LABEL sweep
+     catches exactly the same authors mid-response. Observed on `#33975` on 2026-09-02 — the author
+     force-pushed 37 minutes after the comment, no one else posted, so the comment-only test said "edit"
+     and the re-review landed silently on a developer who had just pushed. `#34094` on 2026-08-20 was the
+     same shape with ~670 lines of response behind it.
+
+     Note the head test only fires when there *is* a previous head to compare with. A PR newly labelled
+     into this run, already carrying a comment from another label's sweep at the same head, has
+     `TOLD == NOW` and correctly gets an edit — which is the case the original test was right about and
+     which this does not disturb.
 
      Note this is a per-PR decision made at posting time, so compute it per PR rather than picking one
      mode for the whole run — in a typical batch some PRs will be quiet and get edits while others have
@@ -901,10 +1130,22 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
    The per-label "latest" directory is unaffected by any of this — it is always overwritten with the newest
    report regardless of which call it was built for.
 
-Report the summary counts when complete. Say which **mode** was used and what selected the set — the
-label, or the username plus the `updatedAt` cutoff that produced it. Note the skip split and validation
-outcome (including which APPROVE PRs were spot-checked cold), any PR comments posted/updated, and give
-the published URL:
+Report the summary counts when complete, in **one message, at the end of the run** (**Unattended runs**
+rule 1). Say which **mode** was used and what selected the set — the label, or the username plus the
+`updatedAt` cutoff that produced it. Note the skip split and validation outcome (including which APPROVE
+PRs were spot-checked cold), any PR comments posted/updated, and give the published URL.
+
+**Four things must never be omitted, because each is a place where work silently did not happen:**
+- **Deferred PRs** — every one named with its head, and the note that the next scheduled run will retry it.
+- **Held comments** — every upstream `mavlink/mavlink` PR whose comment was withheld, with the `gh pr
+  comment` line that would post it, so approving them is a copy-paste rather than a re-run.
+- **Failures** — any PR whose diff would not fetch, Codex agent that returned nothing, or publish that
+  did not land.
+- **Moved-during-run PRs** — from the end-of-run re-check, whether folded in or deferred.
+
+If all four are empty, say so in a few words rather than leaving the reader to infer it from silence.
+The point of a scheduled run is that nobody watched it happen, so the summary is the only evidence of
+what it did and did not do.
 
 X APPROVE | Y COMMENT | Z REQUEST CHANGES (reused N, reviewed M; Codex: X confirmed / Y adjusted /
 Z refuted / W added, K APPROVE spot-checked / J reclassified; comments posted on P PRs) — published at
