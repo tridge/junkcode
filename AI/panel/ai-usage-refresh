@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Scan Claude + Codex usage and write the result to the cache.
 
-This is the SLOW half (~8s: claude-usage ~2s, codex-usage ~6s), which is why
-the panel never calls it synchronously - ai-usage-genmon reads the cache and
-spawns this in the background when the cache goes stale.
+This is the network/process half (Claude OAuth request plus Codex app-server),
+which is why the panel never calls it synchronously: ai-usage-genmon reads the
+cache and spawns this in the background when the cache goes stale.
 
 flock keeps concurrent refreshes from piling up: if a scan is already running
 this exits immediately rather than starting a second one.
@@ -25,6 +25,29 @@ CACHE = os.path.join(CACHE_DIR, "status.json")
 LOCK = os.path.join(CACHE_DIR, "refresh.lock")
 
 
+def merge_previous(data, previous):
+    """Retain good live meters across transient, same-account failures."""
+    for key in ("claude", "codex"):
+        new = data.get(key) or {}
+        old = previous.get(key) or {}
+        new_live = new.get("ok") and new.get("source") == "api"
+        old_live = old.get("windows") and old.get("source") == "api"
+        same_account = (key != "codex" or
+                        (new.get("account_id") and
+                         new.get("account_id") == old.get("account_id")))
+        if new_live:
+            new["updated_at"] = data["generated_at"]
+        elif old_live and same_account:
+            why = new.get("error") or "live meter unavailable"
+            kept = dict(old)
+            kept["error"] = "live refresh failed (%s); showing last live reading" % why
+            kept.setdefault("updated_at", previous.get("generated_at", 0))
+            data[key] = kept
+        else:
+            new["updated_at"] = data["generated_at"]
+    return data
+
+
 def main():
     os.makedirs(CACHE_DIR, exist_ok=True)
     lf = open(LOCK, "w")
@@ -33,9 +56,20 @@ def main():
     except BlockingIOError:
         return 0  # another refresh is already running
 
+    try:
+        with open(CACHE) as f:
+            previous = json.load(f)
+    except Exception:
+        previous = {}
+
     started = time.time()
     data = ai_usage.collect()
     data["scan_seconds"] = round(time.time() - started, 2)
+
+    # A failed live request must not replace a known account meter with a
+    # local estimate or no data. Keep a same-account live snapshot, retain its
+    # real age, and surface the error; genmon greys it once it is too old.
+    merge_previous(data, previous)
 
     # atomic replace so a reader never sees a half-written file
     fd, tmp = tempfile.mkstemp(dir=CACHE_DIR, prefix=".status-", suffix=".json")

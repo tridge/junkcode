@@ -1,15 +1,14 @@
 """Collect Claude Code and Codex CLI usage into one small dict.
 
-Reuses ~/bin/claude-usage and ~/bin/codex-usage rather than reimplementing
-their parsing: both guard their main() with __name__ == "__main__", so they
-import cleanly and we call their scan() directly. They have no .py extension,
-so the import needs an explicit SourceFileLoader.
+Reuses ~/bin/claude-usage for Claude's local estimate. Codex's live meter is
+read through the installed CLI's app-server, which follows the currently
+authenticated account and includes additional model limits and reset credits.
 
 The two providers expose very different things:
 
-  codex  - a REAL account meter, read straight out of the session files
-           (rate_limits.primary / .secondary, each with used_percent,
-           window_minutes and resets_at). Trustworthy.
+  codex  - REAL account meters fetched by ``account/rateLimits/read`` from the
+           installed Codex app-server. Unlike session files, this identifies
+           the current account and includes all separately metered limits.
   claude - a REAL account meter too, but only over the network: nothing is
            stored locally, so claude_quota asks the same endpoint /usage uses.
            When that fails we fall back to an ESTIMATE from local token usage
@@ -18,9 +17,8 @@ The two providers expose very different things:
            historical burst. The estimate sees only this machine and knows
            nothing about the weekly windows, so treat it as a rough floor.
 
-Do not label a codex window from its primary/secondary position - the API
-puts the weekly window in `primary` at least some of the time. Always derive
-the label from window_minutes.
+Do not label a window from its primary/secondary position. Always derive the
+label from its duration.
 """
 
 import importlib.util
@@ -30,10 +28,10 @@ from importlib.machinery import SourceFileLoader
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import claude_quota  # noqa: E402
+import codex_quota  # noqa: E402
 
 HOME = os.path.expanduser("~")
 CLAUDE_USAGE = os.path.join(HOME, "bin", "claude-usage")
-CODEX_USAGE = os.path.join(HOME, "bin", "codex-usage")
 
 
 def _load(name, path):
@@ -107,33 +105,8 @@ def _claude_estimate():
 
 
 def codex_status():
-    """{'ok', 'plan', 'meter_age_s', 'windows': [...], 'error'}"""
-    out = {"ok": False, "plan": None, "meter_age_s": None,
-           "windows": [], "error": None}
-    try:
-        xu = _load("_codex_usage", CODEX_USAGE)
-        _sessions, latest_rl, now = xu.scan()
-        if not latest_rl:
-            out["error"] = "no rate-limit data in session files"
-            return out
-        epoch, rl = latest_rl
-        out["ok"] = True
-        out["plan"] = rl.get("plan_type")
-        out["meter_age_s"] = max(0, now.timestamp() - epoch)
-        # label by window_minutes, NOT by primary/secondary position
-        for key in ("primary", "secondary"):
-            w = rl.get(key)
-            if not w:
-                continue
-            out["windows"].append({
-                "label": _window_label(w.get("window_minutes")),
-                "pct": float(w.get("used_percent") or 0.0),
-                "resets_at": w.get("resets_at"),
-                "estimated": False,
-            })
-    except Exception as e:
-        out["error"] = "%s: %s" % (type(e).__name__, e)
-    return out
+    """Live quota for the account currently selected by Codex."""
+    return codex_quota.fetch()
 
 
 def collect():
@@ -167,14 +140,14 @@ def human_until(epoch, now=None):
     return "%dm" % m
 
 
-def _report():
+def _report(data=None):
     """Plain-text dump of both providers, for the click-through terminal.
 
     Worth printing there because `claude-usage` alone shows only the local
     estimate, which now disagrees with what the panel is showing.
     """
     import time
-    d = collect()
+    d = data if data is not None else collect()
     now = time.time()
     for name, key in (("Claude", "claude"), ("Codex", "codex")):
         prov = d[key]
@@ -189,7 +162,27 @@ def _report():
             print(line)
         if not prov["windows"]:
             print("  no data")
+        if key == "codex":
+            credits = prov.get("credits") or {}
+            if credits.get("unlimited"):
+                print("  purchased credits: unlimited")
+            elif credits:
+                print("  purchased credits: %s" % credits.get("balance", "?"))
+            resets = prov.get("reset_credits")
+            if resets is not None:
+                print("  full reset credits: %s" % resets)
 
 
 if __name__ == "__main__":
-    _report()
+    if "--cache" in sys.argv:
+        cache = os.path.join(
+            os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
+            "ai-usage", "status.json")
+        try:
+            with open(cache) as cache_file:
+                _report(__import__("json").load(cache_file))
+        except Exception as exc:
+            print("unable to read %s: %s" % (cache, exc), file=sys.stderr)
+            sys.exit(1)
+    else:
+        _report()

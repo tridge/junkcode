@@ -85,6 +85,7 @@ to re-run (it will not add a second copy).
 |---|---|
 | `ai_usage.py` | collects both providers into one dict |
 | `claude_quota.py` | Claude's real meters from the OAuth usage endpoint |
+| `codex_quota.py` | Codex's current-account meters from its app-server |
 | `ai-usage-refresh` | the slow scan (~8s); writes the cache |
 | `ai-usage-genmon` | what the panel runs (~0.05s); reads the cache |
 | `ai-usage-detail` | click action; opens a terminal |
@@ -95,26 +96,33 @@ Cache lives in `~/.cache/ai-usage/status.json`.
 
 ## How it works
 
-`ai_usage.py` imports `~/bin/claude-usage` and `~/bin/codex-usage` and calls
-their `scan()` directly rather than screen-scraping their output. Both guard
-`main()` with `__name__ == "__main__"`, so they import cleanly; they have no
-`.py` extension, so the import needs an explicit `SourceFileLoader`.
+`ai_usage.py` imports `~/bin/claude-usage` for Claude's local fallback rather
+than screen-scraping its output. For Codex it asks the installed CLI's
+app-server for `account/rateLimits/read`. That is a live, read-only request for
+the currently authenticated account and includes additional model-specific
+limits, purchased-credit state, and available full-reset credits.
 
 A full scan takes about **6 seconds** (codex ~6s, plus one HTTP request for
 Claude - only if that request fails does the ~2s local claude scan run) - far too slow to
 run inside a panel poll, which blocks the panel while it runs. So the widget is
 split: `ai-usage-genmon` only ever reads the cache (~0.05s) and, when the cache
 is older than 90s, spawns `ai-usage-refresh` detached. The panel shows the last
-known values meanwhile, greyed out once they pass 10 minutes old.
+known values meanwhile. If a live refresh fails it retains the previous live
+meter rather than silently replacing it with a machine-local estimate, and
+greys that provider once its reading passes 10 minutes old. A first-run Claude
+estimate is always grey in icon mode and marked `~` in text mode.
 
 ## Where the numbers come from
 
 Both providers now report real account meters; the widget shows whichever
 window of a provider is closest to its limit.
 
-**Codex** publishes its meter in the session files (`rate_limits.primary` /
-`.secondary`, each with `used_percent`, `window_minutes`, `resets_at`), so the
-percentage and reset time are read straight off disk.
+**Codex** publishes a live account snapshot through its app-server
+(`account/rateLimits/read`). The panel uses this instead of session files:
+transcript rate-limit events do not contain an account ID, so after switching
+accounts the newest event on disk may belong to the wrong account. The live
+snapshot also contains separately metered model limits, credit balance, and
+available full-reset credits.
 
 **Claude** stores nothing locally, but the endpoint behind `/usage` has it:
 `claude_quota.py` does a `GET https://api.anthropic.com/api/oauth/usage` with
@@ -154,11 +162,8 @@ claude-usage --calibrate <that number>
 ## Two traps worth recording
 
 **Do not label a Codex window by its `primary`/`secondary` position.** The API
-puts the *weekly* window in `primary` at least some of the time - on this
-machine `primary` is `window_minutes: 10080` (7 days). `~/bin/codex-usage`
-hardcodes `primary` as "5-hour" in its headline, which is why it can print
-`5-hour : 3.0% used ... resets in 6d4h` - a 5-hour window cannot reset in six
-days. This widget derives the label from `window_minutes` instead.
+puts the *weekly* window in `primary` at least some of the time. This widget
+derives the label from `windowDurationMins` instead.
 
 **genmon's click tags are per element, and `<img>` needs `<click>`.**
 `<txtclick>` only fires on `<txt>`, and `<iconclick>` pairs with `<icon>`, not

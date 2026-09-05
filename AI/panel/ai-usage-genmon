@@ -174,8 +174,36 @@ def tooltip(data, age):
                         else "UNCALIBRATED - run claude-usage --calibrate N"))
         if key == "codex" and prov.get("plan"):
             L.append("  plan: %s" % prov["plan"])
+        if key == "codex":
+            credits = prov.get("credits") or {}
+            if credits.get("unlimited"):
+                L.append("  purchased credits: unlimited")
+            elif credits:
+                L.append("  purchased credits: %s" % credits.get("balance", "?"))
+            resets = prov.get("reset_credits")
+            if resets is not None:
+                L.append("  full reset credits available: %s" % resets)
+            if prov.get("ordinary_usage_allowed") is False:
+                L.append("  ordinary usage is currently blocked")
+            for limit in prov.get("limits") or []:
+                individual = limit.get("individual_limit") or {}
+                if individual.get("remainingPercent") is not None:
+                    line = "  workspace spend limit: %s%% left" % individual[
+                        "remainingPercent"]
+                    if individual.get("resetsAt"):
+                        line += "   resets in %s" % ai_usage.human_until(
+                            individual["resetsAt"], now)
+                    L.append(line)
+                if limit.get("spend_control_reached"):
+                    L.append("  workspace spend control reached")
+                if limit.get("rate_limit_reached_type"):
+                    L.append("  blocked: %s" % limit["rate_limit_reached_type"])
+        meter_age = max(0, now - prov.get("updated_at", data.get("generated_at", 0)))
+        if meter_age > STALE_AFTER:
+            L.append("  meter updated %ds ago%s" % (
+                int(meter_age), " (STALE)" if meter_age > TOO_OLD else ""))
     L.append("")
-    L.append("updated %ds ago%s" % (int(age), "  (STALE)" if age > TOO_OLD else ""))
+    L.append("cache refreshed %ds ago" % int(age))
     L.append("click for full detail")
     return "\n".join(L)
 
@@ -235,7 +263,15 @@ def icon_bars(prov, tag, stale, collapse=False):
     return out
 
 
-def write_icon(data, stale):
+def provider_stale(data, prov):
+    """Whether this provider's displayed value should be visually untrusted."""
+    if not prov or prov.get("source") == "estimate":
+        return True
+    updated = prov.get("updated_at", data.get("generated_at", 0))
+    return time.time() - updated > TOO_OLD
+
+
+def write_icon(data):
     """Render the gauges to SVG and return its path.
 
     The filename carries a hash of the contents. genmon caches the image by
@@ -245,8 +281,10 @@ def write_icon(data, stale):
     new path exactly when the picture changes, and a stable one when it does
     not.
     """
-    bars = (icon_bars(data.get("claude"), "C", stale)
-            + icon_bars(data.get("codex"), "X", stale, collapse=True))
+    claude = data.get("claude")
+    codex = data.get("codex")
+    bars = (icon_bars(claude, "C", provider_stale(data, claude))
+            + icon_bars(codex, "X", provider_stale(data, codex), collapse=True))
     svg = ai_usage_icon.render(bars, empty=ICON_EMPTY, outline=ICON_OUTLINE,
                                label_col=ICON_LABEL, px_height=ICON_PX)
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -280,14 +318,14 @@ def main():
     age = time.time() - data.get("generated_at", 0)
     if age > STALE_AFTER:
         spawn_refresh()
-    stale = age > TOO_OLD
-
     if TEXT_MODE:
         print("<txt>%s %s</txt>" % (
-            provider_chunk("C", data.get("claude"), stale),
-            provider_chunk("X", data.get("codex"), stale)))
+            provider_chunk("C", data.get("claude"),
+                           provider_stale(data, data.get("claude"))),
+            provider_chunk("X", data.get("codex"),
+                           provider_stale(data, data.get("codex")))))
     else:
-        print("<img>%s</img>" % write_icon(data, stale))
+        print("<img>%s</img>" % write_icon(data))
     print("<tool>%s</tool>" % esc(tooltip(data, age)))
     # <click> is the generic handler and the only one that actually fires for
     # an <img> widget: <txtclick> fires only on text, and <iconclick> pairs
