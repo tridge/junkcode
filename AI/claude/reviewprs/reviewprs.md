@@ -1,6 +1,6 @@
 # Review PRs by Label, Author, or Follow-up
 
-Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `MAVProxy`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
+Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `MAVProxy`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID`, `sphinx_rtd_theme` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
 
 Run this from the root of an ArduPilot checkout (it reads `.gitmodules` in the working directory). The report is written to the repository root and works in any ArduPilot checkout, not just one.
 
@@ -473,8 +473,19 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      - `ArduPilot/CustomBuild`
      - `ArduPilot/MethodicConfigurator`
      - `ArduPilot/ArduRemoteID`
+     - `ArduPilot/sphinx_rtd_theme`
 
-     These are ArduPilot repos, so they are treated exactly like the main/wiki/submodule repos — the `mavlink/mavlink` upstream exceptions do **not** apply, and comment-posting in step 8 happens normally for `DevCallEU`/`DevCallTopic`/`AIReview`. Two disambiguations: `ArduPilot/pymavlink` is a distinct repo from the nested `pymavlink` submodule (there is no key collision — the submodule sweep only reaches ardupilot's *top-level* submodules, and pymavlink is nested under `mavlink`), and `ArduPilot/mavlink` (the fork) is already swept via `.gitmodules` and keyed `mavlink#`, so do **not** add it here. Keep this list current: if ArduPilot adds another standalone repo that people put dev-call/AIReview labels on, add it here.
+     These are ArduPilot repos, so they are treated exactly like the main/wiki/submodule repos — the `mavlink/mavlink` upstream exceptions do **not** apply, and comment-posting in step 8 happens normally for `DevCallEU`/`DevCallTopic`/`AIReview`.
+
+     `ArduPilot/sphinx_rtd_theme` needs the explicit sweep for a reason worth remembering: it is the
+     wiki's Sphinx theme, and it is a submodule of **neither** `ArduPilot/ardupilot` nor
+     `ArduPilot/ardupilot_wiki`, so no `.gitmodules` pass reaches it. Added 2026-09-05 after `#24` sat
+     `AIReview`-labelled and was never picked up by the sweep — it had to be reviewed by hand twice.
+     It is an ArduPilot-owned fork of the third-party `readthedocs/sphinx_rtd_theme`, so review it as
+     an ArduPilot repo (post comments normally) but judge changes against **the fork's own
+     conventions**, which are not ArduPilot's: its templates are Jinja, its boolean theme options go
+     through the `|tobool` filter, and its only consumer is `ardupilot_wiki` — a theme change is
+     usually paired with a wiki PR, so check that one too before calling a forward reference dangling. Two disambiguations: `ArduPilot/pymavlink` is a distinct repo from the nested `pymavlink` submodule (there is no key collision — the submodule sweep only reaches ardupilot's *top-level* submodules, and pymavlink is nested under `mavlink`), and `ArduPilot/mavlink` (the fork) is already swept via `.gitmodules` and keyed `mavlink#`, so do **not** add it here. Keep this list current: if ArduPilot adds another standalone repo that people put dev-call/AIReview labels on, add it here.
    - Parse `.gitmodules` to find all submodule URLs hosted under `ArduPilot/` or `ardupilot/` on GitHub
    - For each ArduPilot-owned submodule repo, run: `gh pr list --repo <owner/repo> --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Combine all results, tracking which repo each PR belongs to. Give each PR a stable **key**: the PR number for the main repo, or `<reponame>#<number>` for wiki/submodule PRs (e.g. `mavlink#360`, `wiki#7730`). Note that wiki PRs are documentation-focused (ReST under `*/source/docs/`); review for technical accuracy vs the current ArduPilot codebase, broken `:ref:` cross-references, ReST syntax, and consistency with existing wiki conventions.
