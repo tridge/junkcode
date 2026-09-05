@@ -27,7 +27,7 @@ subcommands plus `codex`/`curl`/`rsync` and `gh pr comment` — it never pushes 
 ## Usage
 
 ```
-/reviewprs                  # no argument: the triple-run — DevCallTopic, then DevCallEU, then followup
+/reviewprs                  # no argument: DevCallTopic, then DevCallEU, then AIReview, then followup
 /reviewprs DevCallTopic     # label mode: every open PR with that label
 /reviewprs Copter
 /reviewprs @tridge          # author mode: that author's open PRs, updated in the last 7 days
@@ -38,8 +38,9 @@ subcommands plus `codex`/`curl`/`rsync` and `gh pr comment` — it never pushes 
 
 `$ARGUMENTS` picks one of four modes, resolved automatically:
 
-- **no argument** → the **triple-run**: `DevCallTopic`, then `DevCallEU`, then `followup`, back to back
-  (three sequential label/label/follow-up sweeps), producing up to three sets of pages plus comments;
+- **no argument** → the **all-labels run**: `DevCallTopic`, then `DevCallEU`, then `AIReview`, then
+  `followup`, back to back (three label sweeps then a follow-up sweep, each across all repos), producing
+  up to four sets of pages plus comments;
 - **`followup`** and **`rsync`** are reserved words checked first (so they never mis-resolve to a label or
   a stranger's username — `FollowUp` and `rsync` are real GitHub logins);
 - a leading **`@`** forces author mode; otherwise the argument is tried as a **label** first and then as a
