@@ -737,7 +737,8 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
 
      rm -f "$SCRATCH/POOL_DONE"
      SCOPE=codexpool-$$
-     setsid nohup systemd-run --user --scope --quiet -p MemoryMax=40G -p TasksMax=500 \
+     setsid nohup systemd-run --user --scope --quiet \
+        -p MemoryMax=40G -p TasksMax=4000 -p CPUQuota=1600% \
         --unit="$SCOPE" bash -c "
         export SCRATCH_DIR=$SCRATCH
         cat $SCRATCH/todo.txt | xargs -P 6 -I{} bash $SCRATCH/worker.sh {}
@@ -745,12 +746,15 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      " </dev/null > "$SCRATCH/pool.log" 2>&1 &
      disown 2>/dev/null
 
-     # wait for it — poll the SENTINEL, never the process table
-     until [ -f "$SCRATCH/POOL_DONE" ]; do sleep 30; done
+     # wait for it — poll the SENTINEL, never the process table.
+     # A Bash tool call times out, so this is normally written as a BOUNDED loop and re-run;
+     # the stop below must therefore be guarded on the sentinel, never run unconditionally
+     # after the loop, or a bounded poll that simply ran out of time kills a healthy pool.
+     for i in $(seq 40); do [ -f "$SCRATCH/POOL_DONE" ] && break; sleep 15; done
 
      # reap leftovers: codex exec's 30s command timeout leaves backgrounded work running,
      # so the sentinel does not mean the pool's descendants are gone
-     systemctl --user stop "$SCOPE.scope" 2>/dev/null
+     [ -f "$SCRATCH/POOL_DONE" ] && systemctl --user stop "$SCOPE.scope" 2>/dev/null
      ```
 
      **The pool MUST run in its own transient systemd scope**, as above. `setsid` detaches it from the
@@ -758,9 +762,28 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      systemd-oomd kills that whole cgroup — which on 2026-09-05 meant the gnome-terminal tab holding
      emacs and every Claude and Codex session in it. A `--user --scope` with `MemoryMax` makes the pool
      its own kill target: oomd takes the pool and nothing else. `TasksMax` caps a process-spawning
-     runaway before it reaches load 600 — 500 leaves room for six agents each running a parallel build,
-     and still stops the ~2500-task storm well short. Verify the scope exists once after launch
-     (`systemctl --user show "$SCOPE.scope" -p MemoryMax`); if `systemd-run` is unavailable, fall back to
+     runaway before it reaches load 600.
+
+     **Size `TasksMax` in threads, not processes** — the cgroup `pids` controller counts tasks, so a
+     browser-driving agent costs far more than the process list suggests. Measured 2026-09-05 on two
+     Codex agents each driving headless Chrome: **431 tasks for only 43 processes**, about 10:1. An
+     earlier `TasksMax=500` here throttled that perfectly normal run and had to be raised mid-flight.
+     4000 leaves room for six such agents and still stops a 2500-*process* storm (which is well over
+     10,000 tasks) long before it reaches load 600. `MemoryMax` is the primary guard; `TasksMax` is the
+     backstop. If a legitimate run ever bumps it, raise it live with
+     `systemctl --user set-property <unit>.scope TasksMax=<n>` rather than killing the pool.
+
+     **`CPUQuota` is what keeps the desktop alive.** `MemoryMax`/`TasksMax` bound how big the runaway
+     gets, but neither bounds CPU: on 2026-09-05 load reached 600 and X, emacs and the terminal became
+     unusable before oomd fired. Cap the pool below the core count so the desktop always has cores left
+     — `1600%` on this 24-core machine leaves 8. Size it as `(nproc - 8) * 100%`; the pool runs slower
+     under a storm and unthrottled otherwise, since six agents rarely saturate 16 cores. Verify the
+     scope after launch with
+     `systemctl --user show "$SCOPE.scope" -p MemoryMax -p TasksMax -p CPUQuotaPerSecUSec`
+     (`CPUQuota` reads back as `CPUQuotaPerSecUSec=16s`, not as a percentage). This needs the `cpu`
+     controller delegated to the user manager — check
+     `cat /sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers`
+     lists `cpu memory pids`. If `systemd-run` is unavailable, fall back to
      plain `setsid nohup` but say so in the report, because the blast radius is then the whole terminal.
 
      Three traps, all of which cause a partial run that looks like a complete one:
@@ -776,7 +799,11 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
        reap what it backgrounded, so an agent that finishes can leave its commands running. On
        2026-09-05 the reviewers "finished" at 02:42 and the orphaned git storm ran until oomd fired at
        03:27. Always `systemctl --user stop "$SCOPE.scope"` after the sentinel, and check the scratch
-       dir's size before declaring the run clean.
+       dir's size before declaring the run clean. **Guard that stop on the sentinel existing.** Hit on
+       2026-09-05: the wait was written as a bounded `for` loop (a Bash tool call cannot block forever)
+       with the stop after it, so when the loop ran out of time it killed two healthy Codex agents ten
+       minutes into a browser-based check — logs truncated mid-run, no final answer, both had to be
+       re-run. A bounded poll that expires means "not finished yet", not "finished".
 
      Then **count the logs against the input set before using any of them**, and re-run the
      stragglers — a missing agent is a PR that received no validation at all:
