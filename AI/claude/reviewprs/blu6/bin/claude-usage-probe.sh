@@ -11,6 +11,8 @@ set -u
 OUT="$REVIEW_LOGS/claude-usage.jsonl"
 TAG="${1:-probe}"
 
+clear_stale_oauth_lock >/dev/null 2>&1 || true
+
 # Which account this reading belongs to. Runs can use different subscriptions
 # (rsync reviews have their own), and two accounts' percentages in one file
 # would read as a meter that jumps about for no reason.
@@ -26,7 +28,10 @@ print(d.get("email","") if d.get("loggedIn") else "")
 # /usage just prints the meter; no need to spend a big model on it.
 RAW=$(timeout 180 claude -p "/usage" --model claude-haiku-4-5-20251001 \
         --permission-mode auto 2>/dev/null) || exit 0
-[ -n "$RAW" ] || exit 0
+if [ -z "$RAW" ]; then
+    echo "no output from claude -p /usage (auth or network problem?)" >&2
+    exit 0
+fi
 
 # "You've hit your weekly limit - resets ..." is what /usage prints once the
 # allowance is gone. Surface it as exit status 2 so callers can pre-flight.

@@ -36,6 +36,32 @@ export REVIEW_RSYNC_CLAUDE_DIR="$REVIEW_ROOT/etc/claude-rsync"
     . "$REVIEW_ROOT/etc/account.conf"
 export REVIEW_RSYNC_CLAUDE_ACCOUNT="${REVIEW_RSYNC_CLAUDE_ACCOUNT:-}"
 
+# A Claude Code OAuth refresh that dies mid-flight leaves .oauth_refresh.lock
+# behind in the config dir, and every later invocation then refuses to refresh
+# with "another Claude Code process is refreshing it or exited mid-refresh".
+# Nothing clears it on its own: the 05:25 rsync run on 2026-09-15 failed that
+# way, 15h after its token expired, and would have failed every day since.
+# Clear it only when no live claude process is actually using that dir.
+clear_stale_oauth_lock() {
+    local dir="${1:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
+    local lock="$dir/.oauth_refresh.lock" p env inuse=0
+    [ -e "$lock" ] || return 0
+    for p in $(pgrep -x claude 2>/dev/null); do
+        env=$(tr "\0" "\n" < "/proc/$p/environ" 2>/dev/null) || continue
+        if printf %s "$env" | grep -qx "CLAUDE_CONFIG_DIR=$dir"; then
+            inuse=1
+        elif [ "$dir" = "$HOME/.claude" ] && \
+             ! printf %s "$env" | grep -q "^CLAUDE_CONFIG_DIR="; then
+            inuse=1                      # no override means the default dir
+        fi
+    done
+    if [ "$inuse" -eq 0 ]; then
+        rm -rf "$lock" && echo "cleared a stale OAuth refresh lock in $dir"
+    else
+        echo "NOTE: OAuth refresh lock held in $dir by a running claude"
+    fi
+}
+
 # --- publishing -------------------------------------------------------------
 # blu6 has no ssh key for fjall, so reports go over the rsync daemon with a
 # password instead. The path *after* the base is identical to the old ssh form,

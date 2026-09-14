@@ -109,6 +109,8 @@ esac
 
 cd "$REVIEW_ROOT/work" || { echo "FATAL: no $REVIEW_ROOT/work"; exit 1; }
 
+clear_stale_oauth_lock "$CLAUDE_DIR"
+
 # Which account is this? A run on the wrong one is the failure that matters:
 # it works, and quietly spends the wrong subscription. Refuse instead.
 ACCOUNT=$(claude auth status --json 2>/dev/null | python3 -c '
@@ -182,7 +184,11 @@ echo "gh pre-flight OK: $(gh auth status 2>&1 | sed -n 's/.*Logged in to [^ ]* a
 # they looked like plain rc=1 failures, so ~30h of silence took a human noticing
 # that reviews had gone quiet. Check the meter first and say so plainly instead.
 QMSG=$("$HOME/review/bin/claude-usage-probe.sh" start 2>&1)
-if [ $? -eq 2 ]; then
+QRC=$?
+if [ "$QRC" -ne 2 ] && [ -n "$QMSG" ]; then
+    echo "usage probe: $QMSG"           # non-fatal, but never silent
+fi
+if [ "$QRC" -eq 2 ]; then
     echo "SKIPPED: Claude quota exhausted -- ${QMSG:-weekly limit reached}"
     echo "finish=$(date -Is) status=quota-exhausted"
     exit 0
