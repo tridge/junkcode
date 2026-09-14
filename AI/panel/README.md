@@ -204,6 +204,25 @@ Environment variables read by `ai-usage-genmon`:
 | `AI_USAGE_COL_EMPTY` | `#b9bcc0` | unfilled gauge cells |
 | `AI_USAGE_COL_STALE` | `#6b7280` | colour when the reading is stale |
 
+## When the meter is rate-limited
+
+`GET /api/oauth/usage` is metered per account, and every Claude client on the
+account polls it - this panel, each running `claude`, and any `claude -p /usage`
+probe. It answers `429` when they add up. Retrying on the ordinary 90s cadence
+through one of those just keeps the window topped up: on 2026-09-13 the meter
+stayed refused for 81 minutes that way.
+
+So a `429` arms a backoff, held in `~/.cache/ai-usage/claude-throttle.json` and
+honoured by every process that reads the meter. The wait is the server's
+`Retry-After` when it sends one (trusted up to an hour), otherwise 2, 4, 8, 10
+minutes and 10 thereafter; a good reading clears it. While it is armed
+`claude_quota.fetch()` returns without a request, so the refresh keeps updating
+Codex and costs Claude nothing.
+
+The tooltip then says **throttled** rather than **STALE**, because the figures
+shown are real account meters that simply cannot be refreshed - not a reading
+that has gone doubtful.
+
 Set these in the plugin's command, e.g.
 `env AI_USAGE_SEGMENTS=8 /path/to/ai-usage-genmon`.
 

@@ -40,7 +40,17 @@ def merge_previous(data, previous):
         elif old_live and same_account:
             why = new.get("error") or "live meter unavailable"
             kept = dict(old)
-            kept["error"] = "live refresh failed (%s); showing last live reading" % why
+            if new.get("throttled"):
+                # not a failure of the meter, just a closed door: keep the
+                # wording free of "failed" so the reading is not distrusted
+                kept["error"] = "%s; showing last live reading" % why
+                kept["throttled"] = True
+                kept["retry_in"] = new.get("retry_in")
+            else:
+                kept["error"] = (
+                    "live refresh failed (%s); showing last live reading" % why)
+                kept.pop("throttled", None)
+                kept.pop("retry_in", None)
             kept.setdefault("updated_at", previous.get("generated_at", 0))
             data[key] = kept
         else:

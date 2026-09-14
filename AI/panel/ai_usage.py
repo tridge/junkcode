@@ -65,6 +65,13 @@ def claude_status():
     # keep why the real meter was unavailable; the estimate is much weaker
     out["error"] = "meter unavailable (%s)%s" % (
         q["error"], "; " + out["error"] if out["error"] else "")
+    if q.get("throttled"):
+        # a throttle says nothing about the account: the last reading is still
+        # good, only the refresh is blocked. Name it as such.
+        out["throttled"] = True
+        out["retry_in"] = q.get("retry_in")
+        out["error"] = "meter throttled (HTTP 429), retrying in %s" % (
+            human_secs(q.get("retry_in")))
     return out
 
 
@@ -120,6 +127,15 @@ def worst(provider):
     """The window closest to its limit, or None."""
     ws = [w for w in provider.get("windows", []) if w.get("pct") is not None]
     return max(ws, key=lambda w: w["pct"]) if ws else None
+
+
+def human_secs(s):
+    """A short duration: 45s, 2m, 8m30s."""
+    s = int(s or 0)
+    if s < 60:
+        return "%ds" % s
+    m, s = divmod(s, 60)
+    return "%dm%02ds" % (m, s) if s else "%dm" % m
 
 
 def human_until(epoch, now=None):

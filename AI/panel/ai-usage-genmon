@@ -200,8 +200,14 @@ def tooltip(data, age):
                     L.append("  blocked: %s" % limit["rate_limit_reached_type"])
         meter_age = max(0, now - prov.get("updated_at", data.get("generated_at", 0)))
         if meter_age > STALE_AFTER:
-            L.append("  meter updated %ds ago%s" % (
-                int(meter_age), " (STALE)" if meter_age > TOO_OLD else ""))
+            if prov.get("throttled"):
+                # the figures above are real, just not fresh - say THROTTLED
+                # rather than STALE so the reading is not read as suspect
+                # the retry time is already in the error line above
+                L.append("  meter %ds old, refresh throttled" % int(meter_age))
+            else:
+                L.append("  meter updated %ds ago%s" % (
+                    int(meter_age), " (STALE)" if meter_age > TOO_OLD else ""))
     L.append("")
     L.append("cache refreshed %ds ago" % int(age))
     L.append("click for full detail")
