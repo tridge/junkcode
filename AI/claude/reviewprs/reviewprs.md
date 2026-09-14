@@ -24,6 +24,28 @@ The command is incremental: it records the head commit hash each PR was reviewed
 > `$REVIEW_REPOS` set there is a maintained base clone of every repo this command reviews (ardupilot
 > with submodules, the wiki, and each standalone repo) — reference those rather than cloning afresh.
 >
+> **Submodules come from the bases too.** Every base carries its submodules, and `clone-repos.sh`
+> populates them from another base wherever the submodule is a repo we already keep (WebTools
+> embeds `ArduPilot/ardupilot`; a second 2.4G copy is not worth downloading). So clone the
+> superproject against the base and let the submodules follow it:
+>
+> ```bash
+> git clone --shared --no-checkout "$REVIEW_REPOS/<repo>" wt && cd wt && git checkout <sha>
+> git -c submodule.alternateLocation=superproject \
+>     -c submodule.alternateErrorStrategy=info \
+>     submodule update --init --jobs 8          # --recursive for ardupilot only
+> ```
+>
+> Measured on 2026-09-14: WebTools and its 10 submodules in **5 seconds**, ardupilot with
+> `--recursive` and all 16 in **9 seconds**, every submodule's `objects/info/alternates` pointing
+> into the base. No object is transferred.
+>
+> Two things to keep in mind. Git still contacts each submodule's URL to discover refs, so this
+> must run **before** entering a review netns, which has no route off `lo` — inside one it fails
+> with `Could not resolve host`. And do not add `--recursive` for a repo whose submodule is itself
+> one of our bases (WebTools embeds ardupilot): the alternate covers that submodule, not the
+> submodules *inside* it, so recursing downloads a second copy of them — 237M in that case.
+>
 > **This rule goes into every Codex/agent task prompt verbatim**, alongside the `/tmp` rule — the
 > agents are the ones that make the clones, and they will reach for `--filter=blob:none` by habit.
 
@@ -594,9 +616,9 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      floating-ui, pyAircraftIden, JsDataflashParser) plus **`modules/ardupilot`, which is
      `ArduPilot/ardupilot` itself** — already swept as the main repo, so it adds no new repo to
      the sweep, but do not describe WebTools as third-party-only. A bump of one of the nine is a
-     dependency update, judged on what changed upstream. The base clone on blu6 is made without
-     `--recurse-submodules`, which is enough to review a diff; if a review needs the tool to
-     actually run, `git submodule update --init modules/<name>` first, outside any netns. Review it
+     dependency update, judged on what changed upstream. The base clone on blu6 carries its submodules, with
+     `modules/ardupilot` taken from the ardupilot base rather than downloaded again, so an agent
+     checkout gets them by reference — see the clone recipe above. Review it
      against browser and JS conventions; the ArduPilot C++ house rules (parameter name lengths,
      zeroed `new`, per-subsystem commits) do not apply. Two disambiguations: `ArduPilot/pymavlink` is a distinct repo from the nested `pymavlink` submodule (there is no key collision — the submodule sweep only reaches ardupilot's *top-level* submodules, and pymavlink is nested under `mavlink`), and `ArduPilot/mavlink` (the fork) is already swept via `.gitmodules` and keyed `mavlink#`, so do **not** add it here. Keep this list current: if ArduPilot adds another standalone repo that people put dev-call/AIReview labels on, add it here.
    - Parse `.gitmodules` to find all submodule URLs hosted under `ArduPilot/` or `ardupilot/` on GitHub
