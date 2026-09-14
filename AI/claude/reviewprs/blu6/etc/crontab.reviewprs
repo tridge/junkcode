@@ -1,0 +1,41 @@
+# reviewprs on blu6 -- INSTALLED 2026-09-06.
+# This file is the master copy; edit here then re-run:
+#   crontab ~/review/etc/crontab.reviewprs
+# Inspect with:  crontab -l          Disable with: crontab -r
+#
+# Times are blu6 local time. Everything is serialised on one flock, so an
+# overrunning job makes the next slot log "SKIPPED" rather than pile up.
+SHELL=/bin/bash
+PATH=/home/tridge/.npm-global/bin:/home/tridge/.local/bin:/usr/local/bin:/usr/bin:/bin
+MAILTO=""
+
+# Base clones refreshed nightly, well clear of the review slots.
+30 2 * * *   /home/tridge/review/bin/refresh-repos.sh
+
+# Follow-ups: frequent and cheap. Does nothing when nothing has moved.
+# Waits up to 30m for the lock: a followup slot falls 34m after an `all` slot,
+# so a long `all` run (34-71m observed) would otherwise skip the next followup
+# every time - which is what happened at 07:47 on 2026-09-07. 30m rescues that
+# without letting slots pile up: the next followup is 3h away regardless.
+47 1,4,7,10,13,16,19,22 * * *   REVIEWPRS_LOCK_WAIT=1800 /home/tridge/review/bin/run-reviewprs.sh followup
+
+# The full four-label sweep, every 6 hours.
+13 0,6,12,18 * * *   /home/tridge/review/bin/run-reviewprs.sh all
+
+# The rsync project is a separate target; once a day is plenty. It waits up to
+# 2h for the lock rather than skipping: a once-a-day job that loses the race
+# does not run at all that day, which is what happened on 2026-09-07.
+25 5 * * *   REVIEWPRS_LOCK_WAIT=7200 /home/tridge/review/bin/run-reviewprs.sh rsync
+
+# Backstop reaper: catches anything a run left behind that its own exit trap
+# missed (e.g. a run killed outright). No-ops while a run is active.
+50 * * * *   /home/tridge/review/bin/reap-orphans.sh >> /home/tridge/review/logs/reap.log 2>&1
+
+# Sample Claude's real usage meter hourly, so the dashboard has a trace even
+# across stretches with no runs. `claude -p /usage` reports the true session and
+# weekly percentages headlessly - no calibration needed.
+35 * * * *   /home/tridge/review/bin/claude-usage-probe.sh hourly
+
+# Keep the runs dashboard current even when no run has fired recently.
+# https://uav.tridgell.net/DevCallReviews/runs.html
+*/10 * * * *   /home/tridge/review/bin/publish-runs-page.sh

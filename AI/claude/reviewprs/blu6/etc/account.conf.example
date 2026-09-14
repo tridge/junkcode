@@ -1,0 +1,3 @@
+# Copy to account.conf and set the address of the Claude account that
+# rsync-mode reviews must run as. Kept out of git: it is a personal address.
+REVIEW_RSYNC_CLAUDE_ACCOUNT=someone@example.com
