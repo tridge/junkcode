@@ -1,14 +1,17 @@
 # Review PRs by Label, Author, or Follow-up
 
-Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `MAVProxy`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID`, `sphinx_rtd_theme` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
+Review a set of GitHub PRs and generate an HTML report. Checks the main ArduPilot repo, the ArduPilot wiki repo, all ArduPilot-owned submodule repos, the standalone ArduPilot repos (`SupportProxy`, `pymavlink`, `useralerts`, `MissionPlanner`, `MAVProxy`, `CustomBuild`, `MethodicConfigurator`, `ArduRemoteID`, `sphinx_rtd_theme`, `WebTools` — the full list is in step 1), and the upstream `mavlink/mavlink` repo.
 
 Run this from the root of an ArduPilot checkout (it reads `.gitmodules` in the working directory). The report is written to the repository root and works in any ArduPilot checkout, not just one.
 
 The command is incremental: it records the head commit hash each PR was reviewed at, and on a re-run it reuses the previously-published report for any PR whose head is unchanged, only re-reviewing PRs that are new or have changed. This makes a re-run to pick up new/updated PRs very fast.
 
 > **Scratch space:** all temporary checkouts, clones, tarballs and build trees for this
-> command go under `/data/review/` (e.g. `mktemp -d -p /data/review pr34225-XXXX`). Never `/tmp` —
-> it is a 46G tmpfs on this machine and filling it crashes X. Remove the dir when the review is done.
+> command go under **`$REVIEW_DATA`** (e.g. `mktemp -d -p "$REVIEW_DATA" pr34225-XXXX`). That variable is
+> exported by the machine's review environment — `/data/review` on blu4, `~/review/data` on blu6. If it
+> is unset you are on a machine that has not been set up; fall back to `/data/review` and say so in the
+> summary rather than guessing. **Never `/tmp`** — it is a tmpfs on both machines (46G on blu4, 16G on
+> blu6) and filling it takes the desktop down with it. Remove the dir when the review is done.
 >
 > **No partial clones.** Never `git clone --filter=blob:none` (or any other `--filter=`) here, and
 > never run `git grep <sha>`, `git log -S`, or `git show <sha>:<path>` against a clone made that way.
@@ -16,11 +19,72 @@ The command is incremental: it records the head commit hash each PR was reviewed
 > core, so a single grep spawns dozens of concurrent fetches that each write a promisor pack. On
 > 2026-09-05 that turned one validate agent into ~2500 processes, load 630, and 46 GB of packs, and
 > systemd-oomd killed the whole terminal cgroup — emacs included. Instead: `gh pr diff` for the diff,
-> and if a real tree is needed, `git clone --shared --no-checkout <existing /data/review checkout>` (or
-> `--reference` against one). Those are local, cost nothing, and fetch no blobs.
+> and if a real tree is needed, `git clone --shared --no-checkout <an existing base checkout>` (or
+> `--reference` against one). Those are local, cost nothing, and fetch no blobs. On a machine with
+> `$REVIEW_REPOS` set there is a maintained base clone of every repo this command reviews (ardupilot
+> with submodules, the wiki, and each standalone repo) — reference those rather than cloning afresh.
 >
 > **This rule goes into every Codex/agent task prompt verbatim**, alongside the `/tmp` rule — the
 > agents are the ones that make the clones, and they will reach for `--filter=blob:none` by habit.
+
+## Running SITL tests — never with `--uds`
+
+A review that runs `autotest.py` or `sim_vehicle.py` must **not** pass `--uds`
+(`--unix-domain-socket`). It changes SITL's own behaviour, so a test can pass or fail
+differently from what the PR author sees on TCP: `UARTDriver::get_system_outqueue_limit()`
+returns **65536** bytes for an AF_UNIX socket against **1024** for TCP
+(`libraries/AP_HAL_SITL/UARTDriver.cpp`), so the anti-lag throttle engages 64x later and
+anything sensitive to UART backpressure or timing behaves differently. A finding produced that
+way is a false positive, and a fix validated that way is not validated.
+
+`--uds` was only ever a way to keep parallel runs off each other's TCP ports. Two things replace
+it, and both are needed — ports are only half of what parallel autotests collide on.
+
+**Wrap the test, not the agent.** `lo` is the only interface inside a namespace: there is no
+route off the box and no DNS, so an agent started inside one cannot reach its own model API.
+Measured on blu6: `curl https://api.openai.com/v1/models` inside gives
+`Could not resolve host`, outside gives `401`. A Codex or Claude worker therefore runs
+**outside** the namespace and puts the wrapper in front of the autotest/SITL commands it runs.
+The same goes for `git fetch`, `pip install` and terrain downloads — before, not inside.
+
+**1. A private network namespace per test.** `~/review/bin/netns-run.sh` wraps any command:
+
+    netns-run.sh Tools/autotest/autotest.py --debug test.Copter.<Test>   # one-shot
+    netns-run.sh --session <agent-root> <cmd>                            # shared, per agent
+    netns-run.sh --session-stop <agent-root>
+
+One-shot is right for a whole `autotest.py` invocation, which starts and stops SITL itself.
+Use `--session` when an agent starts SITL in one command and talks to it from the next: those
+must land in the *same* namespace, and a fresh one-shot namespace per command cannot see the
+previous command's sockets. Each namespace has its own `127.0.0.1`, so every agent takes the
+default ports (5760, 5762, 5763) and none of them collide.
+
+**2. A two-level working directory per agent.** `autotest.py` also serialises on
+`$BUILDLOGS/autotest.lck`, and `$BUILDLOGS` defaults to `<repo>/../buildlogs` — one level up,
+so sibling checkouts share a lock and the second run exits `autotest is locked` however well
+its ports are isolated. Put each agent's checkout one level *inside* its own root:
+
+    <scratch>/agents/<pr>/wt          <- the checkout, and the agent's cwd
+    <scratch>/agents/<pr>/buildlogs   <- what ../buildlogs resolves to, private
+
+`netns-run.sh` deliberately does **not** set `$BUILDLOGS`: the layout is the mechanism, one
+visible rule rather than a second hidden one, and `autotest is locked` is a loud failure.
+
+Measured on 2026-09-14, two agents running `test.Copter.AHRSOriginRecorded` at once:
+
+| setup | result |
+|---|---|
+| per-agent namespace + `<agent>/wt` layout | both **PASSED**, same second, buildlogs private to each agent |
+| same, but sharing one namespace | second dies `bind failed on port 5760 - Address already in use` |
+| separate namespaces, checkouts sharing a parent | second dies `autotest is locked` |
+
+Inside the namespace the caller is uid 0 mapped to the real user outside, so files stay owned
+by that user (verified). `lo` is the only interface: `git fetch`, `pip install` and terrain
+downloads have to happen outside the wrapper. Session holders are parked as
+`netns-holder:<dir>`, so `reap-orphans.sh` clears them with the rest of a run's leftovers.
+
+On a machine without the wrapper, still do not pass `--uds`: run the tests one at a time, or
+install it — it is `unshare --user --net --map-root-user` plus `ip link set lo up`.
 
 ## Unattended runs — the default
 
@@ -98,6 +162,16 @@ review web pages plus PR comments (see resolution step 0 below). Otherwise the a
   Its purpose is to shorten the loop for a developer who has pushed changes to address an AI review and
   is waiting to hear whether they landed — so unlike the other modes it is designed to be run often and
   to do nothing at all when nothing has moved.
+- **PR mode** — a single pull request, given as a **GitHub PR URL**
+  (`https://github.com/ArduPilot/ardupilot_wiki/pull/8018`), as `<owner>/<repo>#<number>`, as
+  `<reponame>#<number>`, or as a bare number for the main repo. Reviews **that one PR** at full depth and
+  nothing else. This is the on-demand mode: a human asked for this specific PR *now*, so unlike every
+  other mode it **ignores the incremental skip entirely** — it reviews the PR even if the head is
+  unchanged since the last comment, because the point is to answer a question being asked right now.
+  Everything else is normal: your own read plus a Codex pass (step 3 and step 7), a posted comment, and
+  a published report. It never sweeps a label, never touches another PR's manifest entry, and is the one
+  mode safe to run against a PR that carries no label at all.
+
 - **RSYNC mode** — the literal word `rsync`. A **completely separate** review target from all ArduPilot
   work: it reviews the open PRs labelled **`AIReview`** on the **`RsyncProject/rsync`** repo (the rsync
   file-transfer tool, a C codebase — **not** ArduPilot, so ArduPilot house rules do not apply). It has
@@ -125,7 +199,7 @@ path and the comment policy all differ:
      → today, since it has no associated dev call) and each auto-posts comments (all three are
      comment-posting labels — step 8). Each sweeps **all repos** (main, wiki, the ArduPilot submodules and
      the standalone ArduPilot repos — SupportProxy, pymavlink, useralerts, MissionPlanner, MAVProxy, CustomBuild,
-     MethodicConfigurator, ArduRemoteID — plus, for the report only, upstream `mavlink/mavlink`).
+     MethodicConfigurator, ArduRemoteID, WebTools — plus, for the report only, upstream `mavlink/mavlink`).
    - `followup` then reads those fresh reports; every PR the three label runs just re-reviewed is now at its
      told-head with a current comment, so `followup` correctly **skips** it. `followup` therefore acts
      only on PRs from *other* published label reports whose code moved since their last comment — often a
@@ -152,6 +226,19 @@ path and the comment policy all differ:
    intended GitHub user, and RSYNC mode is a wholly separate target (repo `RsyncProject/rsync`, label
    `AIReview`, report `RsyncReviews/index.html`). It does **not** touch any ArduPilot repo or report. If
    someone genuinely wants a GitHub user named `rsync`, `@rsync` forces AUTHOR mode.
+1b. **A PR reference resolves to PR mode**, checked before the label and user tests because none of
+   those can match it. Accept any of:
+   - `https://github.com/<owner>/<repo>/pull/<n>` (with or without a trailing `/files`, `#issuecomment-…`
+     or query string — strip them)
+   - `<owner>/<repo>#<n>`, e.g. `ArduPilot/ardupilot_wiki#8018`
+   - `<reponame>#<n>`, e.g. `ardupilot_wiki#8018` — resolve the repo the same way the manifest keys do
+   - a bare `<n>` or `#<n>` — `ArduPilot/ardupilot`
+
+   Extract owner, repo and number, confirm the PR exists with
+   `gh pr view <n> --repo <owner>/<repo> --json number,title,state,isDraft,headRefOid`, and **say which
+   PR you resolved to** before doing any work. If it does not exist, stop and say so — do not fall
+   through to the label or user tests, because a mistyped PR number is not a label.
+
 2. A leading `@` forces AUTHOR mode; strip it and use the rest as the username.
 3. Otherwise test it as a label on the main repo and look for an exact, case-insensitive match:
    `gh label list --repo ArduPilot/ardupilot --search "$ARGUMENTS" --json name --jq '.[].name'`.
@@ -196,6 +283,15 @@ so **the two modes never overwrite each other's local file or published report**
 | published "latest" | `https://uav.tridgell.net/DevCallReviews/<LABEL>/devcall_pr_reviews.html` | `https://uav.tridgell.net/UserReviews/<USERNAME>.html` | `https://uav.tridgell.net/DevCallReviews/followups/<DATE_TIME>/devcall_pr_reviews.html` (one report per run), **plus** a refresh of every per-label report containing a re-reviewed PR | `https://uav.tridgell.net/RsyncReviews/index.html` (a single living page — destination is the filename `index.html`, not a directory) |
 | dated archive | `https://uav.tridgell.net/DevCallReviews/<DATE>/devcall_pr_reviews.html` | none | n/a — the run's own report **is** the dated one | none — the single page is simply kept current |
 | re-run reads | the per-label latest | the per-user page | every per-label latest, plus the posted comments | `RsyncReviews/index.html` |
+
+**PR mode** is not in that table because it borrows FOLLOWUP mode's paths: local file
+`devcall_pr_reviews.html`, published to
+`https://uav.tridgell.net/DevCallReviews/followups/<DATE_TIME>/devcall_pr_reviews.html` (one directory
+per run, so an on-demand review never overwrites a scheduled one), **plus** a refresh of any per-label
+report that already contains that PR, exactly as FOLLOWUP does. If the PR appears in no label report,
+there is nothing to refresh — publish the run's own report and say so. The report contains that one PR's
+section only. Its manifest lists **only that PR**, so it can never be mistaken for a full sweep of a
+label, and a later LABEL run reads its own report, not this one.
 
 `<DATE>` is the date of the **upcoming dev call**, not the day the review ran — the upcoming Tuesday for
 `DevCallTopic`, the upcoming Wednesday for `DevCallEU`, both in Canberra time, with "upcoming" including
@@ -474,6 +570,7 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      - `ArduPilot/MethodicConfigurator`
      - `ArduPilot/ArduRemoteID`
      - `ArduPilot/sphinx_rtd_theme`
+     - `ArduPilot/WebTools`
 
      These are ArduPilot repos, so they are treated exactly like the main/wiki/submodule repos — the `mavlink/mavlink` upstream exceptions do **not** apply, and comment-posting in step 8 happens normally for `DevCallEU`/`DevCallTopic`/`AIReview`.
 
@@ -485,7 +582,23 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      an ArduPilot repo (post comments normally) but judge changes against **the fork's own
      conventions**, which are not ArduPilot's: its templates are Jinja, its boolean theme options go
      through the `|tobool` filter, and its only consumer is `ardupilot_wiki` — a theme change is
-     usually paired with a wiki PR, so check that one too before calling a forward reference dangling. Two disambiguations: `ArduPilot/pymavlink` is a distinct repo from the nested `pymavlink` submodule (there is no key collision — the submodule sweep only reaches ardupilot's *top-level* submodules, and pymavlink is nested under `mavlink`), and `ArduPilot/mavlink` (the fork) is already swept via `.gitmodules` and keyed `mavlink#`, so do **not** add it here. Keep this list current: if ArduPilot adds another standalone repo that people put dev-call/AIReview labels on, add it here.
+     usually paired with a wiki PR, so check that one too before calling a forward reference dangling.
+
+     `ArduPilot/WebTools` (added 2026-09-13) is the log-review tool collection published at
+     `https://firmware.ardupilot.org/Tools/WebTools` — client-side JavaScript and HTML served as
+     static files (`python3 -m http.server` is the whole dev setup), so there is no build step. Three
+     things differ from the other repos: its default branch is **`main`**, not `master`; it has **no
+     GitHub Actions workflows**, so the `gh pr checks` calls in steps 2 and 3 have nothing to read and
+     should say so rather than report a failure; and its `.gitmodules` has ten entries, nine of them
+     vendored third-party libraries (plotly.js, fft.js, luxon, matrix, tabulator, tippyjs,
+     floating-ui, pyAircraftIden, JsDataflashParser) plus **`modules/ardupilot`, which is
+     `ArduPilot/ardupilot` itself** — already swept as the main repo, so it adds no new repo to
+     the sweep, but do not describe WebTools as third-party-only. A bump of one of the nine is a
+     dependency update, judged on what changed upstream. The base clone on blu6 is made without
+     `--recurse-submodules`, which is enough to review a diff; if a review needs the tool to
+     actually run, `git submodule update --init modules/<name>` first, outside any netns. Review it
+     against browser and JS conventions; the ArduPilot C++ house rules (parameter name lengths,
+     zeroed `new`, per-subsystem commits) do not apply. Two disambiguations: `ArduPilot/pymavlink` is a distinct repo from the nested `pymavlink` submodule (there is no key collision — the submodule sweep only reaches ardupilot's *top-level* submodules, and pymavlink is nested under `mavlink`), and `ArduPilot/mavlink` (the fork) is already swept via `.gitmodules` and keyed `mavlink#`, so do **not** add it here. Keep this list current: if ArduPilot adds another standalone repo that people put dev-call/AIReview labels on, add it here.
    - Parse `.gitmodules` to find all submodule URLs hosted under `ArduPilot/` or `ardupilot/` on GitHub
    - For each ArduPilot-owned submodule repo, run: `gh pr list --repo <owner/repo> --label "$ARGUMENTS" --json number,title,author,url,updatedAt,headRefOid --limit 50`
    - Combine all results, tracking which repo each PR belongs to. Give each PR a stable **key**: the PR number for the main repo, or `<reponame>#<number>` for wiki/submodule PRs (e.g. `mavlink#360`, `wiki#7730`). Note that wiki PRs are documentation-focused (ReST under `*/source/docs/`); review for technical accuracy vs the current ArduPilot codebase, broken `:ref:` cross-references, ReST syntax, and consistency with existing wiki conventions.
@@ -719,6 +832,14 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      codex exec --skip-git-repo-check "$TASK" </dev/null
      ```
 
+     **Tell the agent where to work, and how to run SITL.** `build_task` must say two things:
+     work in `$AGENT/wt` and put everything it creates under `$AGENT` — an agent that clones
+     somewhere flatter loses the `../buildlogs` separation and will block on another agent's
+     `autotest.lck`; and run every `autotest.py` / `sim_vehicle.py` command through
+     `~/review/bin/netns-run.sh --session "$AGENT"`, never with `--uds`. The wrapper goes
+     around the *test*, not around the agent: inside the namespace there is no route off `lo`,
+     so an agent launched in one could not reach its own API.
+
      Fan them out with a bounded worker pool (6 is a reasonable cap — beyond that you are mostly competing for API rate limit), each writing to its own log.
 
      **The pool MUST be detached with `setsid nohup` and MUST signal completion with a sentinel
@@ -731,8 +852,16 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
      cat > "$SCRATCH/worker.sh" <<'EOS'
      #!/bin/bash
      n=$1; safe=${n//[^0-9A-Za-z]/_}
+     # A two-level root per agent, so autotest.py's ../buildlogs lock stays inside
+     # it - see "Running SITL tests". The agent itself runs OUTSIDE any namespace:
+     # it needs its model API. It is build_task's job to tell it to wrap the SITL
+     # commands it runs with netns-run.sh --session "$AGENT".
+     AGENT=$SCRATCH_DIR/agents/$safe
+     mkdir -p "$AGENT/wt"
+     cd "$AGENT/wt" || exit 1
      codex exec --skip-git-repo-check "$(build_task "$n")" </dev/null \
          > "$SCRATCH_DIR/validate_$safe.log" 2>&1
+     "$HOME/review/bin/netns-run.sh" --session-stop "$AGENT" 2>/dev/null
      EOS
 
      rm -f "$SCRATCH/POOL_DONE"
@@ -883,6 +1012,17 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
    last thing on the PR, edit it in place; if anything has been posted since, deprecate-and-repost so the
    update lands at the bottom and notifies. A re-run that finds a PR's head unchanged posts nothing (it is a
    REUSE); a re-run that finds the head moved re-reviews and updates the comment by that same test.
+
+   **PR mode always posts**, using exactly the FOLLOWUP rules below (deprecate-and-repost, told-head
+   leading the body, link to this run's `followups/<DATE_TIME>/` report). The `mavlink/mavlink` hold
+   still applies. Two PR-mode specifics:
+   - **If the head has not moved since the last comment**, say so in the opening line — "re-reviewed at
+     the same head `X` on request" — so the author is not left wondering what changed. Then report what
+     this pass found, including anything the previous pass missed. A re-review that just restates the
+     last comment word for word is a wasted notification: if nothing has changed and nothing new was
+     found, say *that*, briefly, rather than padding.
+   - **Do not touch any other PR's manifest entry.** Update only this PR's head in whichever label
+     reports carry it. A PR-mode run is not evidence about any other PR.
 
    **FOLLOWUP mode always posts, and always as a NEW comment — never an in-place edit.** Posting *is* the
    mode's purpose, and it needs no label check, because every PR in its set was selected precisely by
@@ -1051,6 +1191,25 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
    and the PR comments linking to it, be published days ahead of the meeting and still land in the folder
    people will look in on the day.
 
+   **Publishing is parameterised, because the two machines reach fjall differently.** Use
+   `$REVIEW_PUBLISH` as the destination base and `$RSYNC_AUTH` for its credentials; both are exported by
+   the machine's review environment:
+
+   | machine | `$REVIEW_PUBLISH` | `$RSYNC_AUTH` | how it reaches fjall |
+   |---|---|---|---|
+   | blu6 | `rsync://reviews@fjall` | `--password-file=~/review/etc/rsync.password` | rsync daemon over the LAN; the box has no ssh key for fjall |
+   | blu4 | `tridgell.net:UAV-web` | *(empty)* | ssh |
+
+   The path *after* the base is identical in both cases, so only those two variables change, and
+   `--mkpath` still creates the per-label / per-date subdirectory. **If `$REVIEW_PUBLISH` is unset** you
+   are on a machine without the review environment: fall back to `tridgell.net:UAV-web` with no auth
+   option, and say so in the closing summary. Never invent a different destination.
+
+   Note for blu6: `uav.tridgell.net` resolves to fjall's LAN address via `/etc/hosts` there, because the
+   public IP is firewalled from inside the network. The `https://uav.tridgell.net/...` URLs this command
+   reads and links to therefore work unchanged — do not rewrite them to a LAN name, because they are also
+   what gets published into PR comments for other people to open.
+
    ```bash
    # LABEL mode
    REPORT="$(git rev-parse --show-toplevel)/devcall_pr_reviews.html"
@@ -1069,21 +1228,21 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
        DATE=$(TZ=Australia/Sydney date +%Y_%m_%d)
    fi
 
-   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/$LABEL/   # per-label latest
-   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/$DATE/    # dated archive
+   rsync -Pavz --mkpath $RSYNC_AUTH "$REPORT" $REVIEW_PUBLISH/DevCallReviews/$LABEL/  # per-label latest
+   rsync -Pavz --mkpath $RSYNC_AUTH "$REPORT" $REVIEW_PUBLISH/DevCallReviews/$DATE/   # dated archive
 
    # AUTHOR mode — a single page per user, kept current; no dated archive.
    # Note the destination is a FILENAME, not a directory: the trailing path component
    # is <USERNAME>.html, so rsync must be given that exact target path.
    USER_NAME=<username>
    REPORT="$(git rev-parse --show-toplevel)/user_pr_reviews_${USER_NAME}.html"
-   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/UserReviews/${USER_NAME}.html
+   rsync -Pavz --mkpath $RSYNC_AUTH "$REPORT" $REVIEW_PUBLISH/UserReviews/${USER_NAME}.html
 
    # RSYNC mode — a single living page, kept current; no dated archive.
    # Like AUTHOR mode, the destination is a FILENAME (index.html), not a directory,
    # and it lives in its own RsyncReviews/ tree, entirely separate from DevCallReviews/.
    REPORT="$(git rev-parse --show-toplevel)/rsync_pr_reviews.html"
-   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/RsyncReviews/index.html
+   rsync -Pavz --mkpath $RSYNC_AUTH "$REPORT" $REVIEW_PUBLISH/RsyncReviews/index.html
    ```
 
    **FOLLOWUP mode writes its own dated report under `followups/`, and additionally refreshes the label
@@ -1092,9 +1251,9 @@ that their manifests stay truthful and a later LABEL run does not redo the same 
    ```bash
    DATE_TIME=$(date +%Y_%m_%d_%H%M)     # e.g. 2026_08_20_1432 — one directory per run
    # 1. the run's own report — this is the URL the posted comments link to
-   rsync -Pavz --mkpath "$REPORT" tridgell.net:UAV-web/DevCallReviews/followups/$DATE_TIME/
+   rsync -Pavz --mkpath $RSYNC_AUTH "$REPORT" $REVIEW_PUBLISH/DevCallReviews/followups/$DATE_TIME/
    # 2. for each label whose report contained a re-reviewed PR, refresh that label's latest
-   rsync -Pavz --mkpath "$LABEL_REPORT" tridgell.net:UAV-web/DevCallReviews/$LABEL/
+   rsync -Pavz --mkpath $RSYNC_AUTH "$LABEL_REPORT" $REVIEW_PUBLISH/DevCallReviews/$LABEL/
    ```
 
    The `followups/` report covers only the PRs re-reviewed in that run and is the run's deliverable. The
