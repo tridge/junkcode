@@ -4,41 +4,45 @@ switch virtual audio devices (VMic/VSpeaker) between real devices, linked to
 function keys on keyboard
 
 all apps and the defaults point at VMic/VSpeaker, and those are remapped onto
-the selected real devices
+the selected real devices. With no arguments shows the current mapping
 '''
 
 import argparse
+import fcntl
 import json
+import os
+import shlex
 import subprocess
 import sys
 import time
 
 VSINK = "VSpeaker"
 VSOURCE = "VMic"
+UNLINKED = 0xFFFFFFFF
 
-# name: (description, source prefix, sink prefix)
+# alsa devices are matched by name prefix, bluetooth by MAC
 DEVICES = {
-    "DESKTOP": ("DESKTOP",
-                "alsa_input.usb-046d_HD_Pro_Webcam_C920",
-                "alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__HDMI1__sink"),
-    "HEADSET": ("HEADSET",
-                "alsa_input.usb-GN_Netcom_A_S_Jabra",
-                "alsa_output.usb-GN_Netcom_A_S_Jabra"),
-    "MS": ("MS HEADSET",
-           "alsa_input.usb-Microsoft_Microsoft_USB_Link",
-           "alsa_output.usb-Microsoft_Microsoft_USB_Link"),
-    "MSBT": ("MS HEADSET on bluetooth",
-             "bluez_input.A0:4A:5E:F7:86:2A",
-             "bluez_output.A0:4A:5E:F7:86:2A"),
-    "LAPTOP": ("LAPTOP",
-               "alsa_input.pci-0000_80_1f.3-platform-sof_sdw.HiFi__Mic__source",
-               "alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__Speaker__sink"),
-    "NOX": ("NOX39G",
-            "bluez_source.00_02_5B_D5_F6_ED.handsfree_head_unit",
-            "bluez_sink.00_02_5B_D5_F6_ED.handsfree_head_unit"),
-    "M3": ("M3",
-           "bluez_input.E9:E6:56:88:9A:51",
-           "bluez_output.E9_E6_56_88_9A_51.1"),
+    "DESKTOP": dict(desc="DESKTOP",
+                    source="alsa_input.usb-046d_HD_Pro_Webcam_C920",
+                    sink="alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__HDMI1__sink"),
+    "HEADSET": dict(desc="HEADSET",
+                    source="alsa_input.usb-GN_Netcom_A_S_Jabra",
+                    sink="alsa_output.usb-GN_Netcom_A_S_Jabra"),
+    "MS": dict(desc="MS HEADSET",
+               source="alsa_input.usb-Microsoft_Microsoft_USB_Link",
+               sink="alsa_output.usb-Microsoft_Microsoft_USB_Link"),
+    "MSBT": dict(desc="MS HEADSET on bluetooth", bt="A0:4A:5E:F7:86:2A"),
+    "LAPTOP": dict(desc="LAPTOP",
+                   source="alsa_input.pci-0000_80_1f.3-platform-sof_sdw.HiFi__Mic__source",
+                   sink="alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__Speaker__sink"),
+    "NOX": dict(desc="NOX39G", bt="00:02:5B:D5:F6:ED"),
+    "M3": dict(desc="M3", bt="E9:E6:56:88:9A:51"),
+}
+
+# per virtual device: device list kind, stream list kind, backend node name, move command, stream field
+VIRT = {
+    VSINK: ("sinks", "sink-inputs", "output." + VSINK, "move-sink-input", "sink"),
+    VSOURCE: ("sources", "source-outputs", "input." + VSOURCE, "move-source-output", "source"),
 }
 
 
@@ -63,98 +67,193 @@ def norm(name):
     return name.replace(':', '_').lower()
 
 
-def find_device(kind, prefix):
-    '''find a real sink/source by name prefix, returns full name'''
-    matches = [d["name"] for d in plist(kind)
-               if norm(prefix) in norm(d["name"])
-               and not d["name"].endswith(".monitor")
-               and d["name"] not in (VSINK, VSOURCE)]
+def is_real(d):
+    return not d["name"].endswith(".monitor") and d["name"] not in VIRT
+
+
+def spec_matches(spec, kind, d):
+    '''does real device d match an alias spec'''
+    if "bt" in spec:
+        mac = norm(spec["bt"])
+        props = d.get("properties", {})
+        return (d["name"].startswith("bluez_") and mac in norm(d["name"])) or \
+            norm(props.get("api.bluez5.address", "")) == mac
+    prefix = spec["source" if kind == "sources" else "sink"]
+    return norm(prefix) in norm(d["name"])
+
+
+def find_device(kind, spec):
+    matches = [d["name"] for d in plist(kind) if is_real(d) and spec_matches(spec, kind, d)]
     if not matches:
         return None
+    # prefer the stable bluetooth proxy name, which has no profile suffix
+    matches.sort(key=len)
     if len(matches) > 1:
-        print("WARNING: multiple %s match %s, using %s" % (kind, prefix, matches[-1]))
-    return matches[-1]
+        print("NOTE: multiple %s match, using %s" % (kind, matches[0]))
+    return matches[0]
 
 
-def bluez_mac(prefix):
-    if not prefix.startswith("bluez_"):
-        return None
-    return norm(prefix.split('.')[1])
+def aliases_for(kind, name):
+    devs = [d for d in plist(kind) if d["name"] == name]
+    if not devs:
+        return []
+    return [a for a, spec in DEVICES.items() if spec_matches(spec, kind, devs[0])]
 
 
-def try_bt_headset_profile(prefix):
-    '''bluetooth mics only exist with a headset profile, try to enable one'''
-    mac = bluez_mac(prefix)
-    if mac is None:
-        return False
+def bt_card(mac):
     for card in plist("cards"):
-        if mac not in norm(card["name"]):
-            continue
-        profiles = [p for p, v in card.get("profiles", {}).items()
-                    if p.startswith("headset") and v.get("available", True)]
-        if not profiles:
-            print("WARNING: no headset profile on %s" % card["name"])
-            return False
-        # prefer mSBC/higher quality profiles, which sort later
-        profile = sorted(profiles)[-1]
+        if norm(mac) in norm(card["name"]):
+            return card
+    return None
+
+
+def duplex(profile):
+    return profile.get("sinks", 0) > 0 and profile.get("sources", 0) > 0
+
+
+def resolve(spec):
+    '''find real source and sink for an alias, switching bluetooth to a mic profile if needed.
+    Returns (source, sink, restore) where restore undoes any profile change'''
+    restore = lambda: None
+    if "bt" not in spec:
+        return find_device("sources", spec), find_device("sinks", spec), restore
+
+    card = bt_card(spec["bt"])
+    if card is None:
+        raise AudioError("no bluetooth card for %s, is it connected?" % spec["bt"])
+    profiles = card.get("profiles", {})
+    active = card.get("active_profile")
+    if duplex(profiles.get(active, {})):
+        return find_device("sources", spec), find_device("sinks", spec), restore
+
+    candidates = sorted([p for p, v in profiles.items() if duplex(v) and v.get("available", True)],
+                        key=lambda p: profiles[p].get("priority", 0), reverse=True)
+    if not candidates:
+        raise AudioError("no available headset profile on %s" % card["name"])
+
+    def restore():
+        print("Restoring %s profile %s" % (card["name"], active))
+        pactl("set-card-profile", card["name"], active, check=False)
+
+    for profile in candidates:
         print("Setting %s profile %s" % (card["name"], profile))
-        pactl("set-card-profile", card["name"], profile)
-        return True
-    print("WARNING: no bluetooth card for %s, is it connected?" % prefix)
-    return False
+        if pactl("set-card-profile", card["name"], profile, check=False).returncode != 0:
+            continue
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            source, sink = find_device("sources", spec), find_device("sinks", spec)
+            if source and sink:
+                return source, sink, restore
+            time.sleep(0.2)
+        print("WARNING: profile %s gave no mic/speaker" % profile)
+    restore()
+    raise AudioError("no working headset profile on %s" % card["name"])
 
 
-def wait_for(kind, prefix, timeout):
-    t0 = time.time()
-    while True:
-        name = find_device(kind, prefix)
-        if name is not None or time.time() - t0 > timeout:
-            return name
-        time.sleep(0.2)
+def device_index(kind, name):
+    for d in plist(kind):
+        if d["name"] == name:
+            return d["index"]
+    return None
 
 
-def wait_for_exact(kind, name, timeout):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        devs = {d["name"]: d for d in plist(kind)}
-        if name in devs:
-            return devs[name]
-        time.sleep(0.1)
-    raise AudioError("%s did not appear after %.1fs" % (name, timeout))
+def backend(vname):
+    '''the remap module's stream that feeds the real device'''
+    _, skind, node, _, _ = VIRT[vname]
+    for s in plist(skind):
+        if s.get("properties", {}).get("node.name") == node:
+            return s
+    return None
 
 
-def wait_gone(kind, name, timeout):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if name not in [d["name"] for d in plist(kind)]:
-            return
-        time.sleep(0.1)
-    raise AudioError("%s still present after unload" % name)
+def backend_target(vname):
+    '''name of the real device a virtual device is currently connected to'''
+    lkind, _, _, _, field = VIRT[vname]
+    b = backend(vname)
+    if b is None:
+        return None
+    if b[field] == UNLINKED:
+        return "(unlinked)"
+    names = {d["index"]: d["name"] for d in plist(lkind)}
+    return names.get(b[field], "(unknown #%s)" % b[field])
 
 
-def unload_virtual():
+def module_args(arg):
+    try:
+        return dict(a.split('=', 1) for a in shlex.split(arg) if '=' in a)
+    except ValueError:
+        return {}
+
+
+def our_modules(vname):
+    key = "sink_name" if vname == VSINK else "source_name"
+    mod = "module-remap-sink" if vname == VSINK else "module-remap-source"
+    ret = []
     # json module list lacks the index, so use the short form
     for line in pactl("list", "short", "modules").stdout.splitlines():
         f = line.split('\t')
-        if len(f) < 3:
-            continue
-        idx, name, arg = f[0], f[1], f[2]
-        if ((name == "module-remap-sink" and ("sink_name=%s" % VSINK) in arg) or
-                (name == "module-remap-source" and ("source_name=%s" % VSOURCE) in arg)):
-            pactl("unload-module", idx)
-    wait_gone("sinks", VSINK, 3)
-    wait_gone("sources", VSOURCE, 3)
+        if len(f) >= 3 and f[1] == mod and module_args(f[2]).get(key) == vname:
+            ret.append(f[0])
+    return ret
 
 
-def load_virtual(source, sink):
-    # use names not indexes for master so it survives device index changes
-    pactl("load-module", "module-remap-source", "source_name=%s" % VSOURCE,
-          "source_properties=device.description=%s" % VSOURCE, "master=%s" % source)
-    pactl("load-module", "module-remap-sink", "sink_name=%s" % VSINK,
-          "sink_properties=device.description=%s" % VSINK, "master=%s" % sink)
-    vsink = wait_for_exact("sinks", VSINK, 5)
-    vsource = wait_for_exact("sources", VSOURCE, 5)
-    return vsink["index"], vsource["index"]
+def load_virtual(vname, master):
+    if vname == VSINK:
+        args = ["module-remap-sink", "sink_name=" + VSINK,
+                "sink_properties=device.description=" + VSINK]
+    else:
+        args = ["module-remap-source", "source_name=" + VSOURCE,
+                "source_properties=device.description=" + VSOURCE]
+    idx = pactl("load-module", *args, "master=" + master).stdout.strip()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if backend(vname) is not None and device_index(VIRT[vname][0], vname) is not None:
+            return idx
+        time.sleep(0.1)
+    pactl("unload-module", idx, check=False)
+    raise AudioError("%s did not appear after loading" % vname)
+
+
+def monitor_recordings():
+    '''source-outputs recording a monitor, as index -> monitor name'''
+    names = {d["index"]: d["name"] for d in plist("sources")}
+    return {s["index"]: names[s["source"]] for s in plist("source-outputs")
+            if names.get(s["source"], "").endswith(".monitor")}
+
+
+def recreate_virtual(vname, master):
+    '''slow path, used when a virtual device or its backend is missing'''
+    saved = monitor_recordings() if vname == VSINK else {}
+    for idx in our_modules(vname):
+        pactl("unload-module", idx)
+    load_virtual(vname, master)
+    # recordings of the old VSpeaker.monitor get unlinked, put them back
+    for idx, mon in saved.items():
+        if mon == VSINK + ".monitor":
+            pactl("move-source-output", idx, mon, check=False)
+
+
+def retarget(vname, master, timeout=3):
+    '''point a virtual device at a real device, verifying the move took effect'''
+    lkind, _, _, cmd, field = VIRT[vname]
+    if backend(vname) is None or device_index(lkind, vname) is None:
+        print("%s missing, (re)loading it" % vname)
+        recreate_virtual(vname, master)
+    deadline = time.monotonic() + timeout
+    last_move = 0
+    while time.monotonic() < deadline:
+        b = backend(vname)
+        want = device_index(lkind, master)
+        if b is None or want is None:
+            raise AudioError("%s or %s disappeared" % (vname, master))
+        if b[field] == want:
+            return
+        # moves can report success but not happen, so re-issue periodically
+        if time.monotonic() - last_move > 0.5:
+            pactl(cmd, b["index"], master, check=False)
+            last_move = time.monotonic()
+        time.sleep(0.1)
+    raise AudioError("%s did not move to %s" % (vname, master))
 
 
 def stream_name(s):
@@ -163,109 +262,168 @@ def stream_name(s):
                             p.get("media.name", "?"), s["index"])
 
 
-def app_streams(kind):
+def app_streams(skind):
     '''streams belonging to apps, skipping the loopback streams of modules'''
-    return [s for s in plist(kind)
+    return [s for s in plist(skind)
             if s.get("owner_module") is None
             and "pulse.module.id" not in s.get("properties", {})]
 
 
-def monitor_indexes():
-    return set(d["index"] for d in plist("sources") if d["name"].endswith(".monitor"))
+def wrong_streams():
+    '''app streams not on the virtual devices, as (vname, stream)'''
+    sinks = {d["name"]: d["index"] for d in plist("sinks")}
+    sources = {d["index"]: d["name"] for d in plist("sources")}
+    ret = [(VSINK, s) for s in app_streams("sink-inputs") if s["sink"] != sinks.get(VSINK)]
+    for s in app_streams("source-outputs"):
+        name = sources.get(s["source"], "")
+        # leave apps recording a speaker monitor alone
+        if name != VSOURCE and not name.endswith(".monitor"):
+            ret.append((VSOURCE, s))
+    return ret
 
 
-UNLINKED = 0xFFFFFFFF
+def peak_meter(s):
+    # e.g. pavucontrol level meters
+    return s.get("properties", {}).get("stream.monitor") == "true"
 
 
-def move_streams(vsink_idx, vsource_idx, timeout, verbose):
-    '''move all app streams, retrying as apps may recreate streams on device changes'''
-    failed = {}
-    moved = set()
-    t0 = time.time()
+def pinned(s):
+    '''streams that ask not to be moved, PA DONT_MOVE maps to node.dont-reconnect'''
+    p = s.get("properties", {})
+    return peak_meter(s) or p.get("node.dont-move") == "true" or p.get("node.dont-reconnect") == "true"
+
+
+def move_streams(timeout, verbose, settle=1.0):
+    '''move app streams until nothing has needed moving for settle seconds, as apps
+    may recreate streams after a device change'''
+    last_ok = {}
+    reported = set()
+    start = time.monotonic()
+    quiet_since = start
     rnd = 0
     while True:
-        wrong = []
-        unsettled = 0
-        for s in app_streams("sink-inputs"):
-            if s["sink"] != vsink_idx:
-                wrong.append(("playback", "move-sink-input", VSINK, s, s["sink"]))
-        monitors = monitor_indexes()
-        for s in app_streams("source-outputs"):
-            # leave apps recording a speaker monitor alone
-            if s["source"] != vsource_idx and s["source"] not in monitors:
-                wrong.append(("capture", "move-source-output", VSOURCE, s, s["source"]))
-
-        for kind, cmd, target, s, cur in wrong:
-            key = (kind, s["index"])
-            # streams are unlinked for a while after the remap reload, don't re-move those
-            if cur == UNLINKED and key in moved:
-                unsettled += 1
-                continue
-            r = pactl(cmd, s["index"], target, check=False)
-            moved.add(key)
-            if r.returncode != 0:
-                failed[key] = "%s: %s" % (stream_name(s), r.stderr.strip())
-            elif verbose:
-                print("  [%u] moved %s %s" % (rnd, kind, stream_name(s)))
-
-        if not wrong or time.time() - t0 > timeout:
+        now = time.monotonic()
+        wrong = [(v, s) for v, s in wrong_streams() if not pinned(s)]
+        if wrong:
+            quiet_since = now
+        elif now - quiet_since >= settle:
             break
+        if now - start > timeout:
+            break
+        for vname, s in wrong:
+            key = (vname, s["index"])
+            # give a successful move time to take effect before re-issuing it
+            if now - last_ok.get(key, -10) < 0.5:
+                continue
+            r = pactl(VIRT[vname][3], s["index"], vname, check=False)
+            if r.returncode == 0:
+                last_ok[key] = now
+                if verbose:
+                    print("  [%u] moved %s to %s" % (rnd, stream_name(s), vname))
+            elif verbose and key not in reported:
+                reported.add(key)
+                print("  [%u] move %s failed: %s" % (rnd, stream_name(s), r.stderr.strip()))
         time.sleep(0.2)
         rnd += 1
 
-    stragglers = ["%s %s" % (kind, stream_name(s)) for kind, cmd, target, s, cur in wrong]
-    return stragglers, failed
+
+def show_status():
+    for vname in (VSOURCE, VSINK):
+        lkind = VIRT[vname][0]
+        target = backend_target(vname)
+        if target is None:
+            print("%-9s not loaded" % (vname + ":"))
+            continue
+        aliases = aliases_for(lkind, target)
+        print("%-9s %s (%s)" % (vname + ":", target, ",".join(aliases) if aliases else "no alias"))
+    dsink = pactl("get-default-sink").stdout.strip()
+    dsource = pactl("get-default-source").stdout.strip()
+    if dsink != VSINK or dsource != VSOURCE:
+        print("WARNING: defaults are sink=%s source=%s" % (dsink, dsource))
+    wrong = [(v, s) for v, s in wrong_streams() if not peak_meter(s)]
+    if wrong:
+        print("Streams not on virtual devices:")
+        for vname, s in wrong:
+            print("  %s%s" % (stream_name(s), " (pinned)" if pinned(s) else ""))
+
+
+def lock():
+    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "vmic.lock")
+    f = open(path, "w")
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return f
+        except BlockingIOError:
+            if time.monotonic() > deadline:
+                raise AudioError("another vmic is running")
+            time.sleep(0.1)
+
+
+def switch(dev, timeout, verbose):
+    spec = DEVICES[dev]
+    print("Using %s" % spec["desc"])
+    source, sink, restore_profile = resolve(spec)
+    if source is None or sink is None:
+        restore_profile()
+        if source is None:
+            print("ERROR: no source for %s" % dev)
+        if sink is None:
+            print("ERROR: no sink for %s" % dev)
+        return 1
+    print("SOURCE: %s  SINK: %s" % (source, sink))
+
+    # retarget the existing virtual devices, so app streams stay connected
+    prev = {v: backend_target(v) for v in VIRT}
+    try:
+        retarget(VSOURCE, source)
+        retarget(VSINK, sink)
+    except AudioError as e:
+        print("ERROR: %s, rolling back" % e)
+        for vname, master in prev.items():
+            if master and not master.startswith("("):
+                try:
+                    retarget(vname, master)
+                except AudioError as e2:
+                    print("ERROR: rollback of %s failed: %s" % (vname, e2))
+        restore_profile()
+        return 1
+
+    # new streams, and streams that follow the default, go to the virtual devices
+    pactl("set-default-sink", VSINK)
+    pactl("set-default-source", VSOURCE)
+
+    move_streams(timeout, verbose)
+
+    pactl("set-source-volume", source, "100%")
+    pactl("set-source-volume", VSOURCE, "100%")
+
+    show_status()
+    if [s for v, s in wrong_streams() if not pinned(s)] or backend_target(VSOURCE) != source or backend_target(VSINK) != sink:
+        return 2
+    return 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="switch VMic/VSpeaker between audio devices")
-    parser.add_argument("device", help="|".join(DEVICES.keys()))
-    parser.add_argument("--timeout", type=float, default=4, help="seconds to keep retrying stream moves")
+    parser = argparse.ArgumentParser(description="switch VMic/VSpeaker between audio devices, "
+                                     "or show the current mapping with no device")
+    parser.add_argument("device", nargs="?", help="|".join(DEVICES.keys()))
+    parser.add_argument("--timeout", type=float, default=5, help="seconds to keep moving app streams")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
+
+    if args.device is None:
+        show_status()
+        return 0
 
     dev = args.device.upper()
     if dev not in DEVICES:
         print("Bad audio type %s, use one of %s" % (dev, "|".join(DEVICES.keys())))
         return 1
-    desc, source_prefix, sink_prefix = DEVICES[dev]
-    print("Using %s" % desc)
 
-    source = find_device("sources", source_prefix)
-    profile_changed = False
-    if source is None and try_bt_headset_profile(source_prefix):
-        profile_changed = True
-        source = wait_for("sources", source_prefix, 5)
-    sink = wait_for("sinks", sink_prefix, 3 if profile_changed else 0)
-    if source is None or sink is None:
-        if source is None:
-            print("ERROR: no source matching %s" % source_prefix)
-        if sink is None:
-            print("ERROR: no sink matching %s" % sink_prefix)
-        return 1
-    print("SOURCE: %s  SINK: %s" % (source, sink))
-
-    # can't change the master while playing, so reload the remap modules
-    unload_virtual()
-    vsink_idx, vsource_idx = load_virtual(source, sink)
-
-    # new streams, and streams apps re-create, follow the defaults
-    pactl("set-default-sink", VSINK)
-    pactl("set-default-source", VSOURCE)
-
-    stragglers, failed = move_streams(vsink_idx, vsource_idx, args.timeout, args.verbose)
-
-    pactl("set-source-volume", source, "100%")
-    pactl("set-source-volume", VSOURCE, "100%")
-
-    if stragglers:
-        print("WARNING: streams not switched:")
-        for s in stragglers:
-            print("  " + s)
-        for v in failed.values():
-            print("  error: " + v)
-        return 2
-    return 0
+    with lock():
+        return switch(dev, args.timeout, args.verbose)
 
 
 if __name__ == '__main__':
