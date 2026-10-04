@@ -24,7 +24,8 @@ UNLINKED = 0xFFFFFFFF
 DEVICES = {
     "DESKTOP": dict(desc="DESKTOP",
                     source="alsa_input.usb-046d_HD_Pro_Webcam_C920",
-                    sink="alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__HDMI1__sink"),
+                    # any of HDMI1-3: the monitor can come back on a different one after sleep
+                    sink="alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__HDMI"),
     "HEADSET": dict(desc="HEADSET",
                     source="alsa_input.usb-GN_Netcom_A_S_Jabra",
                     sink="alsa_output.usb-GN_Netcom_A_S_Jabra"),
@@ -82,15 +83,23 @@ def spec_matches(spec, kind, d):
     return norm(prefix) in norm(d["name"])
 
 
+def plugged(d):
+    '''false only if every port reports its jack unplugged'''
+    ports = d.get("ports", [])
+    return not ports or any(p.get("availability") != "not available" for p in ports)
+
+
 def find_device(kind, spec):
-    matches = [d["name"] for d in plist(kind) if is_real(d) and spec_matches(spec, kind, d)]
-    if not matches:
+    devs = [d for d in plist(kind) if is_real(d) and spec_matches(spec, kind, d)]
+    if not devs:
         return None
-    # prefer the stable bluetooth proxy name, which has no profile suffix
-    matches.sort(key=len)
-    if len(matches) > 1:
-        print("NOTE: multiple %s match, using %s" % (kind, matches[0]))
-    return matches[0]
+    # prefer plugged in ports, then the stable bluetooth proxy name, which has no profile suffix
+    devs.sort(key=lambda d: (not plugged(d), len(d["name"])))
+    if not plugged(devs[0]):
+        print("WARNING: no %s matching %s is plugged in, using %s" % (kind, spec["desc"], devs[0]["name"]))
+    elif len(devs) > 1 and plugged(devs[1]):
+        print("NOTE: multiple %s match, using %s" % (kind, devs[0]["name"]))
+    return devs[0]["name"]
 
 
 def aliases_for(kind, name):
