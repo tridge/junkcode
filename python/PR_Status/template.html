@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@@TITLE@@</title>
+<base target="_blank">
+<style>
+:root {
+  --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --head: #f5f5f4;
+  --row-hover: #f5f5f4; --link: #1d4ed8;
+  --ok: #15803d; --ok-bg: #dcfce7; --bad: #b91c1c; --bad-bg: #fee2e2;
+  --warn: #a16207; --warn-bg: #fef9c3; --info: #1d4ed8; --info-bg: #dbeafe;
+  --none-bg: #f5f5f4; --changed: #f59e0b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161514; --fg: #e7e5e4; --muted: #a8a29e; --line: #2e2c2a; --head: #1f1d1b;
+    --row-hover: #22201e; --link: #93c5fd;
+    --ok: #86efac; --ok-bg: #14532d; --bad: #fca5a5; --bad-bg: #7f1d1d;
+    --warn: #fde68a; --warn-bg: #713f12; --info: #bfdbfe; --info-bg: #1e3a8a;
+    --none-bg: #292524; --changed: #f59e0b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+h1 { font-size: 16px; margin: 0; }
+#search { flex: 1 1 260px; max-width: 480px; padding: 6px 10px; font: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+#search:focus { outline: 2px solid var(--link); outline-offset: -1px; }
+.meta { color: var(--muted); font-size: 12px; }
+.stale { color: var(--bad); font-weight: 600; }
+label.opt { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
+main { padding: 0 16px 24px; }
+table { border-collapse: collapse; width: 100%; min-width: 1100px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { position: sticky; top: var(--head-h, 53px); background: var(--head); font-weight: 600; font-size: 12px; white-space: nowrap;
+  cursor: pointer; user-select: none; }
+th.nosort { cursor: default; }
+th[aria-sort="ascending"]::after { content: " \25B2"; font-size: 9px; }
+th[aria-sort="descending"]::after { content: " \25BC"; font-size: 9px; }
+tbody tr:hover { background: var(--row-hover); }
+tr.done td { opacity: .45; }
+tr.done td.c-done { opacity: 1; }
+tr.changed td:first-child { box-shadow: inset 3px 0 0 var(--changed); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.c-repo, td.c-time, td.c-pr { white-space: nowrap; }
+td.c-title { min-width: 280px; max-width: 560px; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-weight: 600;
+  white-space: nowrap; background: var(--none-bg); color: var(--muted); }
+.ok { background: var(--ok-bg); color: var(--ok); }
+.bad { background: var(--bad-bg); color: var(--bad); }
+.warn { background: var(--warn-bg); color: var(--warn); }
+.info { background: var(--info-bg); color: var(--info); }
+.sub { color: var(--muted); font-size: 12px; }
+.labels { margin-top: 2px; }
+.label { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
+  padding: 0 5px; margin: 1px 4px 0 0; white-space: nowrap; }
+.why { display: block; color: var(--changed); font-size: 11px; white-space: nowrap; }
+input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+#empty { padding: 24px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>@@TITLE@@</h1>
+  <input id="search" type="search" placeholder="Search title, repo, number, reviewer…  ( / )" autocomplete="off">
+  <label class="opt"><input type="checkbox" id="hidedone"> hide done</label>
+  <span class="meta" id="counts"></span>
+  <span class="meta" id="gen"></span>
+</header>
+<main>
+<table>
+  <thead><tr id="heads"></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div id="empty" hidden>No PRs match.</div>
+</main>
+<script id="prdata" type="application/json">@@DATA@@</script>
+<script>
+(function () {
+'use strict';
+const DATA = JSON.parse(document.getElementById('prdata').textContent);
+const ME = DATA.user.toLowerCase();
+const STATE_KEY = 'prstatus.ticks.v1';
+const PREF_KEY = 'prstatus.prefs.v1';
+
+function load(k, dflt) {
+  try { const v = JSON.parse(localStorage.getItem(k)); return v || dflt; } catch (e) { return dflt; }
+}
+function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+// ticks: url -> {key, parts, seen}; PRs no longer open are pruned
+const ticks = load(STATE_KEY, {});
+const urls = new Set(DATA.prs.map(p => p.url));
+for (const u of Object.keys(ticks)) if (!urls.has(u)) delete ticks[u];
+save(STATE_KEY, ticks);
+
+const prefs = Object.assign({sort: 'updated', dir: -1, q: '', hideDone: false}, load(PREF_KEY, {}));
+
+function ago(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 5400) return Math.round(s / 60) + 'm ago';
+  if (s < 129600) return Math.round(s / 3600) + 'h ago';
+  if (s < 86400 * 60) return Math.round(s / 86400) + 'd ago';
+  if (s < 86400 * 700) return Math.round(s / 86400 / 30.4) + 'mo ago';
+  return (s / 86400 / 365).toFixed(1) + 'y ago';
+}
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') e.className = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== '') e.append(k);
+  return e;
+}
+function badge(text, cls, title) { return el('span', {class: 'badge ' + (cls || ''), title}, text); }
+
+const CI = {
+  SUCCESS: ['passing', 'ok', 3], FAILURE: ['failing', 'bad', 0], ERROR: ['error', 'bad', 0],
+  PENDING: ['pending', 'warn', 1], EXPECTED: ['expected', 'warn', 1], NONE: ['none', '', 2],
+};
+const REVIEW = {
+  APPROVED: ['approved', 'ok', 3], CHANGES_REQUESTED: ['changes requested', 'bad', 0],
+  REVIEW_REQUIRED: ['review required', 'warn', 1], '': ['—', '', 2],
+};
+const APR = {
+  'ACCEPT': ['accept', 'ok', 3], 'COMMENT': ['comment', 'warn', 1],
+  'REQUEST CHANGES': ['request changes', 'bad', 0], '': ['none', '', 2],
+};
+const MERGE = {CONFLICTING: ['conflict', 'bad', 0], MERGEABLE: ['ok', 'ok', 2], UNKNOWN: ['?', '', 1]};
+const WHY = {
+  activity: 'new activity', ci_failure: 'CI changed', ci: 'CI changed',
+  review_decision: 'review changed', apreview: 'APReview changed', conflict: 'conflict changed', push: 'new push',
+};
+
+function tickState(p) {
+  const t = ticks[p.url];
+  if (!t) return {done: false, changed: false, why: []};
+  if (t.key === p.key) return {done: true, changed: false, why: []};
+  const why = Object.keys(p.parts).filter(k => JSON.stringify(p.parts[k]) !== JSON.stringify((t.parts || {})[k]));
+  return {done: false, changed: true, why: why.map(k => WHY[k] || k)};
+}
+// others' events since the tick, or since my own last activity if never ticked
+function newEvents(p) {
+  const t = ticks[p.url];
+  const since = t ? t.seen : p.my_last;
+  return p.events.filter(e => !since || e[0] > since);
+}
+
+const COLS = [
+  {id: 'done', name: '✓', title: 'Dealt with', sort: p => tickState(p).done ? 1 : 0, cell: p => {
+    const st = tickState(p);
+    const cb = el('input', {type: 'checkbox', 'aria-label': 'dealt with'});
+    cb.checked = st.done;
+    cb.addEventListener('change', () => {
+      if (cb.checked) ticks[p.url] = {key: p.key, parts: p.parts, seen: p.events.length ? p.events[0][0] : DATA.generated};
+      else delete ticks[p.url];
+      save(STATE_KEY, ticks);
+      refresh();
+    });
+    return [cb, st.changed ? el('span', {class: 'why', title: 'changed since you ticked it'}, st.why.join(', ')) : null];
+  }},
+  {id: 'repo', name: 'Repo', sort: p => p.repo.toLowerCase(), cell: p => el('a', {href: 'https://github.com/' + p.repo + '/pulls'}, p.repo)},
+  {id: 'number', name: '#', num: true, sort: p => p.number, cell: p => el('a', {href: p.url}, '#' + p.number)},
+  {id: 'title', name: 'Title', sort: p => p.title.toLowerCase(), cell: p => [
+    p.draft ? badge('draft', '') : null, p.draft ? ' ' : null,
+    el('a', {href: p.url}, p.title),
+    p.labels.length ? el('div', {class: 'labels'}, p.labels.map(l => el('span', {class: 'label'}, l))) : null,
+    p.author.toLowerCase() !== ME ? el('div', {class: 'sub'}, 'by ' + p.author) : null,
+  ]},
+  {id: 'ci', name: 'CI', sort: p => (CI[p.ci] || CI.NONE)[2], cell: p => {
+    const c = CI[p.ci] || [p.ci, '', 2];
+    return el('a', {href: p.url + '/checks'}, badge(c[0], c[1]));
+  }},
+  {id: 'merge', name: 'Merge', sort: p => (MERGE[p.mergeable] || MERGE.UNKNOWN)[2], cell: p => {
+    const m = MERGE[p.mergeable] || MERGE.UNKNOWN;
+    return badge(m[0], m[1]);
+  }},
+  {id: 'review', name: 'Review', sort: p => (REVIEW[p.review] || REVIEW[''])[2], cell: p => {
+    const r = REVIEW[p.review] || [p.review, '', 2];
+    const tip = [p.approved_by.length ? 'approved: ' + p.approved_by.join(', ') : '',
+                 p.requested.length ? 'requested: ' + p.requested.join(', ') : ''].filter(Boolean).join('\n');
+    return [badge(r[0], r[1], tip || null),
+            p.approved_by.length ? el('div', {class: 'sub'}, '✔ ' + p.approved_by.join(', ')) : null,
+            p.requested.length ? el('div', {class: 'sub'}, 'waiting: ' + p.requested.join(', ')) : null];
+  }},
+  {id: 'apreview', name: 'APReview', sort: p => (APR[p.apreview.status] || APR[''])[2], cell: p => {
+    const a = p.apreview, r = APR[a.status] || [a.status.toLowerCase(), '', 2];
+    if (!a.status) return badge(r[0], r[1]);
+    return [el('a', {href: a.url, title: 'APReview ' + ago(a.at)}, badge(r[0], r[1])),
+            a.head_stale ? el('div', {class: 'sub', title: 'the AP-Review comment reviewed an older head commit'}, 'older head') : null];
+  }},
+  {id: 'changes', name: 'Changes req.', sort: p => -p.changes_by.length,
+   cell: p => p.changes_by.length ? badge(p.changes_by.join(', '), 'bad') : ''},
+  {id: 'comments', name: 'Comments', num: true, sort: p => p.ncomments, cell: p => String(p.ncomments)},
+  {id: 'new', name: 'New', num: true, title: 'Comments/reviews by others since you ticked it (or since your last activity)',
+   sort: p => newEvents(p).length, cell: p => {
+    const n = newEvents(p);
+    if (!n.length) return '';
+    const tip = n.slice(0, 15).map(e => e[1] + ': ' + e[2] + ' (' + ago(e[0]) + ')').join('\n');
+    return badge(String(n.length), 'info', tip);
+  }},
+  {id: 'last', name: 'Last from others', sort: p => p.events.length ? p.events[0][0] : '', cell: p => {
+    if (!p.events.length) return '';
+    const e = p.events[0];
+    return [e[1], el('div', {class: 'sub', title: e[0]}, e[2] + ', ' + ago(e[0]))];
+  }},
+  {id: 'updated', name: 'Updated', sort: p => p.updated, cell: p => el('span', {title: p.updated}, ago(p.updated))},
+  {id: 'created', name: 'Created', sort: p => p.created, cell: p => el('span', {title: p.created}, ago(p.created))},
+];
+
+const heads = document.getElementById('heads');
+const tbody = document.getElementById('rows');
+const search = document.getElementById('search');
+const hideDone = document.getElementById('hidedone');
+
+for (const c of COLS) {
+  const th = el('th', {class: c.num ? 'num' : null, title: c.title || null, scope: 'col'}, c.name);
+  th.dataset.col = c.id;
+  th.addEventListener('click', () => {
+    if (prefs.sort === c.id) prefs.dir = -prefs.dir;
+    else { prefs.sort = c.id; prefs.dir = (c.id === 'repo' || c.id === 'title') ? 1 : -1; }
+    save(PREF_KEY, prefs);
+    refresh();
+  });
+  heads.append(th);
+}
+
+function haystack(p) {
+  return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
+          p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
+          p.ci, p.review, p.draft ? 'draft' : '', p.apreview.status ? 'apreview ' + p.apreview.status : ''].join(' ').toLowerCase();
+}
+const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));
+
+function cmp(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+
+function refresh() {
+  const col = COLS.find(c => c.id === prefs.sort) || COLS.find(c => c.id === 'updated');
+  for (const th of heads.children)
+    th.setAttribute('aria-sort', th.dataset.col === col.id ? (prefs.dir > 0 ? 'ascending' : 'descending') : 'none');
+  const terms = prefs.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = DATA.prs
+    .filter(p => terms.every(t => HAY.get(p.url).includes(t)))
+    .filter(p => !(prefs.hideDone && tickState(p).done))
+    .sort((a, b) => prefs.dir * cmp(col.sort(a), col.sort(b)) || cmp(b.updated, a.updated));
+  tbody.replaceChildren(...rows.map(p => {
+    const st = tickState(p);
+    const tr = el('tr', {class: [st.done ? 'done' : '', st.changed ? 'changed' : ''].join(' ').trim() || null});
+    for (const c of COLS) tr.append(el('td', {class: 'c-' + c.id + (c.num ? ' num' : '')}, c.cell(p)));
+    return tr;
+  }));
+  document.getElementById('empty').hidden = rows.length > 0;
+  const todo = DATA.prs.filter(p => !tickState(p).done).length;
+  document.getElementById('counts').textContent =
+    rows.length + ' shown · ' + DATA.prs.length + ' open · ' + todo + ' to look at';
+}
+
+function showGenerated() {
+  const age = (Date.now() - Date.parse(DATA.generated)) / 60000;
+  const g = document.getElementById('gen');
+  g.textContent = 'updated ' + ago(DATA.generated);
+  g.title = DATA.generated;
+  g.className = 'meta' + (age > DATA.stale_minutes ? ' stale' : '');
+  if (age > DATA.stale_minutes) g.textContent += ' — cron job may not be running';
+}
+
+search.value = prefs.q;
+hideDone.checked = prefs.hideDone;
+search.addEventListener('input', () => { prefs.q = search.value; save(PREF_KEY, prefs); refresh(); });
+hideDone.addEventListener('change', () => { prefs.hideDone = hideDone.checked; save(PREF_KEY, prefs); refresh(); });
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== search) { e.preventDefault(); search.focus(); search.select(); }
+  else if (e.key === 'Escape' && document.activeElement === search) { search.value = ''; search.dispatchEvent(new Event('input')); }
+});
+
+function fitHeader() {
+  document.documentElement.style.setProperty('--head-h', document.querySelector('header').offsetHeight + 'px');
+}
+window.addEventListener('resize', fitHeader);
+fitHeader();
+refresh();
+showGenerated();
+setInterval(showGenerated, 60000);
+// pick up the next cron run; search, sort and ticks live in localStorage
+function reloadLater(ms) {
+  setTimeout(() => document.activeElement === search ? reloadLater(30000) : location.reload(), ms);
+}
+if (DATA.refresh_seconds > 0) reloadLater(DATA.refresh_seconds * 1000);
+})();
+</script>
+</body>
+</html>

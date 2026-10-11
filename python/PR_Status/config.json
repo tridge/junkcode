@@ -1,0 +1,34 @@
+{
+    "github_user": "tridge",
+    "searches": [
+        "author:{user}"
+    ],
+    "include_repos": [],
+    "exclude_repos": [],
+    "ignore_users": [
+        "github-actions",
+        "dependabot",
+        "codecov",
+        "copilot-pull-request-reviewer"
+    ],
+    "ignore_bots": true,
+    "reset_on": [
+        "activity",
+        "ci_failure",
+        "review_decision",
+        "conflict",
+        "apreview"
+    ],
+    "output": "~/junkcode/python/PR_Status/pr_status.html",
+    "title": "tridge PR Status",
+    "refresh_seconds": 300,
+    "stale_minutes": 60,
+    "token_file": "",
+    "page_size": 25,
+    "apreview": {
+        "user": "AP-Review",
+        "project_owner": "ArduPilot",
+        "project_number": 33,
+        "field": "Result"
+    }
+}
