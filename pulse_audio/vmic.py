@@ -51,6 +51,9 @@ class AudioError(Exception):
     pass
 
 
+ERRORS = (AudioError, subprocess.TimeoutExpired, json.JSONDecodeError, OSError)
+
+
 def pactl(*args, check=True):
     r = subprocess.run(["pactl"] + [str(a) for a in args],
                        capture_output=True, text=True, timeout=10)
@@ -120,6 +123,25 @@ def duplex(profile):
     return profile.get("sinks", 0) > 0 and profile.get("sources", 0) > 0
 
 
+def bt_autoswitch():
+    r = subprocess.run(["wpctl", "settings", "bluetooth.autoswitch-to-headset-profile"],
+                       capture_output=True, text=True, timeout=10)
+    return r.returncode == 0 and "Value: true" in r.stdout
+
+
+def set_profile(mac, card_name, profile, timeout=5):
+    '''set a card profile and wait until it is active'''
+    if pactl("set-card-profile", card_name, profile, check=False).returncode != 0:
+        return False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        card = bt_card(mac)
+        if card is not None and card.get("active_profile") == profile:
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def resolve(spec):
     '''find real source and sink for an alias, switching bluetooth to a mic profile if needed.
     Returns (source, sink, restore) where restore undoes any profile change'''
@@ -132,7 +154,8 @@ def resolve(spec):
         raise AudioError("no bluetooth card for %s, is it connected?" % spec["bt"])
     profiles = card.get("profiles", {})
     active = card.get("active_profile")
-    if duplex(profiles.get(active, {})):
+    # with autoswitch wireplumber picks the headset profile while something records
+    if duplex(profiles.get(active, {})) or bt_autoswitch():
         return find_device("sources", spec), find_device("sinks", spec), restore
 
     candidates = sorted([p for p, v in profiles.items() if duplex(v) and v.get("available", True)],
@@ -142,19 +165,23 @@ def resolve(spec):
 
     def restore():
         print("Restoring %s profile %s" % (card["name"], active))
-        pactl("set-card-profile", card["name"], active, check=False)
+        if not set_profile(spec["bt"], card["name"], active):
+            print("WARNING: failed to restore %s profile %s" % (card["name"], active))
 
-    for profile in candidates:
-        print("Setting %s profile %s" % (card["name"], profile))
-        if pactl("set-card-profile", card["name"], profile, check=False).returncode != 0:
-            continue
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
+    try:
+        for profile in candidates:
+            print("Setting %s profile %s" % (card["name"], profile))
+            # the device proxies exist even without a mic profile, so check the card
+            if not set_profile(spec["bt"], card["name"], profile):
+                print("WARNING: profile %s did not activate" % profile)
+                continue
             source, sink = find_device("sources", spec), find_device("sinks", spec)
             if source and sink:
                 return source, sink, restore
-            time.sleep(0.2)
-        print("WARNING: profile %s gave no mic/speaker" % profile)
+            print("WARNING: profile %s gave no mic/speaker" % profile)
+    except Exception:
+        restore()
+        raise
     restore()
     raise AudioError("no working headset profile on %s" % card["name"])
 
@@ -230,26 +257,56 @@ def monitor_recordings():
             if names.get(s["source"], "").endswith(".monitor")}
 
 
+# recordings of monitors that were unlinked by recreating VSpeaker
+saved_monitors = {}
+
+
 def recreate_virtual(vname, master):
     '''slow path, used when a virtual device or its backend is missing'''
-    saved = monitor_recordings() if vname == VSINK else {}
+    if vname == VSINK:
+        saved_monitors.update({i: m for i, m in monitor_recordings().items()
+                               if m == VSINK + ".monitor"})
     for idx in our_modules(vname):
         pactl("unload-module", idx)
     load_virtual(vname, master)
-    # recordings of the old VSpeaker.monitor get unlinked, put them back
-    for idx, mon in saved.items():
-        if mon == VSINK + ".monitor":
-            pactl("move-source-output", idx, mon, check=False)
+    # put the recordings back on the new VSpeaker.monitor
+    deadline = time.monotonic() + 3
+    while saved_monitors and time.monotonic() < deadline:
+        current = monitor_recordings()
+        pending = [i for i, m in saved_monitors.items() if current.get(i) != m]
+        if not pending:
+            break
+        for idx in pending:
+            pactl("move-source-output", idx, saved_monitors[idx], check=False)
+        time.sleep(0.3)
+
+
+def set_target(stream, master, force=False):
+    '''target a stream by device name, unlike pactl move which stores a serial that
+    changes when a device reconnects'''
+    node = stream.get("properties", {}).get("object.id")
+    if node is None:
+        raise AudioError("no node id for %s" % stream_name(stream))
+    subprocess.run(["pw-metadata", "-d", node, "target.node"], capture_output=True, timeout=10)
+    if force:
+        # setting an unchanged value doesn't trigger a relink
+        subprocess.run(["pw-metadata", "-d", node, "target.object"], capture_output=True, timeout=10)
+    r = subprocess.run(["pw-metadata", node, "target.object", master, "Spa:String"],
+                       capture_output=True, text=True, timeout=10)
+    if r.returncode != 0:
+        raise AudioError("pw-metadata failed: %s" % r.stderr.strip())
 
 
 def retarget(vname, master, timeout=3):
     '''point a virtual device at a real device, verifying the move took effect'''
-    lkind, _, _, cmd, field = VIRT[vname]
+    lkind, _, _, _, field = VIRT[vname]
     if backend(vname) is None or device_index(lkind, vname) is None:
         print("%s missing, (re)loading it" % vname)
         recreate_virtual(vname, master)
+    # always set the target, to replace any serial based target from pactl move
+    set_target(backend(vname), master)
     deadline = time.monotonic() + timeout
-    last_move = 0
+    last_move = time.monotonic()
     while time.monotonic() < deadline:
         b = backend(vname)
         want = device_index(lkind, master)
@@ -257,9 +314,9 @@ def retarget(vname, master, timeout=3):
             raise AudioError("%s or %s disappeared" % (vname, master))
         if b[field] == want:
             return
-        # moves can report success but not happen, so re-issue periodically
+        # re-issue periodically until it takes effect
         if time.monotonic() - last_move > 0.5:
-            pactl(cmd, b["index"], master, check=False)
+            set_target(b, master, force=True)
             last_move = time.monotonic()
         time.sleep(0.1)
     raise AudioError("%s did not move to %s" % (vname, master))
@@ -278,6 +335,13 @@ def app_streams(skind):
             and "pulse.module.id" not in s.get("properties", {})]
 
 
+def monitor_recorder(s):
+    '''a recording of a monitor that is currently unlinked'''
+    p = s.get("properties", {})
+    return s["index"] in saved_monitors or p.get("stream.capture.sink") == "true" or \
+        str(p.get("target.object", "")).endswith(".monitor")
+
+
 def wrong_streams():
     '''app streams not on the virtual devices, as (vname, stream)'''
     sinks = {d["name"]: d["index"] for d in plist("sinks")}
@@ -286,7 +350,7 @@ def wrong_streams():
     for s in app_streams("source-outputs"):
         name = sources.get(s["source"], "")
         # leave apps recording a speaker monitor alone
-        if name != VSOURCE and not name.endswith(".monitor"):
+        if name != VSOURCE and not name.endswith(".monitor") and not monitor_recorder(s):
             ret.append((VSOURCE, s))
     return ret
 
@@ -316,9 +380,9 @@ def move_streams(timeout, verbose, settle=1.0):
         if wrong:
             quiet_since = now
         elif now - quiet_since >= settle:
-            break
+            return True
         if now - start > timeout:
-            break
+            return False
         for vname, s in wrong:
             key = (vname, s["index"])
             # give a successful move time to take effect before re-issuing it
@@ -373,6 +437,7 @@ def lock():
 def switch(dev, timeout, verbose):
     spec = DEVICES[dev]
     print("Using %s" % spec["desc"])
+    prev = {v: backend_target(v) for v in VIRT}
     source, sink, restore_profile = resolve(spec)
     if source is None or sink is None:
         restore_profile()
@@ -384,32 +449,35 @@ def switch(dev, timeout, verbose):
     print("SOURCE: %s  SINK: %s" % (source, sink))
 
     # retarget the existing virtual devices, so app streams stay connected
-    prev = {v: backend_target(v) for v in VIRT}
     try:
         retarget(VSOURCE, source)
         retarget(VSINK, sink)
-    except AudioError as e:
+        # new streams, and streams that follow the default, go to the virtual devices
+        pactl("set-default-sink", VSINK)
+        pactl("set-default-source", VSOURCE)
+    except ERRORS as e:
         print("ERROR: %s, rolling back" % e)
+        # profile first, as it may recreate the previous devices
+        restore_profile()
         for vname, master in prev.items():
             if master and not master.startswith("("):
                 try:
                     retarget(vname, master)
-                except AudioError as e2:
+                except ERRORS as e2:
                     print("ERROR: rollback of %s failed: %s" % (vname, e2))
-        restore_profile()
         return 1
 
-    # new streams, and streams that follow the default, go to the virtual devices
-    pactl("set-default-sink", VSINK)
-    pactl("set-default-source", VSOURCE)
-
-    move_streams(timeout, verbose)
+    settled = move_streams(timeout, verbose)
 
     pactl("set-source-volume", source, "100%")
     pactl("set-source-volume", VSOURCE, "100%")
 
     show_status()
-    if [s for v, s in wrong_streams() if not pinned(s)] or backend_target(VSOURCE) != source or backend_target(VSINK) != sink:
+    if not settled:
+        print("WARNING: streams did not settle within %.1fs" % timeout)
+        return 2
+    if backend_target(VSOURCE) != source or backend_target(VSINK) != sink:
+        print("WARNING: virtual devices not on the requested devices")
         return 2
     return 0
 
@@ -438,6 +506,6 @@ def main():
 if __name__ == '__main__':
     try:
         sys.exit(main())
-    except (AudioError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+    except ERRORS as e:
         print("ERROR: %s" % e)
         sys.exit(1)
