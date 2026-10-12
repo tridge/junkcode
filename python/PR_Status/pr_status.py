@@ -217,7 +217,10 @@ def apreview_status(cfg, pr, bodies):
 
     proj = None
     for item in (pr.get("projectItems") or {}).get("nodes", []):
-        owner = ((item["project"] or {}).get("owner") or {}).get("login", "")
+        # items in projects the token can't see come back as null, without an error
+        if not item or not item.get("project"):
+            continue
+        owner = (item["project"].get("owner") or {}).get("login", "")
         val = item.get("fieldValueByName")
         if item["project"]["number"] == ar["project_number"] and owner.lower() == ar["project_owner"].lower() and val:
             proj = {"status": norm(val["name"]), "at": val["updatedAt"]}
