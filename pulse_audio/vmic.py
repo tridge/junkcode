@@ -123,12 +123,6 @@ def duplex(profile):
     return profile.get("sinks", 0) > 0 and profile.get("sources", 0) > 0
 
 
-def bt_autoswitch():
-    r = subprocess.run(["wpctl", "settings", "bluetooth.autoswitch-to-headset-profile"],
-                       capture_output=True, text=True, timeout=10)
-    return r.returncode == 0 and "Value: true" in r.stdout
-
-
 def set_profile(mac, card_name, profile, timeout=5):
     '''set a card profile and wait until it is active'''
     if pactl("set-card-profile", card_name, profile, check=False).returncode != 0:
@@ -154,8 +148,8 @@ def resolve(spec):
         raise AudioError("no bluetooth card for %s, is it connected?" % spec["bt"])
     profiles = card.get("profiles", {})
     active = card.get("active_profile")
-    # with autoswitch wireplumber picks the headset profile while something records
-    if duplex(profiles.get(active, {})) or bt_autoswitch():
+    # don't rely on wireplumber autoswitch: it ignores VMic's loopback stream
+    if duplex(profiles.get(active, {})):
         return find_device("sources", spec), find_device("sinks", spec), restore
 
     candidates = sorted([p for p, v in profiles.items() if duplex(v) and v.get("available", True)],
