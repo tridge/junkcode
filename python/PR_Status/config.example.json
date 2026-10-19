@@ -1,5 +1,5 @@
 {
-    "github_user": "tridge",
+    "github_user": "",
     "searches": [
         "author:{user}"
     ],
@@ -16,19 +16,13 @@
         "activity",
         "ci_failure",
         "review_decision",
-        "conflict",
-        "apreview"
+        "conflict"
     ],
-    "output": "~/junkcode/python/PR_Status/pr_status.html",
-    "title": "tridge PR Status",
+    "output": "pr_status.html",
+    "title": "",
     "refresh_seconds": 300,
     "stale_minutes": 60,
     "token_file": "",
     "page_size": 25,
-    "apreview": {
-        "user": "AP-Review",
-        "project_owner": "ArduPilot",
-        "project_number": 33,
-        "field": "Result"
-    }
+    "apreview": null
 }

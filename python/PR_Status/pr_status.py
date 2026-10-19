@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Generate a static HTML status page for my open GitHub PRs.
+Generate a static HTML status page for your open GitHub PRs.
 
 Run from cron. "Dealt with" ticks are kept in the browser's localStorage,
 keyed on an activity fingerprint, so a tick clears itself when the PR
@@ -23,6 +23,8 @@ import urllib.request
 from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+USER_CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                           "pr_status", "config.json")
 
 DEFAULTS = {
     "github_user": "",
@@ -32,17 +34,17 @@ DEFAULTS = {
     "ignore_users": [],
     "ignore_bots": True,
     "reset_on": ["activity", "ci_failure", "review_decision", "conflict", "apreview"],
-    "output": os.path.join(SCRIPT_DIR, "pr_status.html"),
-    "title": "PR Status",
+    "output": "pr_status.html",
+    "title": "",
     "refresh_seconds": 300,
     "stale_minutes": 60,
     "token_file": "",
     "page_size": 25,
-    "apreview": {"user": "AP-Review", "project_owner": "ArduPilot", "project_number": 33, "field": "Result"},
+    "apreview": None,
 }
 
 QUERY = '''
-query($q: String!, $n: Int!, $after: String, $field: String!) {
+query($q: String!, $n: Int!, $after: String@@FIELDVAR@@) {
   rateLimit { cost remaining resetAt }
   search(query: $q, type: ISSUE, first: $n, after: $after) {
     issueCount
@@ -59,18 +61,24 @@ query($q: String!, $n: Int!, $after: String, $field: String!) {
           nodes { requestedReviewer { __typename ... on User { login } ... on Team { name } ... on Bot { login } } }
         }
         comments(last: 30) { totalCount nodes { id author { login __typename } createdAt } }
-        projectItems(first: 10) {
-          nodes {
-            project { number owner { ... on Organization { login } ... on User { login } } }
-            fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } }
-          }
-        }
+@@PROJECT@@
         reviews(last: 30) { totalCount nodes { author { login __typename } state submittedAt comments { totalCount } } }
       }
     }
   }
 }
 '''
+
+# needs the read:project token scope, so only asked for when an APReview project is configured
+PROJECT_QUERY = '''
+        projectItems(first: 10) {
+          nodes {
+            project { number owner { ... on Organization { login } ... on User { login } } }
+            fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } }
+          }
+        }'''
+
+VIEWER_QUERY = 'query { viewer { login } }'
 
 COMMENT_QUERY = '''
 query($ids: [ID!]!) {
@@ -87,13 +95,28 @@ def log(msg):
     print(msg, file=sys.stderr)
 
 
+def find_config(path):
+    if path:
+        return path
+    for p in (os.environ.get("PR_STATUS_CONFIG"), USER_CONFIG, os.path.join(SCRIPT_DIR, "config.json")):
+        if p and os.path.exists(p):
+            return p
+    raise SystemExit(f"no config found: run '{sys.argv[0]} --init' to create {USER_CONFIG}")
+
+
 def load_config(path):
     with open(path) as f:
         cfg = dict(DEFAULTS, **json.load(f))
-    if not cfg["github_user"]:
-        raise SystemExit("config: github_user must be set")
-    cfg["output"] = os.path.expanduser(cfg["output"])
-    cfg["token_file"] = os.path.expanduser(cfg["token_file"])
+    # relative paths are relative to the config file
+    base = os.path.dirname(os.path.abspath(path))
+    for k in ("output", "token_file"):
+        if cfg[k]:
+            cfg[k] = os.path.join(base, os.path.expanduser(cfg[k]))
+    ar = cfg["apreview"]
+    if ar:
+        ar.setdefault("user", "")
+        ar.setdefault("field", "Result")
+        ar["project"] = bool(ar.get("project_owner") and ar.get("project_number"))
     return cfg
 
 
@@ -111,7 +134,7 @@ def get_token(cfg):
         raise SystemExit(f"no GitHub token: set GH_TOKEN, token_file, or log in with gh ({e})")
 
 
-def graphql(token, variables, query=QUERY):
+def graphql(token, variables, query):
     body = json.dumps({"query": query, "variables": variables}).encode()
     for attempt in range(4):
         req = urllib.request.Request("https://api.github.com/graphql", data=body, headers={
@@ -136,14 +159,24 @@ def graphql(token, variables, query=QUERY):
         return res["data"]
 
 
+def viewer_login(token):
+    return graphql(token, {}, VIEWER_QUERY)["viewer"]["login"]
+
+
 def fetch_prs(cfg, token):
+    ar = cfg["apreview"]
+    project = bool(ar and ar["project"])
+    query = QUERY.replace("@@FIELDVAR@@", ", $field: String!" if project else "")
+    query = query.replace("@@PROJECT@@", PROJECT_QUERY if project else "")
     prs = {}
     for search in cfg["searches"]:
         q = f"is:pr is:open archived:false sort:updated-desc {search.format(user=cfg['github_user'])}"
         after = None
         while True:
-            data = graphql(token, {"q": q, "n": cfg["page_size"], "after": after,
-                                   "field": cfg["apreview"]["field"]})
+            variables = {"q": q, "n": cfg["page_size"], "after": after}
+            if project:
+                variables["field"] = ar["field"]
+            data = graphql(token, variables, query)
             s = data["search"]
             for node in s["nodes"]:
                 if node and node.get("url"):
@@ -158,6 +191,8 @@ def fetch_prs(cfg, token):
 
 def fetch_apreview_comments(cfg, token, prs):
     '''bodies of the newest AP-Review comment on each PR, keyed by comment id'''
+    if not cfg["apreview"] or not cfg["apreview"]["user"]:
+        return {}
     bot = cfg["apreview"]["user"].lower()
     ids = []
     for pr in prs:
@@ -180,14 +215,14 @@ def apreview_status(cfg, pr, bodies):
         return re.sub(r'[\s_-]+', ' ', v).strip().upper()
 
     proj = None
-    for item in pr["projectItems"]["nodes"]:
+    for item in (pr.get("projectItems") or {}).get("nodes", []):
         owner = ((item["project"] or {}).get("owner") or {}).get("login", "")
         val = item.get("fieldValueByName")
         if item["project"]["number"] == ar["project_number"] and owner.lower() == ar["project_owner"].lower() and val:
             proj = {"status": norm(val["name"]), "at": val["updatedAt"]}
 
     com = None
-    mine = [c for c in pr["comments"]["nodes"] if ((c["author"] or {}).get("login") or "").lower() == bot]
+    mine = [c for c in pr["comments"]["nodes"] if bot and ((c["author"] or {}).get("login") or "").lower() == bot]
     if mine:
         c = max(mine, key=lambda c: c["createdAt"])
         body = bodies.get(c["id"], "")
@@ -204,10 +239,13 @@ def apreview_status(cfg, pr, bodies):
     best = proj if not com or (proj and proj["at"] > com["at"]) else com
     com = com or {}
     head = com.get("head", "")
+    url = com.get("url", "")
+    if not url and ar["project"]:
+        url = f"https://github.com/orgs/{ar['project_owner']}/projects/{ar['project_number']}"
     return {
         "status": best["status"],
         "at": best["at"],
-        "url": com.get("url") or f"https://github.com/orgs/{ar['project_owner']}/projects/{ar['project_number']}",
+        "url": url or pr["url"],
         "head_stale": bool(head) and not pr["headRefOid"].startswith(head),
     }
 
@@ -277,8 +315,8 @@ def summarise(cfg, pr, bodies):
         parts["review_decision"] = pr["reviewDecision"] or ""
     if "conflict" in reset_on:
         parts["conflict"] = pr["mergeable"] == "CONFLICTING"
-    apreview = apreview_status(cfg, pr, bodies)
-    if "apreview" in reset_on:
+    apreview = apreview_status(cfg, pr, bodies) if cfg["apreview"] else None
+    if "apreview" in reset_on and apreview:
         parts["apreview"] = apreview["status"]
     if "push" in reset_on:
         parts["push"] = pr["headRefOid"]
@@ -327,6 +365,7 @@ def render(cfg, prs):
     data = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "user": cfg["github_user"],
+        "apreview": bool(cfg["apreview"]),
         "refresh_seconds": cfg["refresh_seconds"],
         "stale_minutes": cfg["stale_minutes"],
         "prs": prs,
@@ -334,18 +373,39 @@ def render(cfg, prs):
     blob = json.dumps(data).replace("</", "<\\/")
     with open(os.path.join(SCRIPT_DIR, "template.html")) as f:
         tpl = f.read()
-    title = cfg["title"].replace("&", "&amp;").replace("<", "&lt;")
+    title = (cfg["title"] or f"{cfg['github_user']} PR Status").replace("&", "&amp;").replace("<", "&lt;")
     return tpl.replace("@@TITLE@@", title).replace("@@DATA@@", blob)
+
+
+def init_config(path, cfg):
+    '''write a starter config, filling in the token's login'''
+    path = path or USER_CONFIG
+    if os.path.exists(path):
+        raise SystemExit(f"{path} already exists")
+    user = viewer_login(get_token(cfg))
+    with open(os.path.join(SCRIPT_DIR, "config.example.json")) as f:
+        new = json.load(f)
+    new["github_user"] = user
+    new["output"] = os.path.join(os.path.dirname(os.path.abspath(path)), "pr_status.html")
+    write_atomic(path, json.dumps(new, indent=4) + "\n")
+    print(f"wrote {path} for {user}; the page will be {new['output']}")
+    print(f"cron: */15 * * * * {sys.executable} {os.path.abspath(__file__)}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
-    ap.add_argument("-c", "--config", default=os.path.join(SCRIPT_DIR, "config.json"))
+    ap.add_argument("-c", "--config",
+                    help=f"config file (default: $PR_STATUS_CONFIG, {USER_CONFIG}, or config.json next to the script)")
+    ap.add_argument("--init", action="store_true", help="create a starter config and exit")
     ap.add_argument("--json", help="also write the PR data to this file")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
+    if args.init:
+        init_config(args.config, dict(DEFAULTS))
+        return
+
+    cfg = load_config(find_config(args.config))
 
     # skip if the previous cron run is still going
     lock = open(cfg["output"] + ".lock", "w")
@@ -356,6 +416,8 @@ def main():
         return
 
     token = get_token(cfg)
+    if not cfg["github_user"]:
+        cfg["github_user"] = viewer_login(token)
     raw = fetch_prs(cfg, token)
     raw = [pr for pr in raw if repo_wanted(cfg, pr["repository"]["nameWithOwner"])]
     bodies = fetch_apreview_comments(cfg, token, raw)

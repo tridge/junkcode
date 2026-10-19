@@ -218,6 +218,8 @@ const COLS = [
   {id: 'created', name: 'Created', sort: p => p.created, cell: p => el('span', {title: p.created}, ago(p.created))},
 ];
 
+if (!DATA.apreview) COLS.splice(COLS.findIndex(c => c.id === 'apreview'), 1);
+
 const heads = document.getElementById('heads');
 const tbody = document.getElementById('rows');
 const search = document.getElementById('search');
@@ -238,7 +240,7 @@ for (const c of COLS) {
 function haystack(p) {
   return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
           p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
-          p.ci, p.review, p.draft ? 'draft' : '', p.apreview.status ? 'apreview ' + p.apreview.status : ''].join(' ').toLowerCase();
+          p.ci, p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : ''].join(' ').toLowerCase();
 }
 const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));
 
