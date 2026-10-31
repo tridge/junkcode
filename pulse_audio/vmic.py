@@ -10,8 +10,11 @@ the selected real devices. With no arguments shows the current mapping
 import argparse
 import fcntl
 import json
+import math
 import os
+import re
 import shlex
+import struct
 import subprocess
 import sys
 import time
@@ -54,7 +57,13 @@ class AudioError(Exception):
 ERRORS = (AudioError, subprocess.TimeoutExpired, json.JSONDecodeError, OSError)
 
 
+# pactl lists, valid until something changes or we wait for something to change
+cache = {}
+
+
 def pactl(*args, check=True):
+    if args[0] not in ("-f", "list"):
+        cache.clear()
     r = subprocess.run(["pactl"] + [str(a) for a in args],
                        capture_output=True, text=True, timeout=10)
     if check and r.returncode != 0:
@@ -63,7 +72,21 @@ def pactl(*args, check=True):
 
 
 def plist(kind):
-    return json.loads(pactl("-f", "json", "list", kind).stdout or "[]")
+    if kind not in cache:
+        cache[kind] = json.loads(pactl("-f", "json", "list", kind).stdout or "[]")
+    return cache[kind]
+
+
+def defaults():
+    '''(default sink, default source)'''
+    if "info" not in cache:
+        cache["info"] = json.loads(pactl("-f", "json", "info").stdout)
+    return cache["info"].get("default_sink_name"), cache["info"].get("default_source_name")
+
+
+def sleep(t):
+    cache.clear()
+    time.sleep(t)
 
 
 def norm(name):
@@ -132,7 +155,7 @@ def set_profile(mac, card_name, profile, timeout=5):
         card = bt_card(mac)
         if card is not None and card.get("active_profile") == profile:
             return True
-        time.sleep(0.2)
+        sleep(0.2)
     return False
 
 
@@ -239,7 +262,7 @@ def load_virtual(vname, master):
     while time.monotonic() < deadline:
         if backend(vname) is not None and device_index(VIRT[vname][0], vname) is not None:
             return idx
-        time.sleep(0.1)
+        sleep(0.1)
     pactl("unload-module", idx, check=False)
     raise AudioError("%s did not appear after loading" % vname)
 
@@ -272,12 +295,13 @@ def recreate_virtual(vname, master):
             break
         for idx in pending:
             pactl("move-source-output", idx, saved_monitors[idx], check=False)
-        time.sleep(0.3)
+        sleep(0.3)
 
 
 def set_target(stream, master, force=False):
     '''target a stream by device name, unlike pactl move which stores a serial that
     changes when a device reconnects'''
+    cache.clear()
     node = stream.get("properties", {}).get("object.id")
     if node is None:
         raise AudioError("no node id for %s" % stream_name(stream))
@@ -291,9 +315,28 @@ def set_target(stream, master, force=False):
         raise AudioError("pw-metadata failed: %s" % r.stderr.strip())
 
 
-def retarget(vname, master, timeout=3):
-    '''point a virtual device at a real device, verifying the move took effect'''
+def node_metadata(node):
+    '''default metadata of a node, as {key: value}'''
+    r = subprocess.run(["pw-metadata", str(node)], capture_output=True, text=True, timeout=10)
+    return dict(re.findall(r"key:'([^']*)' value:'([^']*)'", r.stdout))
+
+
+def in_place(vname, master):
+    '''virtual device already linked to master and targeting it by name'''
     lkind, _, _, _, field = VIRT[vname]
+    b = backend(vname)
+    if b is None or device_index(lkind, vname) is None or b[field] != device_index(lkind, master):
+        return False
+    meta = node_metadata(b.get("properties", {}).get("object.id"))
+    return meta.get("target.object") == master and "target.node" not in meta
+
+
+def retarget(vname, master, timeout=3):
+    '''point a virtual device at a real device, verifying the move took effect.
+    Returns False if it was already there'''
+    lkind, _, _, _, field = VIRT[vname]
+    if in_place(vname, master):
+        return False
     if backend(vname) is None or device_index(lkind, vname) is None:
         print("%s missing, (re)loading it" % vname)
         recreate_virtual(vname, master)
@@ -307,12 +350,12 @@ def retarget(vname, master, timeout=3):
         if b is None or want is None:
             raise AudioError("%s or %s disappeared" % (vname, master))
         if b[field] == want:
-            return
+            return True
         # re-issue periodically until it takes effect
         if time.monotonic() - last_move > 0.5:
             set_target(b, master, force=True)
             last_move = time.monotonic()
-        time.sleep(0.1)
+        sleep(0.1)
     raise AudioError("%s did not move to %s" % (vname, master))
 
 
@@ -360,9 +403,10 @@ def pinned(s):
     return peak_meter(s) or p.get("node.dont-move") == "true" or p.get("node.dont-reconnect") == "true"
 
 
-def move_streams(timeout, verbose, settle=1.0):
+def move_streams(timeout, verbose, settle):
     '''move app streams until nothing has needed moving for settle seconds, as apps
     may recreate streams after a device change'''
+    cache.clear()
     last_ok = {}
     reported = set()
     start = time.monotonic()
@@ -385,13 +429,31 @@ def move_streams(timeout, verbose, settle=1.0):
             r = pactl(VIRT[vname][3], s["index"], vname, check=False)
             if r.returncode == 0:
                 last_ok[key] = now
+                # the app may recreate its stream after the move
+                settle = max(settle, 0.3)
                 if verbose:
                     print("  [%u] moved %s to %s" % (rnd, stream_name(s), vname))
             elif verbose and key not in reported:
                 reported.add(key)
                 print("  [%u] move %s failed: %s" % (rnd, stream_name(s), r.stderr.strip()))
-        time.sleep(0.2)
+        sleep(0.2)
         rnd += 1
+
+
+def device_desc(lkind, name):
+    aliases = aliases_for(lkind, name)
+    return "%s (%s)" % (name, ",".join(aliases) if aliases else "no alias")
+
+
+def stream_device(vname, s):
+    '''description of the device a stream is currently on'''
+    lkind, _, _, _, field = VIRT[vname]
+    if s[field] == UNLINKED:
+        return "(unlinked)"
+    names = {d["index"]: d["name"] for d in plist(lkind)}
+    if s[field] not in names:
+        return "(unknown #%s)" % s[field]
+    return device_desc(lkind, names[s[field]])
 
 
 def show_status():
@@ -401,10 +463,8 @@ def show_status():
         if target is None:
             print("%-9s not loaded" % (vname + ":"))
             continue
-        aliases = aliases_for(lkind, target)
-        print("%-9s %s (%s)" % (vname + ":", target, ",".join(aliases) if aliases else "no alias"))
-    dsink = pactl("get-default-sink").stdout.strip()
-    dsource = pactl("get-default-source").stdout.strip()
+        print("%-9s %s" % (vname + ":", device_desc(lkind, target)))
+    dsink, dsource = defaults()
     if dsink != VSINK or dsource != VSOURCE:
         print("WARNING: defaults are sink=%s source=%s" % (dsink, dsource))
     wrong = [(v, s) for v, s in wrong_streams() if not peak_meter(s)]
@@ -412,6 +472,7 @@ def show_status():
         print("Streams not on virtual devices:")
         for vname, s in wrong:
             print("  %s%s" % (stream_name(s), " (pinned)" if pinned(s) else ""))
+            print("    on %s" % stream_device(vname, s))
 
 
 def lock():
@@ -426,6 +487,43 @@ def lock():
             if time.monotonic() > deadline:
                 raise AudioError("another vmic is running")
             time.sleep(0.1)
+
+
+def ensure_volume(kind, name, minimum, force=False):
+    '''unmute and raise volume to at least minimum percent, or exactly if force.
+    Failure only warns, as the switch itself has worked'''
+    try:
+        devs = [d for d in plist(kind + "s") if d["name"] == name]
+        if not devs:
+            print("WARNING: no %s %s to set volume on" % (kind, name))
+            return
+        d = devs[0]
+        if d["mute"]:
+            print("Unmuting %s" % name)
+            pactl("set-%s-mute" % kind, name, "0")
+        vols = [c["value"] for c in d["volume"].values()]
+        target = minimum * 65536 // 100
+        if (force and any(v != target for v in vols)) or min(vols) < target:
+            print("Setting %s volume to %u%%" % (name, minimum))
+            pactl("set-%s-volume" % kind, name, "%u%%" % minimum)
+    except ERRORS as e:
+        print("WARNING: volume of %s: %s" % (name, e))
+
+
+def beep(freq=2000, duration=0.12, rate=48000, level=0.15):
+    '''short tone on VSpeaker to confirm the switch, without waiting for it to play'''
+    n = int(rate * duration)
+    ramp = rate // 200
+    samples = (int(32767 * level * min(1, i / ramp, (n - i) / ramp) *
+                   math.sin(2 * math.pi * freq * i / rate)) for i in range(n))
+    data = struct.pack("<%uh" % n, *samples)
+    try:
+        p = subprocess.Popen(["pacat", "--raw", "--device", VSINK, "--format=s16le",
+                              "--rate=%u" % rate, "--channels=1"], stdin=subprocess.PIPE)
+        p.stdin.write(data)
+        p.stdin.close()
+    except ERRORS as e:
+        print("WARNING: beep failed: %s" % e)
 
 
 def switch(dev, timeout, verbose):
@@ -444,11 +542,12 @@ def switch(dev, timeout, verbose):
 
     # retarget the existing virtual devices, so app streams stay connected
     try:
-        retarget(VSOURCE, source)
-        retarget(VSINK, sink)
+        changed = retarget(VSOURCE, source)
+        changed = retarget(VSINK, sink) or changed
         # new streams, and streams that follow the default, go to the virtual devices
-        pactl("set-default-sink", VSINK)
-        pactl("set-default-source", VSOURCE)
+        if defaults() != (VSINK, VSOURCE):
+            pactl("set-default-sink", VSINK)
+            pactl("set-default-source", VSOURCE)
     except ERRORS as e:
         print("ERROR: %s, rolling back" % e)
         # profile first, as it may recreate the previous devices
@@ -461,10 +560,15 @@ def switch(dev, timeout, verbose):
                     print("ERROR: rollback of %s failed: %s" % (vname, e2))
         return 1
 
-    settled = move_streams(timeout, verbose)
+    # a hotkey switch should never leave us silent
+    ensure_volume("source", source, 100, force=True)
+    ensure_volume("sink", sink, 100, force=True)
+    ensure_volume("source", VSOURCE, 100)
+    ensure_volume("sink", VSINK, 50)
+    beep()
 
-    pactl("set-source-volume", source, "100%")
-    pactl("set-source-volume", VSOURCE, "100%")
+    # apps may recreate streams after a device change, otherwise one pass is enough
+    settled = move_streams(timeout, verbose, settle=0.3 if changed else 0)
 
     show_status()
     if not settled:
