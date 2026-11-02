@@ -23,7 +23,8 @@ VSINK = "VSpeaker"
 VSOURCE = "VMic"
 UNLINKED = 0xFFFFFFFF
 
-# alsa devices are matched by name prefix, bluetooth by MAC
+# alsa devices are matched by name prefix, bluetooth by MAC. hid is a USB
+# telephony device set off-hook while selected, to keep a wireless headset on
 DEVICES = {
     "DESKTOP": dict(desc="DESKTOP",
                     source="alsa_input.usb-046d_HD_Pro_Webcam_C920",
@@ -31,7 +32,8 @@ DEVICES = {
                     sink="alsa_output.pci-0000_80_1f.3-platform-sof_sdw.HiFi__HDMI"),
     "HEADSET": dict(desc="HEADSET",
                     source="alsa_input.usb-GN_Netcom_A_S_Jabra",
-                    sink="alsa_output.usb-GN_Netcom_A_S_Jabra"),
+                    sink="alsa_output.usb-GN_Netcom_A_S_Jabra",
+                    hid="0B0E:1016"),
     "MS": dict(desc="MS HEADSET",
                source="alsa_input.usb-Microsoft_Microsoft_USB_Link",
                sink="alsa_output.usb-Microsoft_Microsoft_USB_Link"),
@@ -526,6 +528,32 @@ def beep(freq=2000, duration=0.12, rate=48000, level=0.15):
         print("WARNING: beep failed: %s" % e)
 
 
+def set_hook(hid, off_hook):
+    '''off-hook opens the radio link to the headset and holds it open, even in
+    its cradle, until set back on-hook'''
+    vid, pid = hid.upper().split(":")
+    want = "HID_ID=0003:0000%s:0000%s" % (vid, pid)
+    for h in sorted(os.listdir("/sys/class/hidraw")):
+        try:
+            with open("/sys/class/hidraw/%s/device/uevent" % h) as f:
+                if want not in f.read().split():
+                    continue
+            # output report 2: bit 0 is off-hook
+            fd = os.open("/dev/" + h, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(fd, bytes([2, int(off_hook), 0]))
+            finally:
+                os.close(fd)
+            print("Set %s %s" % (h, "off-hook" if off_hook else "on-hook"))
+            return
+        except OSError as e:
+            print("WARNING: hook on %s failed: %s" % (h, e))
+            return
+    # not plugged in only matters if we wanted it
+    if off_hook:
+        print("WARNING: no hidraw device for %s" % hid)
+
+
 def switch(dev, timeout, verbose):
     spec = DEVICES[dev]
     print("Using %s" % spec["desc"])
@@ -539,6 +567,8 @@ def switch(dev, timeout, verbose):
             print("ERROR: no sink for %s" % dev)
         return 1
     print("SOURCE: %s  SINK: %s" % (source, sink))
+    if "hid" in spec:
+        set_hook(spec["hid"], True)
 
     # retarget the existing virtual devices, so app streams stay connected
     try:
@@ -559,6 +589,10 @@ def switch(dev, timeout, verbose):
                 except ERRORS as e2:
                     print("ERROR: rollback of %s failed: %s" % (vname, e2))
         return 1
+
+    # release headsets we switched away from, so their cradle turns them off
+    for hid in set(d["hid"] for d in DEVICES.values() if "hid" in d) - {spec.get("hid")}:
+        set_hook(hid, False)
 
     # a hotkey switch should never leave us silent
     ensure_volume("source", source, 100, force=True)
