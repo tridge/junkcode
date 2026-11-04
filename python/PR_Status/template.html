@@ -51,6 +51,8 @@ td.c-repo, td.c-time, td.c-pr { white-space: nowrap; }
 td.c-title { min-width: 280px; max-width: 560px; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
+.branch-ci { margin-top: 3px; }
+.branch-ci .badge { font-size: 11px; font-weight: 500; padding: 0 5px; }
 .badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-weight: 600;
   white-space: nowrap; background: var(--none-bg); color: var(--muted); }
 .ok { background: var(--ok-bg); color: var(--ok); }
@@ -102,8 +104,17 @@ function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch 
 const PRUNE_MS = 7 * 86400 * 1000;
 const ticks = load(STATE_KEY, {});
 const urls = new Set(DATA.prs.map(p => p.url));
+const BY_URL = new Map(DATA.prs.map(p => [p.url, p]));
 for (const [u, t] of Object.entries(ticks)) {
-  if (urls.has(u)) delete t.gone;
+  const p = BY_URL.get(u);
+  if (p) {
+    delete t.gone;
+    // a part the tick has no value for (a newly enabled reset_on option, or one
+    // that couldn't be fetched when ticked) takes the current value as its baseline
+    t.parts = t.parts || {};
+    for (const [k, v] of Object.entries(p.parts))
+      if ((t.parts[k] === undefined || t.parts[k] === null) && v !== null) t.parts[k] = v;
+  }
   else if (!t.gone) t.gone = DATA.generated;
   else if (Date.parse(DATA.generated) - Date.parse(t.gone) > PRUNE_MS) delete ticks[u];
 }
@@ -148,7 +159,7 @@ const MERGE = {CONFLICTING: ['conflict', 'bad', 0], MERGEABLE: ['ok', 'ok', 2], 
 const WHY = {
   activity: 'new activity', ci_failure: 'CI changed', ci: 'CI changed',
   review_decision: 'review changed', apreview: 'APReview changed', conflict: 'conflict changed', push: 'new push',
-  devcall: 'dev call changed',
+  devcall: 'dev call changed', branch_ci: 'fork CI changed', branch_ci_failure: 'fork CI changed',
 };
 
 function tickState(p) {
@@ -193,7 +204,10 @@ const COLS = [
   ]},
   {id: 'ci', name: 'CI', sort: p => (CI[p.ci] || CI.NONE)[2], cell: p => {
     const c = CI[p.ci] || [p.ci, '', 2];
-    return el('a', {href: p.url + '/checks'}, badge(c[0], c[1]));
+    const b = p.branch_ci ? CI[p.branch_ci] || [p.branch_ci, '', 2] : null;
+    return [el('a', {href: p.url + '/checks'}, badge(c[0], c[1])),
+            b ? el('div', {class: 'branch-ci'}, el('a', {href: p.branch_url, title: 'CI on the branch in ' + p.head_repo},
+                                                          badge('fork: ' + b[0], b[1]))) : null];
   }},
   {id: 'merge', name: 'Merge', sort: p => (MERGE[p.mergeable] || MERGE.UNKNOWN)[2], cell: p => {
     const m = MERGE[p.mergeable] || MERGE.UNKNOWN;
@@ -254,7 +268,7 @@ for (const c of COLS) {
 function haystack(p) {
   return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
           p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
-          p.ci, p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : '',
+          p.ci, p.branch_ci ? 'fork ' + p.branch_ci : '', p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : '',
           p.devcall ? DATA.devcall.label : ''].join(' ').toLowerCase();
 }
 const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));

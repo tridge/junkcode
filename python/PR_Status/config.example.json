@@ -15,6 +15,7 @@
     "reset_on": [
         "activity",
         "ci_failure",
+        "branch_ci_failure",
         "review_decision",
         "conflict"
     ],

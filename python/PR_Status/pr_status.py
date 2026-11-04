@@ -33,7 +33,7 @@ DEFAULTS = {
     "exclude_repos": [],
     "ignore_users": [],
     "ignore_bots": True,
-    "reset_on": ["activity", "ci_failure", "review_decision", "conflict", "apreview"],
+    "reset_on": ["activity", "ci_failure", "branch_ci_failure", "review_decision", "conflict", "apreview"],
     "output": "pr_status.html",
     "title": "",
     "refresh_seconds": 300,
@@ -49,6 +49,8 @@ PR_FIELDS = '''
 fragment pr on PullRequest {
         id number title url state isDraft createdAt updatedAt mergeable reviewDecision headRefOid
         repository { nameWithOwner isArchived }
+        isCrossRepository headRefName headRepository { nameWithOwner }
+        headRef { target { ... on Commit { statusCheckRollup { state } } } }
         author { login }
         labels(first: 10) { nodes { name } }
         commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
@@ -387,6 +389,12 @@ def summarise(cfg, pr, bodies, devcall):
     if commit.get("committedDate"):
         my_times.append(commit["committedDate"])
     ci = (commit.get("statusCheckRollup") or {}).get("state") or "NONE"
+    # CI that ran in the head repo itself, e.g. on push to a fork; None when the
+    # branch is in the PR's own repo, the fork or branch is gone, or no CI ran there
+    head_repo = (pr["headRepository"] or {}).get("nameWithOwner", "")
+    branch_ci = None
+    if pr["isCrossRepository"] and head_repo and pr["headRef"]:
+        branch_ci = ((pr["headRef"]["target"] or {}).get("statusCheckRollup") or {}).get("state")
 
     latest = pr["latestReviews"]["nodes"]
     changes_by = sorted(who(r["author"]) for r in latest if r["state"] == "CHANGES_REQUESTED")
@@ -405,6 +413,10 @@ def summarise(cfg, pr, bodies, devcall):
         parts["ci_failure"] = ci in ("FAILURE", "ERROR")
     if "ci" in reset_on:
         parts["ci"] = ci
+    if "branch_ci_failure" in reset_on:
+        parts["branch_ci_failure"] = None if branch_ci is None else branch_ci in ("FAILURE", "ERROR")
+    if "branch_ci" in reset_on:
+        parts["branch_ci"] = branch_ci
     if "review_decision" in reset_on:
         parts["review_decision"] = pr["reviewDecision"] or ""
     if "conflict" in reset_on:
@@ -431,6 +443,10 @@ def summarise(cfg, pr, bodies, devcall):
         "created": pr["createdAt"],
         "updated": pr["updatedAt"],
         "ci": ci,
+        "branch_ci": branch_ci,
+        "head_repo": head_repo,
+        "branch_url": (f"https://github.com/{head_repo}/actions?query="
+                       + urllib.parse.quote(f"branch:{pr['headRefName']}", safe="")) if branch_ci else "",
         "mergeable": pr["mergeable"],
         "review": pr["reviewDecision"] or "",
         "changes_by": changes_by,
