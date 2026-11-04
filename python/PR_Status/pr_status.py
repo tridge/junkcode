@@ -3,14 +3,13 @@
 Generate a static HTML status page for your open GitHub PRs.
 
 Run from cron. "Dealt with" ticks are kept in the browser's localStorage,
-keyed on an activity fingerprint, so a tick clears itself when the PR
+along with an activity fingerprint, so a tick clears itself when the PR
 changes. Closed/merged PRs drop out because only open PRs are fetched.
 '''
 
 import argparse
 import fcntl
 import fnmatch
-import hashlib
 import json
 import os
 import re
@@ -19,6 +18,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -42,18 +42,13 @@ DEFAULTS = {
     "page_size": 25,
     "apreview": None,
     "ci_status": "",
+    "devcall": {},
 }
 
-QUERY = '''
-query($q: String!, $n: Int!, $after: String@@FIELDVAR@@) {
-  rateLimit { cost remaining resetAt }
-  search(query: $q, type: ISSUE, first: $n, after: $after) {
-    issueCount
-    pageInfo { hasNextPage endCursor }
-    nodes {
-      ... on PullRequest {
-        number title url isDraft createdAt updatedAt mergeable reviewDecision headRefOid
-        repository { nameWithOwner }
+PR_FIELDS = '''
+fragment pr on PullRequest {
+        id number title url state isDraft createdAt updatedAt mergeable reviewDecision headRefOid
+        repository { nameWithOwner isArchived }
         author { login }
         labels(first: 10) { nodes { name } }
         commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
@@ -64,9 +59,6 @@ query($q: String!, $n: Int!, $after: String@@FIELDVAR@@) {
         comments(last: 30) { totalCount nodes { id author { login __typename } createdAt } }
 @@PROJECT@@
         reviews(last: 30) { totalCount nodes { author { login __typename } state submittedAt comments { totalCount } } }
-      }
-    }
-  }
 }
 '''
 
@@ -81,6 +73,26 @@ PROJECT_QUERY = '''
 
 VIEWER_QUERY = 'query { viewer { login } }'
 
+QUERY = '''
+query($q: String!, $n: Int!, $after: String@@FIELDVAR@@) {
+  rateLimit { cost remaining resetAt }
+  search(query: $q, type: ISSUE, first: $n, after: $after) {
+    issueCount
+    pageInfo { hasNextPage endCursor }
+    nodes { ...pr }
+  }
+}
+''' + PR_FIELDS
+
+PR_NODES_QUERY = '''
+query($ids: [ID!]!@@FIELDVAR@@) {
+  nodes(ids: $ids) { ...pr }
+}
+''' + PR_FIELDS
+
+# a PR that search misses is still looked up directly for this long after search last found it
+KEEP_SECONDS = 2 * 86400
+
 COMMENT_QUERY = '''
 query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on IssueComment { id body } }
@@ -93,7 +105,7 @@ HEAD_RE = re.compile(r'Reviewed at head `([0-9a-f]+)`')
 
 
 def log(msg):
-    print(msg, file=sys.stderr)
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", file=sys.stderr)
 
 
 def find_config(path):
@@ -164,30 +176,77 @@ def viewer_login(token):
     return graphql(token, {}, VIEWER_QUERY)["viewer"]["login"]
 
 
-def fetch_prs(cfg, token):
+def pr_query(cfg, query, variables):
+    '''query and variables, with the project fields only when an APReview project is configured'''
     ar = cfg["apreview"]
     project = bool(ar and ar["project"])
-    query = QUERY.replace("@@FIELDVAR@@", ", $field: String!" if project else "")
+    query = query.replace("@@FIELDVAR@@", ", $field: String!" if project else "")
     query = query.replace("@@PROJECT@@", PROJECT_QUERY if project else "")
+    if project:
+        variables = dict(variables, field=ar["field"])
+    return variables, query
+
+
+def search(cfg, token, q):
+    found = {}
+    after = None
+    while True:
+        data = graphql(token, *pr_query(cfg, QUERY, {"q": q, "n": cfg["page_size"], "after": after}))
+        s = data["search"]
+        for node in s["nodes"]:
+            if node and node.get("url"):
+                found[node["url"]] = node
+        if not s["pageInfo"]["hasNextPage"]:
+            break
+        after = s["pageInfo"]["endCursor"]
+    if s["issueCount"] > 1000:
+        log(f"warning: '{q}' matches {s['issueCount']} PRs, search only returns 1000")
+    return found
+
+
+def known_path(cfg):
+    d, name = os.path.split(cfg["output"])
+    return os.path.join(d, f".{name}.known.json")
+
+
+def load_known(cfg):
+    '''url -> {"id", "found"} for the PRs on the last page written'''
+    try:
+        with open(known_path(cfg)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def fetch_prs(cfg, token, known):
+    '''open PRs, and the known dict to save once the page is written'''
     prs = {}
-    for search in cfg["searches"]:
-        q = f"is:pr is:open archived:false sort:updated-desc {search.format(user=cfg['github_user'])}"
-        after = None
-        while True:
-            variables = {"q": q, "n": cfg["page_size"], "after": after}
-            if project:
-                variables["field"] = ar["field"]
-            data = graphql(token, variables, query)
-            s = data["search"]
-            for node in s["nodes"]:
-                if node and node.get("url"):
-                    prs[node["url"]] = node
-            if not s["pageInfo"]["hasNextPage"]:
-                break
-            after = s["pageInfo"]["endCursor"]
-        if s["issueCount"] > 1000:
-            log(f"warning: '{q}' matches {s['issueCount']} PRs, search only returns 1000")
-    return list(prs.values())
+    for s in cfg["searches"]:
+        q = f"is:pr is:open archived:false sort:updated-desc {s.format(user=cfg['github_user'])}"
+        prs.update(search(cfg, token, q))
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    new_known = {u: {"id": pr["id"], "found": stamp} for u, pr in prs.items()}
+
+    # search sometimes comes back short or empty without an error, which would
+    # drop PRs from the page and lose their ticks, so look up the ones it
+    # missed directly and keep any that are still open
+    def recent(k):
+        found = datetime.strptime(k["found"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return (now - found).total_seconds() < KEEP_SECONDS
+    missed = {k["id"]: k for u, k in known.items() if u not in prs and recent(k)}
+    ids = list(missed)
+    kept = 0
+    for i in range(0, len(ids), cfg["page_size"]):
+        data = graphql(token, *pr_query(cfg, PR_NODES_QUERY, {"ids": ids[i:i+cfg["page_size"]]}))
+        for node in data["nodes"]:
+            if node and node.get("state") == "OPEN" and not node["repository"]["isArchived"]:
+                prs[node["url"]] = node
+                new_known[node["url"]] = missed[node["id"]]
+                kept += 1
+    if kept:
+        log(f"search missed {kept} open PRs, kept them from the last run")
+    return list(prs.values()), new_known
 
 
 def fetch_apreview_comments(cfg, token, prs):
@@ -206,6 +265,37 @@ def fetch_apreview_comments(cfg, token, prs):
             if node:
                 bodies[node["id"]] = node["body"]
     return bodies
+
+
+def fetch_devcall(cfg):
+    '''URLs of the items matching the devcall filter, or None if there's no answer'''
+    dc = cfg["devcall"] or {}
+    if not dc:
+        return None
+    url = (f"https://api.github.com/orgs/{dc['project_owner']}/projectsV2/{dc['project_number']}/items?"
+           + urllib.parse.urlencode({"q": dc["filter"], "per_page": 100}))
+    urls = set()
+    try:
+        while url:
+            # no token: a public project reads fine anonymously, while a token
+            # without org Projects access gets nothing back
+            req = urllib.request.Request(url, headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "pr_status.py",
+            })
+            with urllib.request.urlopen(req, timeout=30) as r:
+                items = json.load(r)
+                m = re.search(r'<([^>]+)>;\s*rel="next"', r.headers.get("Link", ""))
+            if not isinstance(items, list):
+                raise ValueError(f"unexpected reply: {str(items)[:200]}")
+            urls.update((i.get("content") or {}).get("html_url") for i in items)
+            url = m.group(1) if m else None
+    except (OSError, ValueError) as e:
+        # not fatal: the page is written without the marks
+        log(f"devcall lookup failed: {e}")
+        return None
+    urls.discard(None)
+    return urls
 
 
 def apreview_status(cfg, pr, bodies):
@@ -260,7 +350,7 @@ def repo_wanted(cfg, repo):
     return not any(fnmatch.fnmatch(repo, p) for p in cfg["exclude_repos"])
 
 
-def summarise(cfg, pr, bodies):
+def summarise(cfg, pr, bodies, devcall):
     me = cfg["github_user"].lower()
     ignored = {u.lower() for u in cfg["ignore_users"]}
 
@@ -318,13 +408,17 @@ def summarise(cfg, pr, bodies):
     if "review_decision" in reset_on:
         parts["review_decision"] = pr["reviewDecision"] or ""
     if "conflict" in reset_on:
-        parts["conflict"] = pr["mergeable"] == "CONFLICTING"
+        # GitHub reports UNKNOWN while it recomputes, e.g. after the base branch moves
+        parts["conflict"] = None if pr["mergeable"] == "UNKNOWN" else pr["mergeable"] == "CONFLICTING"
     apreview = apreview_status(cfg, pr, bodies) if cfg["apreview"] else None
     if "apreview" in reset_on and apreview:
         parts["apreview"] = apreview["status"]
     if "push" in reset_on:
         parts["push"] = pr["headRefOid"]
-    key = hashlib.sha1(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:16]
+    # None when the lookup failed; the page then neither keeps nor clears ticks on it
+    ready = None if devcall is None else pr["url"] in devcall
+    if "devcall" in reset_on:
+        parts["devcall"] = ready
 
     return {
         "url": pr["url"],
@@ -346,8 +440,8 @@ def summarise(cfg, pr, bodies):
         "events": events[:50],
         "my_last": max(my_times) if my_times else "",
         "apreview": apreview,
+        "devcall": ready,
         "parts": parts,
-        "key": key,
     }
 
 
@@ -365,7 +459,8 @@ def write_atomic(path, text):
         raise
 
 
-def render(cfg, prs):
+def render(cfg, prs, devcall):
+    dc = cfg["devcall"] or {}
     data = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "user": cfg["github_user"],
@@ -374,6 +469,11 @@ def render(cfg, prs):
         "stale_minutes": cfg["stale_minutes"],
         "ci_status": cfg["ci_status"],
         "prs": prs,
+        "devcall": {
+            "label": dc.get("label", "ReadyForDevCall"),
+            "url": f"https://github.com/orgs/{dc['project_owner']}/projects/{dc['project_number']}" if dc else "",
+            "failed": bool(dc) and devcall is None,
+        },
     }
     # no '<' at all, so nothing in the data can end or confuse the script element
     blob = json.dumps(data).replace("<", "\\u003c")
@@ -424,15 +524,19 @@ def main():
     token = get_token(cfg)
     if not cfg["github_user"]:
         cfg["github_user"] = viewer_login(token)
-    raw = fetch_prs(cfg, token)
+    raw, known = fetch_prs(cfg, token, load_known(cfg))
     raw = [pr for pr in raw if repo_wanted(cfg, pr["repository"]["nameWithOwner"])]
+    known = {u: k for u, k in known.items() if u in {pr["url"] for pr in raw}}
     bodies = fetch_apreview_comments(cfg, token, raw)
-    prs = [summarise(cfg, pr, bodies) for pr in raw]
-    write_atomic(cfg["output"], render(cfg, prs))
+    devcall = fetch_devcall(cfg)
+    prs = [summarise(cfg, pr, bodies, devcall) for pr in raw]
+    write_atomic(cfg["output"], render(cfg, prs, devcall))
+    write_atomic(known_path(cfg), json.dumps(known))
     if args.json:
         write_atomic(args.json, json.dumps(prs, indent=1))
     if args.verbose:
-        log(f"{len(prs)} PRs, {len(bodies)} AP-Review comments -> {cfg['output']}")
+        ndev = "off" if not cfg["devcall"] else "failed" if devcall is None else sum(1 for p in prs if p["devcall"])
+        log(f"{len(prs)} PRs, {len(bodies)} AP-Review comments, devcall {ndev} -> {cfg['output']}")
 
 
 if __name__ == "__main__":

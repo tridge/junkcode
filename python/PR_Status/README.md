@@ -17,7 +17,9 @@ Options: `-c CONFIG`, `--init`, `-v`, `--json FILE` to dump the data.
 
 The config is the first that exists of: `-c`, `$PR_STATUS_CONFIG`, `$XDG_CONFIG_HOME/pr_status/config.json` (default `~/.config/...`), then `config.json` next to the script. Relative `output` and `token_file` paths are relative to the config file. `config.example.json` lists every key.
 
-The script never changes the existing page if a fetch fails. It exits non-zero, so cron mails you the error.
+GitHub's search sometimes leaves PRs out without reporting an error. The script remembers the PRs on the last page (in `.<page name>.known.json` next to the page), and looks up any that search missed directly, so they don't drop off the page.
+
+The script never changes the existing page if a fetch fails (the `devcall` lookup is the one exception, see below). It exits non-zero, so cron mails you the error.
 
 ## Token
 
@@ -29,7 +31,7 @@ The script tries these in order: `$GH_TOKEN` / `$GITHUB_TOKEN`, then `token_file
 
 - **✓** marks a PR as dealt with. Ticks are stored in the browser's localStorage along with a fingerprint of the PR. When the fingerprint changes, the tick clears and the row gets an orange bar saying why.
 - **New** counts comments and reviews by others since you ticked the PR. For a PR you have never ticked, it counts since your own last comment, review or commit.
-- Closed and merged PRs disappear on the next run, and their ticks are pruned.
+- Closed and merged PRs disappear on the next run. Their ticks are pruned once the PR has been missing for a week, so a run that misses PRs by mistake doesn't lose ticks.
 - Click a column header to sort it. Type to search; all words must match. `/` focuses the search box and Esc clears it.
 - The page reloads itself every `refresh_seconds`. The "updated" time turns red after `stale_minutes`.
 
@@ -43,8 +45,9 @@ The script tries these in order: `$GH_TOKEN` / `$GITHUB_TOKEN`, then `token_file
 | `exclude_repos` | fnmatch patterns to drop. |
 | `ignore_users` | logins whose comments don't count as activity. |
 | `ignore_bots` | ignore GitHub App/bot accounts. |
-| `reset_on` | what clears a tick: `activity` (comment or review by others), `ci_failure` (CI enters or leaves failing), `ci` (any CI state change), `review_decision`, `conflict`, `apreview` (APReview verdict), `push` (new head commit) |
+| `reset_on` | what clears a tick: `activity` (comment or review by others), `ci_failure` (CI enters or leaves failing), `ci` (any CI state change), `review_decision`, `conflict` (ignored while GitHub reports the merge state as unknown), `apreview` (APReview verdict), `push` (new head commit), `devcall` (enters or leaves the `devcall` filter) |
 | `apreview` | optional; `null` hides the APReview column. Where the verdict comes from: the `field` single-select (default `Result`) on org project `project_owner`/`project_number`, and/or the `**Verdict: X**` line in the newest comment by `user`. When both exist, the newer one wins. ArduPilot uses `{"user": "AP-Review", "project_owner": "ArduPilot", "project_number": 33, "field": "Result"}`. |
+| `devcall` | adds a `label` tag, in front of the GitHub labels, to PRs that match `filter` (project board filter syntax, e.g. `"status:ReadyForDevCall is:open"`) on the public org project `project_owner`/`project_number`. It is read with an anonymous REST request, which needs no token. If the request fails, the page is still written without the tags, and the header says so. Leave it empty to turn it off. |
 | `output` | where the HTML page is written (default `pr_status.html` beside the config). |
 | `title` | page title (default "`<user>` PR Status"). |
 | `refresh_seconds`, `stale_minutes`, `token_file`, `page_size` | as named. If GitHub returns 502s, lower `page_size`. |

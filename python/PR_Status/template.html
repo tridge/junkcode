@@ -61,6 +61,7 @@ a:hover { text-decoration: underline; }
 .labels { margin-top: 2px; }
 .label { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
   padding: 0 5px; margin: 1px 4px 0 0; white-space: nowrap; }
+.label.info { border-color: transparent; text-decoration: none; }
 .why { display: block; color: var(--changed); font-size: 11px; white-space: nowrap; }
 input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
 #empty { padding: 24px; color: var(--muted); }
@@ -96,10 +97,16 @@ function load(k, dflt) {
 }
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 
-// ticks: url -> {key, parts, seen}; PRs no longer open are pruned
+// ticks: url -> {parts, seen, gone}. A PR missing from the data is only pruned
+// after a week, so a search that came back short doesn't lose its tick.
+const PRUNE_MS = 7 * 86400 * 1000;
 const ticks = load(STATE_KEY, {});
 const urls = new Set(DATA.prs.map(p => p.url));
-for (const u of Object.keys(ticks)) if (!urls.has(u)) delete ticks[u];
+for (const [u, t] of Object.entries(ticks)) {
+  if (urls.has(u)) delete t.gone;
+  else if (!t.gone) t.gone = DATA.generated;
+  else if (Date.parse(DATA.generated) - Date.parse(t.gone) > PRUNE_MS) delete ticks[u];
+}
 save(STATE_KEY, ticks);
 
 const prefs = Object.assign({sort: 'updated', dir: -1, q: '', hideDone: false}, load(PREF_KEY, {}));
@@ -141,13 +148,17 @@ const MERGE = {CONFLICTING: ['conflict', 'bad', 0], MERGEABLE: ['ok', 'ok', 2], 
 const WHY = {
   activity: 'new activity', ci_failure: 'CI changed', ci: 'CI changed',
   review_decision: 'review changed', apreview: 'APReview changed', conflict: 'conflict changed', push: 'new push',
+  devcall: 'dev call changed',
 };
 
 function tickState(p) {
   const t = ticks[p.url];
   if (!t) return {done: false, changed: false, why: []};
-  if (t.key === p.key) return {done: true, changed: false, why: []};
-  const why = Object.keys(p.parts).filter(k => JSON.stringify(p.parts[k]) !== JSON.stringify((t.parts || {})[k]));
+  const old = t.parts || {};
+  // null means that part couldn't be fetched, so it neither keeps nor clears the tick
+  const why = Object.keys(p.parts).filter(k => p.parts[k] !== null && old[k] !== null &&
+                                               JSON.stringify(p.parts[k]) !== JSON.stringify(old[k]));
+  if (!why.length) return {done: true, changed: false, why: []};
   return {done: false, changed: true, why: why.map(k => WHY[k] || k)};
 }
 // others' events since the tick, or since my own last activity if never ticked
@@ -163,7 +174,7 @@ const COLS = [
     const cb = el('input', {type: 'checkbox', 'aria-label': 'dealt with'});
     cb.checked = st.done;
     cb.addEventListener('change', () => {
-      if (cb.checked) ticks[p.url] = {key: p.key, parts: p.parts, seen: p.events.length ? p.events[0][0] : DATA.generated};
+      if (cb.checked) ticks[p.url] = {parts: p.parts, seen: p.events.length ? p.events[0][0] : DATA.generated};
       else delete ticks[p.url];
       save(STATE_KEY, ticks);
       refresh();
@@ -175,7 +186,9 @@ const COLS = [
   {id: 'title', name: 'Title', sort: p => p.title.toLowerCase(), cell: p => [
     p.draft ? badge('draft', '') : null, p.draft ? ' ' : null,
     el('a', {href: p.url}, p.title),
-    p.labels.length ? el('div', {class: 'labels'}, p.labels.map(l => el('span', {class: 'label'}, l))) : null,
+    p.labels.length || p.devcall ? el('div', {class: 'labels'},
+      p.devcall ? el('a', {class: 'label info', href: DATA.devcall.url, title: 'marked on the project board'}, DATA.devcall.label) : null,
+      p.labels.map(l => el('span', {class: 'label'}, l))) : null,
     p.author.toLowerCase() !== ME ? el('div', {class: 'sub'}, 'by ' + p.author) : null,
   ]},
   {id: 'ci', name: 'CI', sort: p => (CI[p.ci] || CI.NONE)[2], cell: p => {
@@ -241,7 +254,8 @@ for (const c of COLS) {
 function haystack(p) {
   return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
           p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
-          p.ci, p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : ''].join(' ').toLowerCase();
+          p.ci, p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : '',
+          p.devcall ? DATA.devcall.label : ''].join(' ').toLowerCase();
 }
 const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));
 
@@ -291,6 +305,10 @@ document.addEventListener('keydown', e => {
   if (e.key === '/' && document.activeElement !== search) { e.preventDefault(); search.focus(); search.select(); }
   else if (e.key === 'Escape' && document.activeElement === search) { search.value = ''; search.dispatchEvent(new Event('input')); }
 });
+
+if (DATA.devcall.failed)
+  document.querySelector('header').append(el('span', {class: 'meta stale', title: 'see the cron log'},
+                                             DATA.devcall.label + ' status unavailable'));
 
 function fitHeader() {
   document.documentElement.style.setProperty('--head-h', document.querySelector('header').offsetHeight + 'px');
