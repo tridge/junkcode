@@ -69,6 +69,7 @@ input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
 <body>
 <header>
   <h1>@@TITLE@@</h1>
+  <a id="cilink" target="_self" hidden>CI queue</a>
   <input id="search" type="search" placeholder="Search title, repo, number, reviewer…  ( / )" autocomplete="off">
   <label class="opt"><input type="checkbox" id="hidedone"> hide done</label>
   <span class="meta" id="counts"></span>
@@ -274,6 +275,12 @@ function showGenerated() {
   g.title = DATA.generated;
   g.className = 'meta' + (age > DATA.stale_minutes ? ' stale' : '');
   if (age > DATA.stale_minutes) g.textContent += ' — cron job may not be running';
+}
+
+if (DATA.ci_status) {
+  const a = document.getElementById('cilink');
+  a.href = DATA.ci_status;
+  a.hidden = false;
 }
 
 search.value = prefs.q;

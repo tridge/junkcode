@@ -48,3 +48,18 @@ The script tries these in order: `$GH_TOKEN` / `$GITHUB_TOKEN`, then `token_file
 | `output` | where the HTML page is written (default `pr_status.html` beside the config). |
 | `title` | page title (default "`<user>` PR Status"). |
 | `refresh_seconds`, `stale_minutes`, `token_file`, `page_size` | as named. If GitHub returns 502s, lower `page_size`. |
+| `ci_status` | optional URL of a `ci_status.py` page to link to from the header. |
+
+## CI queue page
+
+`ci_status.py` writes `ci_status.html`, a page showing who is holding a repo's GitHub Actions queue. It is not specific to you, so it can be hosted for everyone; ArduPilot's is at https://firmware.ardupilot.org/Tools/CIJobs/. It shows:
+
+- running and queued jobs, in total and per runner label, and the age of the oldest queued job
+- running and queued jobs per owner, and per PR or branch
+- pushes, workflow runs and cancelled runs per owner and per branch over the last `--hours` (default 24)
+
+A run makes about 200 API calls and takes 20-30s, so run it every 10-15 minutes, e.g.
+
+    */10 * * * * /usr/bin/python3 /path/to/ci_status.py --pr-status pr_status.html
+
+Options: `--repo` (default `ArduPilot/ardupilot`), `-o OUTPUT`, `--hours`, `--refresh`, `--stale`, `--token-file`, `--pr-status URL` to link back to a PR status page, `--json FILE`, `--lock FILE` to keep the lock out of a web directory, `-v`. It finds a token the same way as `pr_status.py` and needs `pr_status.py` and `ci_template.html` beside it.

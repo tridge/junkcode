@@ -3,3 +3,6 @@ pr_status.html.lock
 pr_status.log
 .pr_status.*
 config.json
+ci_status.html
+ci_status.html.lock
+ci_status.log

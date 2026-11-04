@@ -41,6 +41,7 @@ DEFAULTS = {
     "token_file": "",
     "page_size": 25,
     "apreview": None,
+    "ci_status": "",
 }
 
 QUERY = '''
@@ -368,9 +369,11 @@ def render(cfg, prs):
         "apreview": bool(cfg["apreview"]),
         "refresh_seconds": cfg["refresh_seconds"],
         "stale_minutes": cfg["stale_minutes"],
+        "ci_status": cfg["ci_status"],
         "prs": prs,
     }
-    blob = json.dumps(data).replace("</", "<\\/")
+    # no '<' at all, so nothing in the data can end or confuse the script element
+    blob = json.dumps(data).replace("<", "\\u003c")
     with open(os.path.join(SCRIPT_DIR, "template.html")) as f:
         tpl = f.read()
     title = (cfg["title"] or f"{cfg['github_user']} PR Status").replace("&", "&amp;").replace("<", "&lt;")

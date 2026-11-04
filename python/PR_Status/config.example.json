@@ -24,5 +24,6 @@
     "stale_minutes": 60,
     "token_file": "",
     "page_size": 25,
-    "apreview": null
+    "apreview": null,
+    "ci_status": ""
 }

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@@TITLE@@</title>
+<base target="_blank">
+<style>
+:root {
+  --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --head: #f5f5f4;
+  --row-hover: #f5f5f4; --link: #1d4ed8;
+  --ok: #15803d; --ok-bg: #dcfce7; --bad: #b91c1c; --bad-bg: #fee2e2;
+  --warn: #a16207; --warn-bg: #fef9c3; --info: #1d4ed8; --info-bg: #dbeafe; --none-bg: #f5f5f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514; --fg: #e7e5e4; --muted: #a8a29e; --line: #2e2c2a; --head: #1f1d1b;
+    --row-hover: #22201e; --link: #93c5fd;
+    --ok: #86efac; --ok-bg: #14532d; --bad: #fca5a5; --bad-bg: #7f1d1d;
+    --warn: #fde68a; --warn-bg: #713f12; --info: #bfdbfe; --info-bg: #1e3a8a; --none-bg: #292524;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+h1 { font-size: 16px; margin: 0; }
+h2 { font-size: 14px; margin: 20px 0 6px; }
+nav a { margin-right: 12px; font-size: 13px; }
+.meta { color: var(--muted); font-size: 12px; }
+.stale { color: var(--bad); font-weight: 600; }
+main { padding: 0 16px 24px; }
+.cards { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; min-width: 130px; }
+.card .n { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card .l { color: var(--muted); font-size: 12px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--head); font-weight: 600; font-size: 12px; white-space: nowrap; cursor: pointer; user-select: none; }
+th[aria-sort="ascending"]::after { content: " \25B2"; font-size: 9px; }
+th[aria-sort="descending"]::after { content: " \25BC"; font-size: 9px; }
+tbody tr:hover { background: var(--row-hover); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td { white-space: nowrap; }
+td.wrap { white-space: normal; min-width: 260px; max-width: 560px; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-weight: 600;
+  white-space: nowrap; background: var(--none-bg); color: var(--muted); }
+.ok { background: var(--ok-bg); color: var(--ok); }
+.bad { background: var(--bad-bg); color: var(--bad); }
+.warn { background: var(--warn-bg); color: var(--warn); }
+.sub { color: var(--muted); font-size: 12px; }
+.bar { display: inline-block; height: 8px; vertical-align: middle; border-radius: 2px; }
+.bar.r { background: var(--ok); } .bar.q { background: var(--warn); }
+.warnbox { margin-top: 12px; padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 0 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>@@TITLE@@</h1>
+  <nav id="nav"></nav>
+  <span class="meta" id="gen"></span>
+</header>
+<main>
+<div id="warnings"></div>
+<div class="cards" id="cards"></div>
+<div class="grid">
+  <section><h2>Owners now</h2><div id="owners"></div></section>
+  <section><h2 id="hist-h"></h2><div id="hist-owners"></div></section>
+</div>
+<h2>PRs and branches holding jobs</h2><div id="groups"></div>
+<h2 id="branches-h"></h2><div id="branches"></div>
+</main>
+<script id="cidata" type="application/json">@@DATA@@</script>
+<script>
+(function () {
+'use strict';
+const DATA = JSON.parse(document.getElementById('cidata').textContent);
+const PREF_KEY = 'cistatus.prefs.v1';
+let prefs = {};
+try { prefs = JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch (e) {}
+function save() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) {} }
+
+function ago(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 90) return Math.round(s) + 's';
+  if (s < 5400) return Math.round(s / 60) + 'm';
+  if (s < 129600) return (s / 3600).toFixed(1) + 'h';
+  return Math.round(s / 86400) + 'd';
+}
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') e.className = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== '') e.append(k);
+  return e;
+}
+function user(login) { return el('a', {href: 'https://github.com/' + login}, login); }
+function bars(r, q, scale) {
+  return [el('span', {class: 'bar r', style: 'width:' + (r * scale) + 'px'}),
+          el('span', {class: 'bar q', style: 'width:' + (q * scale) + 'px'})];
+}
+function cmp(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+
+// sortable table: cols are {name, num, sort, cell}; sort state is kept per table
+function table(id, cols, rows, dflt) {
+  const st = prefs[id] || (prefs[id] = {col: dflt, dir: -1});
+  const box = document.getElementById(id);
+  function draw() {
+    const col = cols.find(c => c.name === st.col) || cols.find(c => c.name === dflt);
+    const sorted = rows.slice().sort((a, b) => st.dir * cmp(col.sort(a), col.sort(b)));
+    const tr = el('tr', {}, cols.map(c => {
+      const th = el('th', {class: c.num ? 'num' : null, title: c.title || null,
+                           'aria-sort': c === col ? (st.dir > 0 ? 'ascending' : 'descending') : 'none'}, c.name);
+      th.addEventListener('click', () => {
+        if (st.col === c.name) st.dir = -st.dir; else { st.col = c.name; st.dir = c.num ? -1 : 1; }
+        save(); draw();
+      });
+      return th;
+    }));
+    const body = sorted.map(r => el('tr', {}, cols.map(c => el('td', {class: c.num ? 'num' : c.wrap ? 'wrap' : null}, c.cell(r)))));
+    box.replaceChildren(rows.length ? el('table', {}, el('thead', {}, tr), el('tbody', {}, body)) :
+                        el('div', {class: 'sub'}, 'none'));
+  }
+  draw();
+}
+const num = (name, f, title) => ({name, num: true, title, sort: f, cell: r => String(f(r))});
+
+const T = DATA.totals;
+if (DATA.warnings.length) document.getElementById('warnings').append(el('div', {class: 'warnbox'},
+  'Incomplete data: ' + DATA.warnings.join('; ')));
+if (DATA.pr_status) document.getElementById('nav').append(el('a', {href: DATA.pr_status, target: '_self'}, 'PR status'));
+document.getElementById('nav').append(el('a', {href: 'https://github.com/' + DATA.repo + '/actions'}, 'Actions'));
+
+const cards = [[T.running, 'jobs running'], [T.queued, 'jobs queued'],
+               [T.oldest_queued ? ago(T.oldest_queued) : '—', 'oldest queued job']];
+for (const [label, v] of Object.entries(T.labels).sort((a, b) => b[1][0] + b[1][1] - a[1][0] - a[1][1]))
+  cards.push([v[0] + ' / ' + v[1], label + ' running / queued']);
+document.getElementById('cards').replaceChildren(...cards.map(c => el('div', {class: 'card'},
+  el('div', {class: 'n'}, String(c[0])), el('div', {class: 'l'}, c[1]))));
+
+// per owner, now
+// null prototype, so logins like "constructor" are just keys
+const owners = Object.create(null);
+for (const g of DATA.groups) {
+  const o = owners[g.owner] || (owners[g.owner] = {owner: g.owner, running: 0, queued: 0, prs: 0});
+  o.running += g.running; o.queued += g.queued; o.prs += 1;
+}
+const scale = 200 / Math.max(1, ...DATA.groups.map(g => g.running + g.queued), ...Object.values(owners).map(o => o.running + o.queued));
+table('owners', [
+  {name: 'Owner', sort: o => o.owner.toLowerCase(), cell: o => user(o.owner)},
+  num('PRs', o => o.prs, 'PRs or branches with running or queued jobs'),
+  num('Running', o => o.running), num('Queued', o => o.queued),
+  {name: 'Share', sort: o => o.running + o.queued, cell: o => bars(o.running, o.queued, scale)},
+], Object.values(owners), 'Running');
+
+table('groups', [
+  {name: 'PR', sort: g => g.pr || 0, cell: g => g.pr ? el('a', {href: g.url}, '#' + g.pr) : el('span', {class: 'sub'}, g.event)},
+  {name: 'Title', wrap: true, sort: g => g.title.toLowerCase(), cell: g => el('a', {href: g.url}, g.title)},
+  {name: 'Owner', sort: g => g.owner.toLowerCase(), cell: g => user(g.owner)},
+  num('Running', g => g.running), num('Queued', g => g.queued), num('Runs', g => g.runs, 'active workflow runs'),
+  {name: 'Waiting', title: 'age of the oldest queued job', sort: g => g.oldest_queued ? -Date.parse(g.oldest_queued) : -Infinity,
+   cell: g => g.oldest_queued ? el('span', {title: g.oldest_queued}, ago(g.oldest_queued)) : ''},
+  {name: 'Running on', sort: g => g.running, cell: g => el('span', {class: 'sub'},
+    Object.entries(g.labels).map(([k, v]) => v + '× ' + k).join(', '))},
+  {name: 'Share', sort: g => g.running + g.queued, cell: g => bars(g.running, g.queued, scale)},
+], DATA.groups, 'Running');
+
+// history, per owner and per branch
+document.getElementById('hist-h').textContent = 'Last ' + DATA.hours + 'h by owner';
+document.getElementById('branches-h').textContent = 'Last ' + DATA.hours + 'h by PR/branch';
+const PUSHES = 'distinct commits pushed to a branch or PR';
+const CANCEL = 'runs cancelled, mostly superseded by a newer push';
+table('hist-owners', [
+  {name: 'Owner', sort: h => h.owner.toLowerCase(), cell: h => user(h.owner)},
+  num('Branches', h => h.branches), num('Pushes', h => h.pushes, PUSHES),
+  num('Runs', h => h.runs, 'workflow runs started'), num('Cancelled', h => h.cancelled, CANCEL),
+], DATA.hist_owners, 'Runs');
+table('branches', [
+  {name: 'Branch', sort: b => b.branch.toLowerCase(), cell: b => el('a', {href: b.url}, b.branch)},
+  {name: 'Title', wrap: true, sort: b => (b.title || '').toLowerCase(), cell: b => b.title || ''},
+  {name: 'Owner', sort: b => b.owner.toLowerCase(), cell: b => user(b.owner)},
+  {name: 'Events', sort: b => b.events.join(), cell: b => el('span', {class: 'sub'}, b.events.join(', '))},
+  num('Pushes', b => b.pushes, PUSHES), num('Runs', b => b.runs), num('Cancelled', b => b.cancelled, CANCEL),
+  {name: 'Last run', sort: b => b.last, cell: b => el('span', {title: b.last}, ago(b.last) + ' ago')},
+], DATA.branches, 'Runs');
+
+function showGenerated() {
+  const age = (Date.now() - Date.parse(DATA.generated)) / 60000;
+  const g = document.getElementById('gen');
+  g.textContent = 'updated ' + ago(DATA.generated) + ' ago';
+  g.title = DATA.generated;
+  g.className = 'meta' + (age > DATA.stale_minutes ? ' stale' : '');
+  if (age > DATA.stale_minutes) g.textContent += ' — cron job may not be running';
+}
+showGenerated();
+setInterval(showGenerated, 30000);
+if (DATA.refresh_seconds > 0) setTimeout(() => location.reload(), DATA.refresh_seconds * 1000);
+})();
+</script>
+</body>
+</html>
