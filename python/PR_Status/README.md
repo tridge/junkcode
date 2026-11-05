@@ -19,7 +19,7 @@ The config is the first that exists of: `-c`, `$PR_STATUS_CONFIG`, `$XDG_CONFIG_
 
 GitHub's search sometimes leaves PRs out without reporting an error. The script remembers the PRs on the last page (in `.<page name>.known.json` next to the page), and looks up any that search missed directly, so they don't drop off the page.
 
-The script never changes the existing page if a fetch fails (the `devcall` lookup is the one exception, see below). It exits non-zero, so cron mails you the error.
+The script never changes the existing page if a fetch fails (the `devcall` and dependency lookups are the exceptions, see below). It exits non-zero, so cron mails you the error.
 
 ## Token
 
@@ -31,6 +31,7 @@ The script tries these in order: `$GH_TOKEN` / `$GITHUB_TOKEN`, then `token_file
 
 - **✓** marks a PR as dealt with. Ticks are stored in the browser's localStorage along with a fingerprint of the PR. When the fingerprint changes, the tick clears and the row gets an orange bar saying why.
 - **New** counts comments and reviews by others since you ticked the PR. For a PR you have never ticked, it counts since your own last comment, review or commit.
+- With `depends` in `reset_on`, a PR that names other PRs or issues it depends on gets a tag for each, such as "needs #123" or "#123 merged". Its tick clears when one of them is merged or closed. A dependency is a reference straight after "depends on", "requires", "needs", "based on", "builds on", "on top of", "blocked by" or "waiting for", where that phrase starts a line or sentence of the PR body. Examples: `Depends on #123 and ArduPilot/mavlink#45`, `**Requires:** https://github.com/ArduPilot/ardupilot/pull/123`, `This branch is based on #123`, or a bare `Depends on:` followed by a list of references. The same phrases elsewhere in a sentence, as in "nothing here depends on #5", and references in parentheses don't count. Editing a dependency out of the body later doesn't clear the tick. If the lookup fails, the page is still written, and the header says "dependency status unavailable".
 - Closed and merged PRs disappear on the next run. Their ticks are pruned once the PR has been missing for a week, so a run that misses PRs by mistake doesn't lose ticks.
 - For a PR from another repo, such as a fork, where CI ran on the branch, the CI column also shows a smaller "fork:" badge for the CI that ran on the branch there, e.g. on push. It links to that repo's Actions runs for the branch. The column sorts on the PR's own CI.
 - Click a column header to sort it. Type to search; all words must match. `/` focuses the search box and Esc clears it.
@@ -46,7 +47,7 @@ The script tries these in order: `$GH_TOKEN` / `$GITHUB_TOKEN`, then `token_file
 | `exclude_repos` | fnmatch patterns to drop. |
 | `ignore_users` | logins whose comments don't count as activity. |
 | `ignore_bots` | ignore GitHub App/bot accounts. |
-| `reset_on` | what clears a tick: `activity` (comment or review by others), `ci_failure` (CI enters or leaves failing), `ci` (any CI state change), `branch_ci_failure` (CI on the PR's branch in its own repo, e.g. your fork, enters or leaves failing), `branch_ci` (any change in that CI), `review_decision`, `conflict` (ignored while GitHub reports the merge state as unknown), `apreview` (APReview verdict), `push` (new head commit), `devcall` (enters or leaves the `devcall` filter) |
+| `reset_on` | what clears a tick: `activity` (comment or review by others), `ci_failure` (CI enters or leaves failing), `ci` (any CI state change), `branch_ci_failure` (CI on the PR's branch in its own repo, e.g. your fork, enters or leaves failing), `branch_ci` (any change in that CI), `review_decision`, `conflict` (ignored while GitHub reports the merge state as unknown), `apreview` (APReview verdict), `push` (new head commit), `devcall` (enters or leaves the `devcall` filter), `depends` (a PR or issue it depends on is merged or closed, see above) |
 | `apreview` | optional; `null` hides the APReview column. Where the verdict comes from: the `field` single-select (default `Result`) on org project `project_owner`/`project_number`, and/or the `**Verdict: X**` line in the newest comment by `user`. When both exist, the newer one wins. ArduPilot uses `{"user": "AP-Review", "project_owner": "ArduPilot", "project_number": 33, "field": "Result"}`. |
 | `devcall` | adds a `label` tag, in front of the GitHub labels, to PRs that match `filter` (project board filter syntax, e.g. `"status:ReadyForDevCall is:open"`) on the public org project `project_owner`/`project_number`. It is read with an anonymous REST request, which needs no token. If the request fails, the page is still written without the tags, and the header says so. Leave it empty to turn it off. |
 | `output` | where the HTML page is written (default `pr_status.html` beside the config). |
