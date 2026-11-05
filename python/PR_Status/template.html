@@ -63,7 +63,7 @@ a:hover { text-decoration: underline; }
 .labels { margin-top: 2px; }
 .label { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
   padding: 0 5px; margin: 1px 4px 0 0; white-space: nowrap; }
-.label.info { border-color: transparent; text-decoration: none; }
+.label.info, .label.ok, .label.warn { border-color: transparent; text-decoration: none; }
 .why { display: block; color: var(--changed); font-size: 11px; white-space: nowrap; }
 input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
 #empty { padding: 24px; color: var(--muted); }
@@ -160,15 +160,30 @@ const WHY = {
   activity: 'new activity', ci_failure: 'CI changed', ci: 'CI changed',
   review_decision: 'review changed', apreview: 'APReview changed', conflict: 'conflict changed', push: 'new push',
   devcall: 'dev call changed', branch_ci: 'fork CI changed', branch_ci_failure: 'fork CI changed',
+  depends: 'dependency merged',
 };
+// list parts that only clear a tick when they gain an entry: a dependency
+// closing counts, its line being edited out of the PR body afterwards doesn't
+const GROWS = new Set(['depends']);
+function differs(k, now, old) {
+  if (GROWS.has(k) && Array.isArray(now) && Array.isArray(old)) return now.some(v => !old.includes(v));
+  return JSON.stringify(now) !== JSON.stringify(old);
+}
+const DEP = {
+  OPEN: ['needs ', '', 'warn', 'not merged yet'], MERGED: ['', ' merged', 'ok', 'merged'],
+  CLOSED: ['', ' closed', '', 'closed without merging'],
+};
+function depTag(d) {
+  const s = DEP[d.state] || ['needs ', '', '', 'status unavailable'];
+  return el('a', {class: 'label ' + s[2], href: d.url, title: 'dependency ' + d.ref + ': ' + s[3]}, s[0] + d.ref + s[1]);
+}
 
 function tickState(p) {
   const t = ticks[p.url];
   if (!t) return {done: false, changed: false, why: []};
   const old = t.parts || {};
   // null means that part couldn't be fetched, so it neither keeps nor clears the tick
-  const why = Object.keys(p.parts).filter(k => p.parts[k] !== null && old[k] !== null &&
-                                               JSON.stringify(p.parts[k]) !== JSON.stringify(old[k]));
+  const why = Object.keys(p.parts).filter(k => p.parts[k] !== null && old[k] !== null && differs(k, p.parts[k], old[k]));
   if (!why.length) return {done: true, changed: false, why: []};
   return {done: false, changed: true, why: why.map(k => WHY[k] || k)};
 }
@@ -197,7 +212,8 @@ const COLS = [
   {id: 'title', name: 'Title', sort: p => p.title.toLowerCase(), cell: p => [
     p.draft ? badge('draft', '') : null, p.draft ? ' ' : null,
     el('a', {href: p.url}, p.title),
-    p.labels.length || p.devcall ? el('div', {class: 'labels'},
+    p.labels.length || p.devcall || p.depends.length ? el('div', {class: 'labels'},
+      p.depends.map(depTag),
       p.devcall ? el('a', {class: 'label info', href: DATA.devcall.url, title: 'marked on the project board'}, DATA.devcall.label) : null,
       p.labels.map(l => el('span', {class: 'label'}, l))) : null,
     p.author.toLowerCase() !== ME ? el('div', {class: 'sub'}, 'by ' + p.author) : null,
@@ -269,7 +285,7 @@ function haystack(p) {
   return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
           p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
           p.ci, p.branch_ci ? 'fork ' + p.branch_ci : '', p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : '',
-          p.devcall ? DATA.devcall.label : ''].join(' ').toLowerCase();
+          p.devcall ? DATA.devcall.label : '', p.depends.map(d => depTag(d).textContent).join(' ')].join(' ').toLowerCase();
 }
 const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));
 
@@ -323,6 +339,9 @@ document.addEventListener('keydown', e => {
 if (DATA.devcall.failed)
   document.querySelector('header').append(el('span', {class: 'meta stale', title: 'see the cron log'},
                                              DATA.devcall.label + ' status unavailable'));
+if (DATA.depends_failed)
+  document.querySelector('header').append(el('span', {class: 'meta stale', title: 'see the cron log'},
+                                             'dependency status unavailable'));
 
 function fitHeader() {
   document.documentElement.style.setProperty('--head-h', document.querySelector('header').offsetHeight + 'px');

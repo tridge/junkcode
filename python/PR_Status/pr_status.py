@@ -47,7 +47,7 @@ DEFAULTS = {
 
 PR_FIELDS = '''
 fragment pr on PullRequest {
-        id number title url state isDraft createdAt updatedAt mergeable reviewDecision headRefOid
+        id number title url state isDraft createdAt updatedAt mergeable reviewDecision headRefOid body
         repository { nameWithOwner isArchived }
         isCrossRepository headRefName headRepository { nameWithOwner }
         headRef { target { ... on Commit { statusCheckRollup { state } } } }
@@ -101,6 +101,27 @@ query($ids: [ID!]!) {
 }
 '''
 
+# A dependency is named by one of these phrases at the start of a line or
+# sentence, followed straight away by the references, e.g. "Depends on #123",
+# "**Requires:** #1 and ArduPilot/mavlink#5", "- Needs PR #7", or by a bare
+# "Depends on:" with a list of them below. Phrases anywhere else are prose
+# ("nothing here depends on #5", "doesn't need #6") and don't count.
+DEP_RE = re.compile(r'(?:^|[.!?][*_]*\s+)[\s>*_+#-]*(?:\[[ xX]\]\s*)?(?:\d+[.)]\s*)?[*_]*'
+                    r'(?:(?:this(?:\s+(?:pr|branch|change|patch|series))?|it)\s+(?:is\s+)?)?'
+                    r'(?:depend(?:s|ing|ent)?\s+(?:up)?on|requires|needs|based\s+on|builds?\s+on|built\s+on|'
+                    r'on\s+top\s+of|blocked\s+by|waiting\s+(?:for|on))\b[\s:*_]*', re.I)
+REF_RE = re.compile(r'(?:(?:a|an|the)\s+)?(?:(?:PRs?|pull\s+requests?|issues?)\s*)?'
+                    # a URL, maybe a Markdown link or <autolink> and maybe to the files or commits tab
+                    r'(?:(?:\[[^\]]*\]\(|<)?https://github\.com/([\w.-]+)/([\w.-]+)/(?:pull|issues)/(\d+)'
+                    r'(?:/[\w/]*|#\S*)?(?<=\S)[)>]?(?=[\s,.;:)]|$)'
+                    r'|([\w.-]+)/([\w.-]+)#(\d+)(?![\w/-])'
+                    r'|#(\d+)(?![\w/-]))', re.I)
+# between the references of a run: "#1, #2 and #3"
+REF_SEP_RE = re.compile(r'[\s,]*(?:(?:and|&|\+)\s+)?')
+LIST_ITEM_RE = re.compile(r'\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?[*_]*')
+# HTML comments (PR templates) and code blocks
+NOT_TEXT_RE = re.compile(r'<!--.*?-->|```.*?```', re.S)
+
 VERDICT_RE = re.compile(r'\*\*Verdict:\s*([A-Z _-]+?)\s*\*\*')
 REPORT_RE = re.compile(r'Full report:\s*(\S+)')
 HEAD_RE = re.compile(r'Reviewed at head `([0-9a-f]+)`')
@@ -149,7 +170,7 @@ def get_token(cfg):
         raise SystemExit(f"no GitHub token: set GH_TOKEN, token_file, or log in with gh ({e})")
 
 
-def graphql(token, variables, query):
+def graphql(token, variables, query, quiet=False):
     body = json.dumps({"query": query, "variables": variables}).encode()
     for attempt in range(4):
         req = urllib.request.Request("https://api.github.com/graphql", data=body, headers={
@@ -170,7 +191,8 @@ def graphql(token, variables, query):
         if res.get("errors"):
             if not res.get("data"):
                 raise RuntimeError(f"graphql errors: {res['errors']}")
-            log(f"graphql partial errors: {res['errors']}")
+            if not quiet:
+                log(f"graphql partial errors: {res['errors']}")
         return res["data"]
 
 
@@ -300,6 +322,84 @@ def fetch_devcall(cfg):
     return urls
 
 
+def ref_run(text, pos, own):
+    '''the (owner, repo, number) references in a run starting at text[pos]'''
+    refs = []
+    while True:
+        r = REF_RE.match(text, pos)
+        if not r:
+            return refs
+        if r.group(3):
+            refs.append((r.group(1), r.group(2), int(r.group(3))))
+        elif r.group(6):
+            refs.append((r.group(4), r.group(5), int(r.group(6))))
+        else:
+            refs.append(own + (int(r.group(7)),))
+        pos = REF_SEP_RE.match(text, r.end()).end()
+
+
+def pr_deps(pr):
+    '''(owner, repo, number) of each dependency named in the PR body, in order'''
+    own = tuple(pr["repository"]["nameWithOwner"].split("/"))
+    lines = NOT_TEXT_RE.sub("", pr.get("body") or "").splitlines()
+    found = []
+    for i, line in enumerate(lines):
+        for m in DEP_RE.finditer(line):
+            refs = ref_run(line, m.end(), own)
+            if not refs and m.end() == len(line.rstrip()):
+                # "Depends on:" with a list below it, one reference at the start of each item
+                for nxt in lines[i+1:]:
+                    item = LIST_ITEM_RE.match(nxt)
+                    if not item:
+                        if not nxt.strip() and not refs:
+                            continue
+                        break
+                    refs += ref_run(nxt, item.end(), own)[:1]
+            for ref in refs:
+                key = dep_key(ref)
+                if key != dep_key(own + (pr["number"],)) and key not in {dep_key(f) for f in found}:
+                    found.append(ref)
+    return found
+
+
+def dep_key(ref):
+    owner, repo, number = ref
+    return f"{owner}/{repo}#{number}".lower()
+
+
+def fetch_deps(cfg, token, prs):
+    '''dep_key -> {"state", "url"} for the dependencies of these PRs, or None if
+    the lookup failed. One that doesn't exist or can't be read is left out.'''
+    if "depends" not in cfg["reset_on"]:
+        return {}
+    refs = {}
+    for pr in prs:
+        for ref in pr_deps(pr):
+            refs.setdefault(dep_key(ref), ref)
+    keys = sorted(refs)
+    states = {}
+    try:
+        for i in range(0, len(keys), 50):
+            # one aliased lookup per dependency; numbers can be PRs or issues
+            fields = []
+            for j, key in enumerate(keys[i:i+50]):
+                owner, repo, number = refs[key]
+                fields.append(f'd{j}: repository(owner: {json.dumps(owner)}, name: {json.dumps(repo)}) {{ '
+                              f'issueOrPullRequest(number: {number}) {{ '
+                              f'... on PullRequest {{ state url }} ... on Issue {{ state url }} }} }}')
+            # a typo in someone's PR body would otherwise log an error on every run
+            data = graphql(token, {}, "query {\n" + "\n".join(fields) + "\n}", quiet=True)
+            for j, key in enumerate(keys[i:i+50]):
+                node = ((data.get(f"d{j}") or {}).get("issueOrPullRequest")) or {}
+                if node.get("state"):
+                    states[key] = {"state": node["state"], "url": node["url"]}
+    except (OSError, RuntimeError, ValueError) as e:
+        # not fatal: the page is written without dependency states
+        log(f"dependency lookup failed: {e}")
+        return None
+    return states
+
+
 def apreview_status(cfg, pr, bodies):
     ar = cfg["apreview"]
     bot = ar["user"].lower()
@@ -352,7 +452,7 @@ def repo_wanted(cfg, repo):
     return not any(fnmatch.fnmatch(repo, p) for p in cfg["exclude_repos"])
 
 
-def summarise(cfg, pr, bodies, devcall):
+def summarise(cfg, pr, bodies, devcall, deps):
     me = cfg["github_user"].lower()
     ignored = {u.lower() for u in cfg["ignore_users"]}
 
@@ -431,6 +531,21 @@ def summarise(cfg, pr, bodies, devcall):
     ready = None if devcall is None else pr["url"] in devcall
     if "devcall" in reset_on:
         parts["devcall"] = ready
+    depends = []
+    if "depends" in reset_on:
+        for ref in pr_deps(pr):
+            owner, repo, number = ref
+            got = (deps or {}).get(dep_key(ref))
+            same = f"{owner}/{repo}".lower() == pr["repository"]["nameWithOwner"].lower()
+            depends.append({
+                "key": dep_key(ref),
+                "ref": f"#{number}" if same else f"{owner}/{repo}#{number}",
+                # GitHub redirects an issues URL to the PR
+                "url": got["url"] if got else f"https://github.com/{owner}/{repo}/issues/{number}",
+                "state": got["state"] if got else None,
+            })
+        # the dependencies no longer open; the page only clears a tick when one is added
+        parts["depends"] = None if deps is None else [d["key"] for d in depends if d["state"] in ("MERGED", "CLOSED")]
 
     return {
         "url": pr["url"],
@@ -457,6 +572,7 @@ def summarise(cfg, pr, bodies, devcall):
         "my_last": max(my_times) if my_times else "",
         "apreview": apreview,
         "devcall": ready,
+        "depends": depends,
         "parts": parts,
     }
 
@@ -475,7 +591,7 @@ def write_atomic(path, text):
         raise
 
 
-def render(cfg, prs, devcall):
+def render(cfg, prs, devcall, deps):
     dc = cfg["devcall"] or {}
     data = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -490,6 +606,7 @@ def render(cfg, prs, devcall):
             "url": f"https://github.com/orgs/{dc['project_owner']}/projects/{dc['project_number']}" if dc else "",
             "failed": bool(dc) and devcall is None,
         },
+        "depends_failed": deps is None,
     }
     # no '<' at all, so nothing in the data can end or confuse the script element
     blob = json.dumps(data).replace("<", "\\u003c")
@@ -545,14 +662,17 @@ def main():
     known = {u: k for u, k in known.items() if u in {pr["url"] for pr in raw}}
     bodies = fetch_apreview_comments(cfg, token, raw)
     devcall = fetch_devcall(cfg)
-    prs = [summarise(cfg, pr, bodies, devcall) for pr in raw]
-    write_atomic(cfg["output"], render(cfg, prs, devcall))
+    deps = fetch_deps(cfg, token, raw)
+    prs = [summarise(cfg, pr, bodies, devcall, deps) for pr in raw]
+    write_atomic(cfg["output"], render(cfg, prs, devcall, deps))
     write_atomic(known_path(cfg), json.dumps(known))
     if args.json:
         write_atomic(args.json, json.dumps(prs, indent=1))
     if args.verbose:
         ndev = "off" if not cfg["devcall"] else "failed" if devcall is None else sum(1 for p in prs if p["devcall"])
-        log(f"{len(prs)} PRs, {len(bodies)} AP-Review comments, devcall {ndev} -> {cfg['output']}")
+        ndep = "off" if "depends" not in cfg["reset_on"] else "failed" if deps is None else len(deps)
+        log(f"{len(prs)} PRs, {len(bodies)} AP-Review comments, devcall {ndev}, {ndep} dependencies"
+            f" -> {cfg['output']}")
 
 
 if __name__ == "__main__":
