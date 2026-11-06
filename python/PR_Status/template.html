@@ -60,6 +60,8 @@ a:hover { text-decoration: underline; }
 .warn { background: var(--warn-bg); color: var(--warn); }
 .info { background: var(--info-bg); color: var(--info); }
 .sub { color: var(--muted); font-size: 12px; }
+.branch { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 2px; overflow-wrap: anywhere; }
+.branch, .branch a { color: var(--muted); }
 .labels { margin-top: 2px; }
 .label { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
   padding: 0 5px; margin: 1px 4px 0 0; white-space: nowrap; }
@@ -178,6 +180,14 @@ function depTag(d) {
   return el('a', {class: 'label ' + s[2], href: d.url, title: 'dependency ' + d.ref + ': ' + s[3]}, s[0] + d.ref + s[1]);
 }
 
+// GitHub's "owner:branch" style, but only when the branch is in another repo
+// that isn't the PR author's own, e.g. someone else's fork
+function branchName(p) {
+  const owner = (p.head_repo || '').split('/')[0];
+  const theirs = owner.toLowerCase() === p.author.toLowerCase();
+  return p.head_repo && p.head_repo !== p.repo && !theirs ? owner + ':' + p.branch : p.branch;
+}
+
 function tickState(p) {
   const t = ticks[p.url];
   if (!t) return {done: false, changed: false, why: []};
@@ -216,6 +226,8 @@ const COLS = [
       p.depends.map(depTag),
       p.devcall ? el('a', {class: 'label info', href: DATA.devcall.url, title: 'marked on the project board'}, DATA.devcall.label) : null,
       p.labels.map(l => el('span', {class: 'label'}, l))) : null,
+    el('div', {class: 'branch'}, p.branch_tree_url ? el('a', {href: p.branch_tree_url, title: 'branch in ' + p.head_repo}, branchName(p))
+                                                   : el('span', {title: 'the fork has been deleted'}, branchName(p))),
     p.author.toLowerCase() !== ME ? el('div', {class: 'sub'}, 'by ' + p.author) : null,
   ]},
   {id: 'ci', name: 'CI', sort: p => (CI[p.ci] || CI.NONE)[2], cell: p => {
@@ -285,7 +297,8 @@ function haystack(p) {
   return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
           p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
           p.ci, p.branch_ci ? 'fork ' + p.branch_ci : '', p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : '',
-          p.devcall ? DATA.devcall.label : '', p.depends.map(d => depTag(d).textContent).join(' ')].join(' ').toLowerCase();
+          p.devcall ? DATA.devcall.label : '', p.depends.map(d => depTag(d).textContent).join(' '),
+          branchName(p)].join(' ').toLowerCase();
 }
 const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));
 
