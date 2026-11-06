@@ -560,6 +560,9 @@ def summarise(cfg, pr, bodies, devcall, deps):
         "ci": ci,
         "branch_ci": branch_ci,
         "head_repo": head_repo,
+        "branch": pr["headRefName"],
+        "branch_tree_url": (f"https://github.com/{head_repo}/tree/"
+                            + urllib.parse.quote(pr["headRefName"], safe="/")) if head_repo else "",
         "branch_url": (f"https://github.com/{head_repo}/actions?query="
                        + urllib.parse.quote(f"branch:{pr['headRefName']}", safe="")) if branch_ci else "",
         "mergeable": pr["mergeable"],
