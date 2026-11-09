@@ -28,9 +28,16 @@ body { margin: 0; background: var(--bg); color: var(--fg);
 header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
   padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
 h1 { font-size: 16px; margin: 0; }
-#search { flex: 1 1 260px; max-width: 480px; padding: 6px 10px; font: inherit; color: var(--fg);
+.searchbox { position: relative; display: flex; flex: 1 1 260px; max-width: 480px; }
+#search { flex: 1; min-width: 0; padding: 6px 30px 6px 10px; font: inherit; color: var(--fg);
   background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
 #search:focus { outline: 2px solid var(--link); outline-offset: -1px; }
+#search::-webkit-search-cancel-button { display: none; }
+#clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+#clear:hover { background: var(--row-hover); color: var(--fg); }
+#clear[hidden] { display: none; }
 .meta { color: var(--muted); font-size: 12px; }
 .stale { color: var(--bad); font-weight: 600; }
 label.opt { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
@@ -75,7 +82,10 @@ input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
 <header>
   <h1>@@TITLE@@</h1>
   <a id="cilink" target="_self" hidden>CI queue</a>
-  <input id="search" type="search" placeholder="Search title, repo, number, reviewer…  ( / )" autocomplete="off">
+  <span class="searchbox">
+    <input id="search" type="search" placeholder="Search title, repo, number, reviewer…  ( / )" autocomplete="off">
+    <button id="clear" type="button" title="Clear the search (Esc)" aria-label="Clear the search" hidden>×</button>
+  </span>
   <label class="opt"><input type="checkbox" id="hidedone"> hide done</label>
   <span class="meta" id="counts"></span>
   <span class="meta" id="gen"></span>
@@ -340,9 +350,14 @@ if (DATA.ci_status) {
   a.hidden = false;
 }
 
+const clear = document.getElementById('clear');
 search.value = prefs.q;
+clear.hidden = !search.value;
 hideDone.checked = prefs.hideDone;
-search.addEventListener('input', () => { prefs.q = search.value; save(PREF_KEY, prefs); refresh(); });
+search.addEventListener('input', () => {
+  prefs.q = search.value; save(PREF_KEY, prefs); clear.hidden = !search.value; refresh();
+});
+clear.addEventListener('click', () => { search.value = ''; search.dispatchEvent(new Event('input')); search.focus(); });
 hideDone.addEventListener('change', () => { prefs.hideDone = hideDone.checked; save(PREF_KEY, prefs); refresh(); });
 document.addEventListener('keydown', e => {
   if (e.key === '/' && document.activeElement !== search) { e.preventDefault(); search.focus(); search.select(); }
