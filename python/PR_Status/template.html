@@ -338,8 +338,13 @@ function refresh() {
 function showGenerated() {
   const age = (Date.now() - Date.parse(DATA.generated)) / 60000;
   const g = document.getElementById('gen');
-  g.textContent = 'updated ' + ago(DATA.generated);
-  g.title = DATA.generated;
+  const when = new Date(DATA.generated);
+  const opts = {hour: '2-digit', minute: '2-digit'};
+  // the date too once it isn't today's
+  if (when.toDateString() !== new Date().toDateString()) Object.assign(opts, {day: 'numeric', month: 'short'});
+  g.textContent = 'updated ' + when.toLocaleString([], opts) + ' (' + ago(DATA.generated) + ')' +
+    (DATA.elapsed != null ? ' in ' + DATA.elapsed + ' seconds' : '');
+  g.title = when.toString();
   g.className = 'meta' + (age > DATA.stale_minutes ? ' stale' : '');
   if (age > DATA.stale_minutes) g.textContent += ' — cron job may not be running';
 }

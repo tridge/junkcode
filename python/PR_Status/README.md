@@ -36,7 +36,7 @@ The script tries these in order: `$GH_TOKEN` / `$GITHUB_TOKEN`, then `token_file
 - The PR's branch is shown under its title and links to the branch on GitHub. It's shown as `owner:branch` when it's in a repo that belongs to neither the PR's repo nor its author, such as someone else's fork. It's included in the search.
 - For a PR from another repo, such as a fork, where CI ran on the branch, the CI column also shows a smaller "fork:" badge for the CI that ran on the branch there, e.g. on push. It links to that repo's Actions runs for the branch. The column sorts on the PR's own CI.
 - Click a column header to sort it. Type to search; all words must match. `/` focuses the search box, and Esc or the × button in the box clears it.
-- The page reloads itself every `refresh_seconds`. The "updated" time turns red after `stale_minutes`.
+- The page reloads itself every `refresh_seconds`. The header shows when the data was generated (local time and age) and how long that run took, and turns red after `stale_minutes`.
 
 ## config.json
 

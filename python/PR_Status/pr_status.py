@@ -596,10 +596,11 @@ def write_atomic(path, text):
         raise
 
 
-def render(cfg, prs, devcall, deps):
+def render(cfg, prs, devcall, deps, elapsed):
     dc = cfg["devcall"] or {}
     data = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "elapsed": round(elapsed),
         "user": cfg["github_user"],
         "apreview": bool(cfg["apreview"]),
         "refresh_seconds": cfg["refresh_seconds"],
@@ -659,6 +660,7 @@ def main():
         log("previous run still active, skipping")
         return
 
+    start = time.monotonic()
     token = get_token(cfg)
     if not cfg["github_user"]:
         cfg["github_user"] = viewer_login(token)
@@ -669,7 +671,8 @@ def main():
     devcall = fetch_devcall(cfg)
     deps = fetch_deps(cfg, token, raw)
     prs = [summarise(cfg, pr, bodies, devcall, deps) for pr in raw]
-    write_atomic(cfg["output"], render(cfg, prs, devcall, deps))
+    elapsed = time.monotonic() - start
+    write_atomic(cfg["output"], render(cfg, prs, devcall, deps, elapsed))
     write_atomic(known_path(cfg), json.dumps(known))
     if args.json:
         write_atomic(args.json, json.dumps(prs, indent=1))
@@ -677,7 +680,7 @@ def main():
         ndev = "off" if not cfg["devcall"] else "failed" if devcall is None else sum(1 for p in prs if p["devcall"])
         ndep = "off" if "depends" not in cfg["reset_on"] else "failed" if deps is None else len(deps)
         log(f"{len(prs)} PRs, {len(bodies)} AP-Review comments, devcall {ndev}, {ndep} dependencies"
-            f" -> {cfg['output']}")
+            f" in {elapsed:.0f}s -> {cfg['output']}")
 
 
 if __name__ == "__main__":
