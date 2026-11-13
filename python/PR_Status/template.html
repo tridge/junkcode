@@ -198,6 +198,12 @@ function branchName(p) {
   return p.head_repo && p.head_repo !== p.repo && !theirs ? owner + ':' + p.branch : p.branch;
 }
 
+// show_depends: tags on every row, only on rows ticked as done, or never
+function showDeps(p) {
+  if (!p.depends.length) return false;
+  return DATA.show_depends === 'always' || (DATA.show_depends === 'ticked' && tickState(p).done);
+}
+
 function tickState(p) {
   const t = ticks[p.url];
   if (!t) return {done: false, changed: false, why: []};
@@ -232,8 +238,8 @@ const COLS = [
   {id: 'title', name: 'Title', sort: p => p.title.toLowerCase(), cell: p => [
     p.draft ? badge('draft', '') : null, p.draft ? ' ' : null,
     el('a', {href: p.url}, p.title),
-    p.labels.length || p.devcall || p.depends.length ? el('div', {class: 'labels'},
-      p.depends.map(depTag),
+    p.labels.length || p.devcall || showDeps(p) ? el('div', {class: 'labels'},
+      showDeps(p) ? p.depends.map(depTag) : null,
       p.devcall ? el('a', {class: 'label info', href: DATA.devcall.url, title: 'marked on the project board'}, DATA.devcall.label) : null,
       p.labels.map(l => el('span', {class: 'label'}, l))) : null,
     el('div', {class: 'branch'}, p.branch_tree_url ? el('a', {href: p.branch_tree_url, title: 'branch in ' + p.head_repo}, branchName(p))
@@ -307,7 +313,7 @@ function haystack(p) {
   return [p.repo, '#' + p.number, String(p.number), p.title, p.author, p.labels.join(' '),
           p.changes_by.join(' '), p.approved_by.join(' '), p.requested.join(' '),
           p.ci, p.branch_ci ? 'fork ' + p.branch_ci : '', p.review, p.draft ? 'draft' : '', p.apreview && p.apreview.status ? 'apreview ' + p.apreview.status : '',
-          p.devcall ? DATA.devcall.label : '', p.depends.map(d => depTag(d).textContent).join(' '),
+          p.devcall ? DATA.devcall.label : '', DATA.show_depends !== 'never' ? p.depends.map(d => depTag(d).textContent).join(' ') : '',
           branchName(p)].join(' ').toLowerCase();
 }
 const HAY = new Map(DATA.prs.map(p => [p.url, haystack(p)]));
