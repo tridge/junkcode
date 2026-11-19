@@ -95,7 +95,7 @@ query($ids: [ID!]!@@FIELDVAR@@) {
 ''' + PR_FIELDS
 
 # a PR that search misses is still looked up directly for this long after search last found it
-KEEP_SECONDS = 2 * 86400
+KEEP_SECONDS = 86400
 
 COMMENT_QUERY = '''
 query($ids: [ID!]!) {
