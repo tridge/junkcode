@@ -211,7 +211,8 @@ function tickState(p) {
   // null means that part couldn't be fetched, so it neither keeps nor clears the tick
   const why = Object.keys(p.parts).filter(k => p.parts[k] !== null && old[k] !== null && differs(k, p.parts[k], old[k]));
   if (!why.length) return {done: true, changed: false, why: []};
-  return {done: false, changed: true, why: why.map(k => WHY[k] || k)};
+  // several parts share a reason, e.g. ci and ci_failure
+  return {done: false, changed: true, why: [...new Set(why.map(k => WHY[k] || k))]};
 }
 // others' events since the tick, or since my own last activity if never ticked
 function newEvents(p) {
@@ -231,7 +232,8 @@ const COLS = [
       save(STATE_KEY, ticks);
       refresh();
     });
-    return [cb, st.changed ? el('span', {class: 'why', title: 'changed since you ticked it'}, st.why.join(', ')) : null];
+    // one reason per line, so a long list doesn't widen the column
+    return [cb, st.why.map(w => el('span', {class: 'why', title: 'changed since you ticked it'}, w))];
   }},
   {id: 'repo', name: 'Repo', sort: p => p.repo.toLowerCase(), cell: p => el('a', {href: 'https://github.com/' + p.repo + '/pulls'}, p.repo)},
   {id: 'number', name: '#', num: true, sort: p => p.number, cell: p => el('a', {href: p.url}, '#' + p.number)},
