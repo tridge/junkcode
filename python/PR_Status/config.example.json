@@ -26,5 +26,6 @@
     "token_file": "",
     "page_size": 25,
     "apreview": null,
-    "ci_status": ""
+    "ci_status": "",
+    "show_depends": "never"
 }

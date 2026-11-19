@@ -43,6 +43,8 @@ DEFAULTS = {
     "apreview": None,
     "ci_status": "",
     "devcall": {},
+    # "never", "ticked" or "always"; unset means "always" when "depends" is in reset_on
+    "show_depends": "",
 }
 
 PR_FIELDS = '''
@@ -93,7 +95,7 @@ query($ids: [ID!]!@@FIELDVAR@@) {
 ''' + PR_FIELDS
 
 # a PR that search misses is still looked up directly for this long after search last found it
-KEEP_SECONDS = 2 * 86400
+KEEP_SECONDS = 86400
 
 COMMENT_QUERY = '''
 query($ids: [ID!]!) {
@@ -153,7 +155,16 @@ def load_config(path):
         ar.setdefault("user", "")
         ar.setdefault("field", "Result")
         ar["project"] = bool(ar.get("project_owner") and ar.get("project_number"))
+    if not cfg["show_depends"]:
+        cfg["show_depends"] = "always" if "depends" in cfg["reset_on"] else "never"
+    if cfg["show_depends"] not in ("never", "ticked", "always"):
+        raise SystemExit(f"config: show_depends must be never, ticked or always, not {cfg['show_depends']!r}")
     return cfg
+
+
+def want_deps(cfg):
+    '''whether dependencies are needed, for display or to clear ticks'''
+    return "depends" in cfg["reset_on"] or cfg["show_depends"] != "never"
 
 
 def get_token(cfg):
@@ -370,7 +381,7 @@ def dep_key(ref):
 def fetch_deps(cfg, token, prs):
     '''dep_key -> {"state", "url"} for the dependencies of these PRs, or None if
     the lookup failed. One that doesn't exist or can't be read is left out.'''
-    if "depends" not in cfg["reset_on"]:
+    if not want_deps(cfg):
         return {}
     refs = {}
     for pr in prs:
@@ -519,6 +530,10 @@ def summarise(cfg, pr, bodies, devcall, deps):
         parts["branch_ci"] = branch_ci
     if "review_decision" in reset_on:
         parts["review_decision"] = pr["reviewDecision"] or ""
+    if "draft" in reset_on:
+        parts["draft"] = pr["isDraft"]
+    if "labels" in reset_on:
+        parts["labels"] = sorted(l["name"] for l in pr["labels"]["nodes"])
     if "conflict" in reset_on:
         # GitHub reports UNKNOWN while it recomputes, e.g. after the base branch moves
         parts["conflict"] = None if pr["mergeable"] == "UNKNOWN" else pr["mergeable"] == "CONFLICTING"
@@ -532,7 +547,7 @@ def summarise(cfg, pr, bodies, devcall, deps):
     if "devcall" in reset_on:
         parts["devcall"] = ready
     depends = []
-    if "depends" in reset_on:
+    if want_deps(cfg):
         for ref in pr_deps(pr):
             owner, repo, number = ref
             got = (deps or {}).get(dep_key(ref))
@@ -544,6 +559,7 @@ def summarise(cfg, pr, bodies, devcall, deps):
                 "url": got["url"] if got else f"https://github.com/{owner}/{repo}/issues/{number}",
                 "state": got["state"] if got else None,
             })
+    if "depends" in reset_on:
         # the dependencies no longer open; the page only clears a tick when one is added
         parts["depends"] = None if deps is None else [d["key"] for d in depends if d["state"] in ("MERGED", "CLOSED")]
 
@@ -594,10 +610,11 @@ def write_atomic(path, text):
         raise
 
 
-def render(cfg, prs, devcall, deps):
+def render(cfg, prs, devcall, deps, elapsed):
     dc = cfg["devcall"] or {}
     data = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "elapsed": round(elapsed),
         "user": cfg["github_user"],
         "apreview": bool(cfg["apreview"]),
         "refresh_seconds": cfg["refresh_seconds"],
@@ -610,6 +627,7 @@ def render(cfg, prs, devcall, deps):
             "failed": bool(dc) and devcall is None,
         },
         "depends_failed": deps is None,
+        "show_depends": cfg["show_depends"],
     }
     # no '<' at all, so nothing in the data can end or confuse the script element
     blob = json.dumps(data).replace("<", "\\u003c")
@@ -657,6 +675,7 @@ def main():
         log("previous run still active, skipping")
         return
 
+    start = time.monotonic()
     token = get_token(cfg)
     if not cfg["github_user"]:
         cfg["github_user"] = viewer_login(token)
@@ -667,15 +686,16 @@ def main():
     devcall = fetch_devcall(cfg)
     deps = fetch_deps(cfg, token, raw)
     prs = [summarise(cfg, pr, bodies, devcall, deps) for pr in raw]
-    write_atomic(cfg["output"], render(cfg, prs, devcall, deps))
+    elapsed = time.monotonic() - start
+    write_atomic(cfg["output"], render(cfg, prs, devcall, deps, elapsed))
     write_atomic(known_path(cfg), json.dumps(known))
     if args.json:
         write_atomic(args.json, json.dumps(prs, indent=1))
     if args.verbose:
         ndev = "off" if not cfg["devcall"] else "failed" if devcall is None else sum(1 for p in prs if p["devcall"])
-        ndep = "off" if "depends" not in cfg["reset_on"] else "failed" if deps is None else len(deps)
+        ndep = "off" if not want_deps(cfg) else "failed" if deps is None else len(deps)
         log(f"{len(prs)} PRs, {len(bodies)} AP-Review comments, devcall {ndev}, {ndep} dependencies"
-            f" -> {cfg['output']}")
+            f" in {elapsed:.0f}s -> {cfg['output']}")
 
 
 if __name__ == "__main__":
