@@ -532,6 +532,8 @@ def summarise(cfg, pr, bodies, devcall, deps):
         parts["review_decision"] = pr["reviewDecision"] or ""
     if "draft" in reset_on:
         parts["draft"] = pr["isDraft"]
+    if "labels" in reset_on:
+        parts["labels"] = sorted(l["name"] for l in pr["labels"]["nodes"])
     if "conflict" in reset_on:
         # GitHub reports UNKNOWN while it recomputes, e.g. after the base branch moves
         parts["conflict"] = None if pr["mergeable"] == "UNKNOWN" else pr["mergeable"] == "CONFLICTING"
